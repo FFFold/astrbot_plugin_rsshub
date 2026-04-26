@@ -125,39 +125,6 @@
 <details>
 <summary>历史更新记录</summary>
 
-### Refactored
-
-- **工具模块重构为 OOP 风格**：
-  - `utils/ffmpeg_helper.py` → `FFmpegTool` 类（静态方法）
-    - 删除无效的 `imageio_ffmpeg` try-except 导入
-    - 修复 `process` 变量未赋值警告（提前初始化为 `None`）
-    - 细化异常捕获：`except Exception` → `except (OSError, asyncio.TimeoutError, ValueError)`
-    - 删除 `process.kill()/wait()` 的冗余异常捕获
-    - 函数名变更：`transcode_video_to_mp4_for_qq()` → `transcode_to_mp4()`
-  - `utils/aio_helper.py` → `utils/concurrent.py`
-    - 删除旧文件，功能合并到 `concurrent.py`
-    - 提供 `AsyncTool` 静态方法类和装饰器
-  - `utils/locks.py` → 新增 `locked()` 装饰器（基于 SpEL 表达式）
-    - 支持 `@locked("#feed.id")`、`@locked("#user_id")` 等语法
-    - 保留向后兼容的便捷函数
-
-### Fixed
-
-- **修复批量操作 SQLAlchemy Greenlet 错误**：
-  - `batch_activate_subs` / `batch_deactivate_subs` 使用 `selectinload(Sub.feed)` 预加载 feed
-  - 避免访问 `sub.feed.title` 时触发懒加载导致的 greenlet 错误
-- **TranslationManager 单例化**：
-  - 避免每次通知都创建新的 TranslationManager 和 aiohttp.ClientSession
-  - 减少资源开销，提高性能
-- **修复 `sub_list` 显示问题**：
-  - `Sub.get_by_user()` 现在返回所有订阅（包括禁用状态）
-  - 添加会话状态统计：显示总订阅数、启用数、禁用数
-  - 每个订阅前添加状态图标（✓ 启用 / ✗ 禁用）
-- **修复 `sub_test` URL 模式推送目标缺失**：
-  - 创建临时 Sub 对象时添加 `target_session` 字段
-- **修复命令组语法**：
-  - `@filter.command(cmd_sub, sub_command="state")` → `@cmd_sub.command("state")`
-
 ## [1.0.20] - 2026-04-20
 
 ### Changed
