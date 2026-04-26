@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from astrbot.api.message_components import Node, Nodes, Plain
+from astrbot.api.message_components import Image, Node, Nodes, Plain
 
 from ...utils.log_utils import logger
 from .base import MessageSender
@@ -12,7 +12,13 @@ class AiocqhttpMessageSender(MessageSender):
 
     @classmethod
     def _build_node(cls, nickname: str, chain: list):
-        return Node(content=chain, name=nickname)
+        processed_chain = []
+        for component in chain:
+            if isinstance(component, Image):
+                processed_chain.append(component)
+            else:
+                processed_chain.append(component)
+        return Node(content=processed_chain, name=nickname)
 
     @classmethod
     async def send_to_user(
@@ -33,7 +39,8 @@ class AiocqhttpMessageSender(MessageSender):
             context: 通知上下文，包含频道元信息和运行时信息
         """
         logger.debug(
-            "Aiocqhttp sender strategy: merged-forward nodes (local-preferred), session=%s, has_media=%s, prepared_media=%s",
+            "Aiocqhttp sender strategy: merged-forward nodes (local-preferred), "
+            "session=%s, has_media=%s, prepared_media=%s",
             session_id,
             bool(media),
             bool(prepared_media),
@@ -49,7 +56,8 @@ class AiocqhttpMessageSender(MessageSender):
                 for item in effective_prepared:
                     source = "local_path" if item.local_path is not None else "url"
                     logger.debug(
-                        "Aiocqhttp media resolved: type=%s, source=%s, session=%s, failed=%s",
+                        "Aiocqhttp media resolved: type=%s, source=%s, "
+                        "session=%s, failed=%s",
                         item.media_type,
                         source,
                         session_id,
@@ -80,14 +88,6 @@ class AiocqhttpMessageSender(MessageSender):
 
             if not nodes:
                 return SendResult(ok=False, detail="empty_message")
-
-            logger.debug(
-                "Aiocqhttp sender node summary: session=%s, header=1, images=%s, tail=%s, total_nodes=%s",
-                session_id,
-                len(image_components),
-                len(tail_components),
-                len(nodes),
-            )
             return await cls._send_chain(session_id, [Nodes(nodes)])
         except Exception as err:
             err_text = str(err)
@@ -97,7 +97,6 @@ class AiocqhttpMessageSender(MessageSender):
                 err,
             )
 
-            # Keep merged-forward mode even in fallback: convert media to links in text.
             fallback_urls: list[str] = []
             if media:
                 fallback_urls.extend([url for _, url in media if url])
@@ -109,7 +108,8 @@ class AiocqhttpMessageSender(MessageSender):
                 nickname = "RSSHub"
 
             logger.warning(
-                "Aiocqhttp falling back to text-only merged nodes: session=%s, prev_err=%s",
+                "Aiocqhttp falling back to text-only merged nodes: "
+                "session=%s, prev_err=%s",
                 session_id,
                 err_text,
             )

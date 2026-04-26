@@ -6,8 +6,8 @@ from pathlib import Path
 from astrbot.api.message_components import File, Image, Plain, Record, Video
 
 from ...utils.log_utils import logger
+from ...utils.media_downloader import get_or_download_media_to_cache
 from .base import MessageSender
-from .media_downloader import get_or_download_media_to_cache
 from .types import PreparedMedia, SendResult
 
 
@@ -41,6 +41,7 @@ class TelegramMessageSender(MessageSender):
                     url=item.original_url,
                     timeout_seconds=cls._get_timeout_seconds(),
                     proxy=cls._get_proxy(),
+                    m3u8_timeout=cls._get_m3u8_timeout(),
                 )
                 normalized.append(
                     PreparedMedia(
@@ -159,7 +160,8 @@ class TelegramMessageSender(MessageSender):
         context: object | None = None,
     ) -> SendResult:
         logger.debug(
-            "Telegram sender strategy: media-first chain, session=%s, has_media=%s, prepared_media=%s",
+            "Telegram sender strategy: media-first chain, "
+            "session=%s, has_media=%s, prepared_media=%s",
             session_id,
             bool(media),
             bool(prepared_media),
@@ -209,7 +211,8 @@ class TelegramMessageSender(MessageSender):
                     return send_result
 
                 logger.warning(
-                    "Telegram media-first chain failed, fallback split send: session=%s, detail=%s",
+                    "Telegram media-first chain failed, fallback split send: "
+                    "session=%s, detail=%s",
                     session_id,
                     send_result.detail,
                 )
@@ -236,7 +239,8 @@ class TelegramMessageSender(MessageSender):
         except Exception as err:
             if media:
                 logger.warning(
-                    "Telegram media push failed, fallback to plain text: session=%s, error=%s, media_count=%s",
+                    "Telegram media push failed, fallback to plain text: "
+                    "session=%s, error=%s, media_count=%s",
                     session_id,
                     err,
                     len(media),

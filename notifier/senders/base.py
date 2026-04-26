@@ -7,9 +7,10 @@ from astrbot.api.message_components import File, Image, Plain, Record, Video
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.star_tools import StarTools
 
+from ...utils.ffmpeg_helper import FFmpegTool
 from ...utils.log_utils import logger
-from .media_downloader import get_or_download_media_to_cache
-from .media_paths import normalize_local_media_file_value
+from ...utils.media_downloader import get_or_download_media_to_cache
+from ...utils.media_paths import normalize_local_media_file_value
 from .types import PreparedMedia, SendResult
 
 
@@ -19,15 +20,32 @@ class MessageSender:
     _timeout_seconds: int = 30
     _proxy: str = ""
     _download_media_before_send: bool = True
+    _gif_transcode_enabled: bool = False
+    _gif_transcode_timeout: int = 60
+    _video_transcode_enabled: bool = False
+    _video_transcode_timeout: int = 120
 
     @classmethod
     def configure_runtime(cls, *, timeout_seconds: int, proxy: str = "") -> None:
-        cls._timeout_seconds = max(1, int(timeout_seconds))
-        cls._proxy = proxy or ""
+        # 始终设置基类的属性，确保所有子类都能继承
+        MessageSender._timeout_seconds = max(1, int(timeout_seconds))
+        MessageSender._proxy = proxy or ""
 
     @classmethod
-    def configure_behavior(cls, *, download_media_before_send: bool) -> None:
+    def configure_behavior(
+        cls,
+        *,
+        download_media_before_send: bool,
+        gif_transcode_enabled: bool = False,
+        gif_transcode_timeout: int = 60,
+        video_transcode_enabled: bool = False,
+        video_transcode_timeout: int = 120,
+    ) -> None:
         cls._download_media_before_send = bool(download_media_before_send)
+        cls._gif_transcode_enabled = bool(gif_transcode_enabled)
+        cls._gif_transcode_timeout = max(10, min(300, int(gif_transcode_timeout)))
+        cls._video_transcode_enabled = bool(video_transcode_enabled)
+        cls._video_transcode_timeout = max(10, min(600, int(video_transcode_timeout)))
 
     @classmethod
     def _get_timeout_seconds(cls) -> int:
@@ -35,11 +53,35 @@ class MessageSender:
 
     @classmethod
     def _get_proxy(cls) -> str:
-        return str(getattr(cls, "_proxy", "") or "")
+        # 优先从当前类获取，如果没有则尝试从基类 MessageSender 获取
+        proxy = getattr(cls, "_proxy", None)
+        if proxy is None:
+            proxy = getattr(MessageSender, "_proxy", None)
+        return str(proxy or "")
 
     @classmethod
     def _should_download_media_before_send(cls) -> bool:
         return bool(getattr(cls, "_download_media_before_send", True))
+
+    @classmethod
+    def _is_gif_transcode_enabled(cls) -> bool:
+        return bool(getattr(cls, "_gif_transcode_enabled", False))
+
+    @classmethod
+    def _get_gif_transcode_timeout(cls) -> int:
+        return int(getattr(cls, "_gif_transcode_timeout", 60))
+
+    @classmethod
+    def _get_m3u8_timeout(cls) -> int:
+        return int(getattr(cls, "_m3u8_timeout", 120))
+
+    @classmethod
+    def _is_video_transcode_enabled(cls) -> bool:
+        return bool(getattr(cls, "_video_transcode_enabled", False))
+
+    @classmethod
+    def _get_video_transcode_timeout(cls) -> int:
+        return int(getattr(cls, "_video_transcode_timeout", 120))
 
     @classmethod
     async def prepare_media(
@@ -81,14 +123,32 @@ class MessageSender:
                 continue
 
             try:
+                # Only try GIF conversion for video files when enabled
+                try_convert_gif = (
+                    cls._is_gif_transcode_enabled() and media_type == "video"
+                )
                 local_path = await get_or_download_media_to_cache(
                     url=media_url,
                     timeout_seconds=cls._get_timeout_seconds(),
                     proxy=cls._get_proxy(),
+                    try_convert_gif=try_convert_gif,
+                    gif_transcode_timeout=cls._get_gif_transcode_timeout(),
+                    m3u8_timeout=cls._get_m3u8_timeout(),
                 )
+                # Update media_type if converted to GIF
+                actual_media_type = media_type
+                if try_convert_gif and local_path.suffix.lower() == ".gif":
+                    actual_media_type = "image"
+                    logger.info(
+                        "Media type changed to image after GIF conversion: "
+                        "url=%s, path=%s, size=%s",
+                        media_url,
+                        local_path,
+                        local_path.stat().st_size,
+                    )
                 prepared.append(
                     PreparedMedia(
-                        media_type=media_type,
+                        media_type=actual_media_type,
                         original_url=media_url,
                         local_path=local_path,
                     )
@@ -115,46 +175,6 @@ class MessageSender:
 
         return prepared
 
-    @staticmethod
-    async def _send_text_media_split(
-        session_id: str,
-        message: str,
-        image_components: list,
-        tail_components: list,
-    ) -> SendResult:
-        if message:
-            text_result = await MessageSender._send_chain(session_id, [Plain(message)])
-            if not text_result.ok:
-                return text_result
-
-        for component in image_components:
-            media_result = await MessageSender._send_chain(session_id, [component])
-            if not media_result.ok:
-                return media_result
-
-        for component in tail_components:
-            media_result = await MessageSender._send_chain(session_id, [component])
-            if not media_result.ok:
-                return media_result
-
-        return SendResult(ok=True)
-
-    @staticmethod
-    async def _send_single_chain(
-        session_id: str,
-        image_components: list,
-        message: str,
-        tail_components: list,
-    ) -> SendResult:
-        chain = []
-        chain.extend(image_components)
-        if message:
-            chain.append(Plain(message))
-        chain.extend(tail_components)
-        if not chain:
-            return SendResult(ok=False, detail="empty_message")
-        return await MessageSender._send_chain(session_id, chain)
-
     @classmethod
     async def _build_media_components(
         cls,
@@ -176,7 +196,8 @@ class MessageSender:
             # Cache file may be pruned externally; refresh just-in-time to avoid ENOENT.
             if local_path is not None and not local_path.exists():
                 logger.warning(
-                    "Cached media missing before send, re-download: type=%s, url=%s, path=%s",
+                    "Cached media missing before send, re-download: "
+                    "type=%s, url=%s, path=%s",
                     media_type,
                     media_url,
                     local_path,
@@ -186,6 +207,7 @@ class MessageSender:
                         url=media_url,
                         timeout_seconds=cls._get_timeout_seconds(),
                         proxy=cls._get_proxy(),
+                        m3u8_timeout=cls._get_m3u8_timeout(),
                     )
                 except Exception as ex:
                     logger.warning(
@@ -201,7 +223,8 @@ class MessageSender:
             local_file_uri = local_path.resolve().as_uri() if local_path else ""
             if local_path is not None:
                 logger.debug(
-                    "Prepared local media path: type=%s, url=%s, resolved=%s, exists=%s",
+                    "Prepared local media path: type=%s, url=%s, "
+                    "resolved=%s, exists=%s",
                     media_type,
                     media_url,
                     local_file_path,
@@ -211,11 +234,56 @@ class MessageSender:
 
             if media_type == "image":
                 if image_count >= 9:
+                    logger.warning(
+                        "Image skipped due to limit: url=%s, count=%s",
+                        media_url,
+                        image_count,
+                    )
                     continue
-                image_components.append(Image(file=media_file_value, url=media_url))
+                image_url_value = "" if local_path else media_url
+                image_components.append(
+                    Image(file=media_file_value, url=image_url_value)
+                )
                 image_count += 1
             elif media_type == "video":
-                # 视频放在消息上方（与图片一致）
+                if cls._is_video_transcode_enabled() and local_path:
+                    try:
+                        logger.info(
+                            "Transcoding video for sending: url=%s, path=%s",
+                            media_url,
+                            local_path,
+                        )
+                        transcoded_path = await FFmpegTool.transcode_to_mp4(
+                            local_path,
+                            timeout_seconds=cls._get_video_transcode_timeout(),
+                            auto_install_ffmpeg=True,
+                        )
+                        if transcoded_path and transcoded_path.exists():
+                            media_file_value = transcoded_path.resolve().as_uri()
+                            logger.info(
+                                "Video transcoded successfully: "
+                                "url=%s, transcoded=%s, size=%s",
+                                media_url,
+                                transcoded_path,
+                                transcoded_path.stat().st_size,
+                            )
+                        else:
+                            logger.warning(
+                                "Video transcode failed, using original: url=%s",
+                                media_url,
+                            )
+                    except Exception as ex:
+                        logger.warning(
+                            "Video transcode error, using original: url=%s, err=%s",
+                            media_url,
+                            ex,
+                        )
+
+                logger.debug(
+                    "Adding video component: url=%s, file=%s",
+                    media_url,
+                    media_file_value,
+                )
                 image_components.append(Video(file=media_file_value))
             elif media_type == "audio":
                 tail_components.append(Record(file=media_file_value, text="audio"))
@@ -227,7 +295,6 @@ class MessageSender:
                         name=filename, file=local_file_path or media_url, url=media_url
                     )
                 )
-
         return image_components, tail_components, failed_media_urls
 
     @staticmethod
@@ -288,7 +355,8 @@ class MessageSender:
                 exists = Path(resolved).exists()
             except Exception as ex:
                 logger.warning(
-                    "Sender media normalize failed: session=%s, component=%s, file=%s, err=%s",
+                    "Sender media normalize failed: session=%s, component=%s, "
+                    "file=%s, err=%s",
                     session_id,
                     type(component).__name__,
                     file_value,
@@ -298,7 +366,8 @@ class MessageSender:
             if resolved != file_value:
                 setattr(component, "file", resolved)
             logger.debug(
-                "Sender media normalized: session=%s, component=%s, original=%s, normalized=%s, exists=%s",
+                "Sender media normalized: session=%s, component=%s, "
+                "original=%s, normalized=%s, exists=%s",
                 session_id,
                 type(component).__name__,
                 file_value,
@@ -333,11 +402,53 @@ class MessageSender:
         normalized_chain = cls._normalize_chain_media_files(chain, session_id)
         if normalized_chain is None:
             normalized_chain = []
+
+        # Log chain components for debugging
+        for idx, component in enumerate(normalized_chain):
+            comp_type = type(component).__name__
+            file_val = getattr(component, "file", None)
+            if file_val:
+                logger.debug(
+                    "Chain component %s: type=%s, file=%s",
+                    idx,
+                    comp_type,
+                    file_val[:100] if len(str(file_val)) > 100 else file_val,
+                )
+
         message_chain = MessageChain(chain=normalized_chain)
-        sent = await StarTools.send_message(session_id, message_chain)
-        if not sent:
-            return SendResult(ok=False, needs_rebind=True, detail="platform_or_session")
-        return SendResult(ok=True)
+        import time
+
+        start_time = time.time()
+        try:
+            sent = await StarTools.send_message(session_id, message_chain)
+            elapsed = time.time() - start_time
+            if sent:
+                logger.debug(
+                    "Message send success: session=%s, chain_length=%s, elapsed=%.2fs",
+                    session_id,
+                    len(normalized_chain),
+                    elapsed,
+                )
+            else:
+                logger.warning(
+                    "Message send returned False: session=%s, chain_length=%s, "
+                    "elapsed=%.2fs",
+                    session_id,
+                    len(normalized_chain),
+                    elapsed,
+                )
+                return SendResult(
+                    ok=False, needs_rebind=True, detail="platform_or_session"
+                )
+            return SendResult(ok=True)
+        except Exception as ex:
+            logger.error(
+                "Message send raised exception: session=%s, error=%s",
+                session_id,
+                ex,
+                exc_info=True,
+            )
+            return SendResult(ok=False, transient=True, detail=str(ex))
 
     @classmethod
     async def send_to_user(
@@ -350,7 +461,8 @@ class MessageSender:
     ) -> SendResult:
         try:
             logger.debug(
-                "Default sender path: session=%s, media=%s, prepared_media=%s, context=%s",
+                "Default sender path: session=%s, media=%s, "
+                "prepared_media=%s, context=%s",
                 session_id,
                 bool(media),
                 bool(prepared_media),
@@ -372,8 +484,17 @@ class MessageSender:
                 message = cls._append_failed_media_links(message, failed_media_urls)
 
             if image_components or tail_components:
+                logger.info(
+                    "Default sender building chain: session=%s, images=%s, "
+                    "tail=%s, failed=%s",
+                    session_id,
+                    len(image_components),
+                    len(tail_components),
+                    failed_media_urls,
+                )
                 logger.debug(
-                    "Default sender trying single-chain: session=%s, images=%s, tail=%s",
+                    "Default sender trying single-chain: session=%s, "
+                    "images=%s, tail=%s",
                     session_id,
                     len(image_components),
                     len(tail_components),
@@ -391,7 +512,8 @@ class MessageSender:
                     return single_chain_result
 
                 logger.warning(
-                    "Single-chain send failed, fallback split send: session=%s, detail=%s",
+                    "Single-chain send failed, fallback split send: "
+                    "session=%s, detail=%s",
                     session_id,
                     single_chain_result.detail,
                 )
@@ -410,7 +532,8 @@ class MessageSender:
         except Exception as err:
             if media:
                 logger.warning(
-                    "Media push failed, fallback to plain text: session=%s, error=%s, media_urls=%s",
+                    "Media push failed, fallback to plain text: "
+                    "session=%s, error=%s, media_urls=%s",
                     session_id,
                     err,
                     cls._format_media_urls(media),

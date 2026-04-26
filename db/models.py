@@ -2,8 +2,8 @@
 """RSS-to-AstrBot Database Models"""
 
 import os
-import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import TypedDict
 
 from sqlalchemy import JSON, Column, func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -11,6 +11,16 @@ from sqlalchemy.orm import registry, selectinload
 from sqlmodel import Field, Relationship, SQLModel
 
 from ..utils.log_utils import logger
+from .migrations import ensure_schema_compat
+
+
+class FailedQueueStats(TypedDict):
+    """Failed notification queue statistics."""
+
+    total: int
+    pending: int
+    exhausted: int
+
 
 _plugin_registry = registry()
 
@@ -21,7 +31,6 @@ class RSSHubModel(SQLModel, registry=_plugin_registry):
 
 INHERIT_VALUE = -100
 EFFECTIVE_OPTION_KEYS = (
-    "notify",
     "send_mode",
     "length_limit",
     "link_preview",
@@ -31,31 +40,9 @@ EFFECTIVE_OPTION_KEYS = (
     "display_entry_tags",
     "style",
     "display_media",
+    "translate",
+    "translate_target_lang",
 )
-
-_SQLITE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-def _sqlite_table_info_sql(table: str) -> str:
-    """Build PRAGMA table_info SQL with a validated table identifier."""
-    if not _SQLITE_IDENTIFIER_RE.fullmatch(table):
-        raise ValueError(f"Invalid sqlite table identifier: {table!r}")
-    return f'PRAGMA table_info("{table}")'
-
-
-def _is_text_compatible_sqlite_type(column_type: str) -> bool:
-    """Return True when a SQLite declared type has TEXT affinity."""
-    normalized = (column_type or "").upper()
-    return any(token in normalized for token in ("TEXT", "CHAR", "CLOB"))
-
-
-async def _get_column_type(conn, table: str, column: str) -> str:
-    """获取指定表的列类型"""
-    rows = (await conn.exec_driver_sql(_sqlite_table_info_sql(table))).fetchall()
-    for row in rows:
-        if row[1] == column:
-            return row[2].upper()
-    return ""
 
 
 class User(RSSHubModel, table=True):
@@ -66,8 +53,6 @@ class User(RSSHubModel, table=True):
     state: int = Field(
         default=0, description="用户状态: -1=封禁, 0=访客, 1=用户, 100=管理员"
     )
-    lang: str = Field(default="zh-Hans", max_length=16, description="偏好语言")
-    sub_limit: int | None = Field(default=None, description="订阅数量限制")
 
     interval: int | None = Field(default=None, description="监控间隔")
     notify: int = Field(default=1, description="是否通知: 0=禁用, 1=启用")
@@ -88,12 +73,22 @@ class User(RSSHubModel, table=True):
     display_entry_tags: int = Field(default=-1, description="显示标签")
     style: int = Field(default=0, description="样式: 0=RSStT, 1=flowerss")
     display_media: int = Field(default=0, description="显示媒体: -1=禁用, 0=启用")
+    translate: int = Field(
+        default=INHERIT_VALUE, description="翻译: -100=继承, 0=禁用, 1=启用"
+    )
+    translate_target_lang: str | None = Field(
+        default=None, max_length=16, description="翻译目标语言"
+    )
     default_target_session: str | None = Field(
         default=None,
         max_length=255,
         description="默认推送目标会话(unified_msg_origin)",
     )
     needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
+    use_user_config: bool = Field(
+        default=False,
+        description="是否使用用户自身配置: true=使用User表, false=继承全局配置",
+    )
 
     created_at: datetime = Field(
         default_factory=datetime.utcnow, description="创建时间"
@@ -115,14 +110,11 @@ class Feed(RSSHubModel, table=True):
     state: int = Field(default=1, description="Feed状态: 0=停用, 1=启用")
     link: str = Field(max_length=4096, unique=True, description="Feed链接")
     title: str = Field(max_length=1024, description="Feed标题")
-    interval: int | None = Field(default=None, description="监控间隔")
     entry_hashes: list | None = Field(
         default=None, sa_column=Column(JSON), description="条目哈希"
     )
     etag: str | None = Field(default=None, max_length=128, description="ETag")
     last_modified: datetime | None = Field(default=None, description="最后修改时间")
-    error_count: int = Field(default=0, description="错误计数")
-    next_check_time: datetime | None = Field(default=None, description="下次检查时间")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(
@@ -143,8 +135,8 @@ class Sub(RSSHubModel, table=True):
     user_id: str = Field(foreign_key="rsshub_user.id", description="用户ID")
     feed_id: int = Field(foreign_key="rsshub_feed.id", description="FeedID")
 
-    title: str | None = Field(default=None, max_length=1024, description="订阅标题")
-    tags: str | None = Field(default=None, max_length=255, description="标签")
+    title: str = Field(default="", max_length=1024, description="订阅标题")
+    tags: str = Field(default="", max_length=255, description="标签")
     target_session: str | None = Field(
         default=None,
         max_length=255,
@@ -157,6 +149,7 @@ class Sub(RSSHubModel, table=True):
     )
 
     interval: int | None = Field(default=None, description="监控间隔")
+    next_check_time: datetime | None = Field(default=None, description="下次检查时间")
     notify: int = Field(default=INHERIT_VALUE, description="是否通知")
     send_mode: int = Field(default=INHERIT_VALUE, description="发送模式")
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
@@ -167,6 +160,14 @@ class Sub(RSSHubModel, table=True):
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
     style: int = Field(default=INHERIT_VALUE, description="样式")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
+    translate: int = Field(default=INHERIT_VALUE, description="翻译")
+    translate_target_lang: str | None = Field(
+        default=None, max_length=16, description="翻译目标语言"
+    )
+    use_sub_config: bool = Field(
+        default=False,
+        description="是否使用订阅自身配置: true=使用Sub表, false=继承上层",
+    )
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(
@@ -178,88 +179,85 @@ class Sub(RSSHubModel, table=True):
     feed: "Feed" = Relationship(back_populates="subs")
 
 
-class MonitorSchedule(RSSHubModel, table=True):
-    """Per-subscription monitor schedule state for interval-based polling."""
+class TranslationCache(RSSHubModel, table=True):
+    """Translation cache for RSS entries."""
 
-    __tablename__ = "rsshub_monitor_schedule"
-    sub_id: int = Field(default=None, primary_key=True, description="Subscription ID")
-    next_check_time: datetime | None = Field(
-        default=None, description="Next check time"
-    )
-    error_count: int = Field(default=0, description="Consecutive error count")
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
-    )
-
-
-class FailedNotification(RSSHubModel, table=True):
-    """Failed notification queue for retry when platform is unavailable."""
-
-    __tablename__ = "rsshub_failed_notification"
+    __tablename__ = "rsshub_translation_cache"
     id: int | None = Field(default=None, primary_key=True)
-    sub_id: int = Field(foreign_key="rsshub_sub.id", description="Subscription ID")
-    user_id: str = Field(foreign_key="rsshub_user.id", description="User ID")
+    hash: str = Field(max_length=64, unique=True, index=True, description="原文哈希")
+    provider: str = Field(max_length=32, description="翻译器类型")
+    target_lang: str = Field(max_length=16, description="目标语言")
+    translated_text: str = Field(default="", description="翻译后的文本")
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, description="创建时间"
+    )
 
-    # Message content (JSON serialized)
-    content: str = Field(default="", description="Message content")
+
+class PushHistory(RSSHubModel, table=True):
+    """推送历史记录表，记录每次推送的完整信息和状态。"""
+
+    __tablename__ = "rsshub_push_history"
+    id: int | None = Field(default=None, primary_key=True)
+    sub_id: int = Field(foreign_key="rsshub_sub.id", description="订阅ID")
+    user_id: str = Field(foreign_key="rsshub_user.id", description="用户ID")
+    feed_id: int = Field(foreign_key="rsshub_feed.id", description="FeedID")
+
+    # 推送内容
+    content: str = Field(default="", description="格式化后的消息内容")
     media_urls: list[str] | None = Field(
-        default=None, sa_column=Column(JSON), description="Media URLs"
-    )
-    entry_title: str | None = Field(
-        default=None, max_length=1024, description="Entry title"
-    )
-    entry_link: str | None = Field(
-        default=None, max_length=4096, description="Entry link"
+        default=None, sa_column=Column(JSON), description="媒体URL列表"
     )
 
-    # Context info
-    feed_title: str | None = Field(
-        default=None, max_length=1024, description="Feed title"
-    )
-    feed_link: str | None = Field(
-        default=None, max_length=4096, description="Feed link"
-    )
+    # 条目信息
+    entry_title: str = Field(default="", max_length=1024, description="条目标题")
+    entry_link: str = Field(default="", max_length=4096, description="条目链接")
+    entry_guid: str | None = Field(default=None, max_length=512, description="条目GUID")
+
+    # Feed信息
+    feed_title: str = Field(default="", max_length=1024, description="Feed标题")
+    feed_link: str = Field(default="", max_length=4096, description="Feed链接")
+
+    # 推送目标
     platform_name: str | None = Field(
-        default=None, max_length=64, description="Platform name"
+        default=None, max_length=64, description="平台名称"
     )
     target_session: str | None = Field(
-        default=None, max_length=255, description="Target session"
+        default=None, max_length=255, description="目标会话"
     )
 
-    # Options (JSON serialized)
-    options: dict | None = Field(
-        default=None, sa_column=Column(JSON), description="Subscription options"
+    # 推送状态
+    status: str | None = Field(
+        default=None, max_length=16, description="状态: pending/success/failed"
     )
 
-    # Retry tracking
-    retry_count: int = Field(default=0, description="Retry attempts")
+    # 重试机制
+    retry_count: int = Field(default=0, description="重试次数")
+    max_retries: int = Field(default=3, description="最大重试次数")
     fail_reason: str | None = Field(
-        default=None, max_length=255, description="Last failure reason"
+        default=None, max_length=512, description="失败原因"
     )
+
+    # 时间戳
     created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="First failure time"
+        default_factory=datetime.utcnow, description="创建时间"
     )
     updated_at: datetime = Field(
         default_factory=datetime.utcnow,
         sa_column_kwargs={"onupdate": datetime.utcnow},
-        description="Last retry time",
+        description="更新时间",
     )
+    completed_at: datetime | None = Field(default=None, description="完成时间")
 
 
-class Option(RSSHubModel, table=True):
-    """选项模型，存储管理员设置的选项。"""
+class MigrationRecord(RSSHubModel, table=True):
+    """数据库迁移版本记录表，用于追踪已应用的迁移版本。"""
 
-    __tablename__ = "rsshub_option"
-    id: int | None = Field(default=None, primary_key=True)
-    key: str = Field(max_length=255, unique=True, description="选项键")
-    value: str | None = Field(default=None, description="选项值")
-
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        sa_column_kwargs={"onupdate": datetime.utcnow},
+    __tablename__ = "rsshub_migration_record"
+    version: str = Field(primary_key=True, max_length=32, description="迁移版本号")
+    applied_at: datetime = Field(
+        default_factory=datetime.utcnow, description="应用时间"
     )
+    description: str = Field(default="", max_length=256, description="迁移描述")
 
 
 _engine = None
@@ -280,7 +278,7 @@ async def init_db(db_path: str) -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(RSSHubModel.metadata.create_all)
-        await _ensure_schema_compat(conn)
+        await ensure_schema_compat(conn)
 
     logger.info(f"RSS数据库初始化完成: {db_path}")
 
@@ -303,308 +301,64 @@ def get_session() -> AsyncSession:
 def resolve_effective_options(
     sub: "Sub",
     user: "User",
+    cfg: object | None = None,
 ) -> dict[str, int | str | None]:
-    """解析订阅生效选项：订阅值优先，-100 继承用户默认。"""
-    options: dict[str, int | str | None] = {}
-    for key in EFFECTIVE_OPTION_KEYS:
-        sub_val = getattr(sub, key)
-        options[key] = getattr(user, key) if sub_val == INHERIT_VALUE else sub_val
-    return options
+    """解析订阅生效选项（三层配置继承架构）。
 
+    配置优先级：
+    1. 如果 sub.use_sub_config = True: 使用 Sub 表配置
+    2. 如果 sub.use_sub_config = False 且 user.use_user_config = True: 使用 User 表配置
+    3. 如果 sub.use_sub_config = False 且 user.use_user_config = False: 使用全局配置(cfg)
 
-async def _ensure_schema_compat(conn) -> None:
-    """为旧数据库补齐迁移过程尚未纳入的新增列，并处理 user_id 类型迁移。"""
+    Args:
+        sub: 订阅对象
+        user: 用户对象
+        cfg: 全局配置对象（ConfigProxy）
 
-    async def _has_column(table: str, column: str) -> bool:
-        rows = (await conn.exec_driver_sql(_sqlite_table_info_sql(table))).fetchall()
-        return any(row[1] == column for row in rows)
-
-    # 新增列兼容（旧版本迁移）
-    if not await _has_column("rsshub_sub", "target_session"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE rsshub_sub ADD COLUMN target_session TEXT"
-        )
-
-    if not await _has_column("rsshub_user", "default_target_session"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE rsshub_user ADD COLUMN default_target_session TEXT"
-        )
-
-    if not await _has_column("rsshub_user", "needs_binding_notice"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE rsshub_user ADD COLUMN needs_binding_notice INTEGER NOT NULL DEFAULT 0"
-        )
-
-    if not await _has_column("rsshub_sub", "platform_name"):
-        await conn.exec_driver_sql(
-            "ALTER TABLE rsshub_sub ADD COLUMN platform_name TEXT"
-        )
-
-    # User ID 类型迁移: INTEGER -> TEXT
-    await _migrate_user_id_to_text(conn)
-
-
-async def _migrate_user_id_to_text(conn) -> None:
-    """将 user_id 列从 INTEGER 迁移到 TEXT 类型。
-
-    SQLite 不支持直接 ALTER COLUMN，需要重建表。
-    迁移过程中会保留索引和触发器。
+    Returns:
+        生效的配置选项字典
     """
+    from ..config import cfg as global_cfg
 
-    async def _table_exists(table: str) -> bool:
-        result = await conn.exec_driver_sql(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
-        )
-        return result.fetchone() is not None
+    # 如果没有传入 cfg，使用全局 cfg
+    if cfg is None:
+        cfg = global_cfg
 
-    async def _get_indexes(table: str) -> list[dict]:
-        """获取表的所有索引定义（除主键索引外）。"""
-        result = await conn.exec_driver_sql(
-            "SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=?",
-            (table,),
-        )
-        rows = result.fetchall()
-        indexes = []
-        for row in rows:
-            name, sql = row[0], row[1]
-            # 跳过 SQLite 自动创建的索引（如 sqlite_autoindex_*）
-            if name and sql and not name.startswith("sqlite_autoindex"):
-                indexes.append({"name": name, "sql": sql})
-        return indexes
+    options: dict[str, int | str | None] = {}
 
-    async def _get_triggers(table: str) -> list[dict]:
-        """获取表的所有触发器定义。"""
-        result = await conn.exec_driver_sql(
-            "SELECT name, sql FROM sqlite_master WHERE type='trigger' AND tbl_name=?",
-            (table,),
-        )
-        rows = result.fetchall()
-        return [{"name": row[0], "sql": row[1]} for row in rows if row[1]]
+    # notify 不受 use_sub_config 影响，始终从下到上级联继承
+    if sub.notify != INHERIT_VALUE:
+        options["notify"] = sub.notify
+    elif user.use_user_config:
+        options["notify"] = user.notify
+    elif cfg and hasattr(cfg, "notify"):
+        options["notify"] = cfg.notify
+    else:
+        options["notify"] = user.notify
 
-    # 检查 rsshub_user.id 列类型
-    if not await _table_exists("rsshub_user"):
-        return
-
-    user_id_type = await _get_column_type(conn, "rsshub_user", "id")
-    if _is_text_compatible_sqlite_type(user_id_type):
-        # TEXT affinity types in SQLite are already compatible (e.g. TEXT/VARCHAR).
-        return
-
-    if user_id_type != "INTEGER":
-        logger.warning(f"rsshub_user.id 列类型为 {user_id_type}，无法自动迁移到 TEXT")
-        return
-
-    logger.info("开始迁移 user_id 从 INTEGER 到 TEXT...")
-
-    # 备份索引和触发器
-    user_indexes = await _get_indexes("rsshub_user")
-    sub_indexes = await _get_indexes("rsshub_sub")
-    failed_indexes = await _get_indexes("rsshub_failed_notification")
-
-    user_triggers = await _get_triggers("rsshub_user")
-    sub_triggers = await _get_triggers("rsshub_sub")
-    failed_triggers = await _get_triggers("rsshub_failed_notification")
-
-    logger.debug(
-        f"备份索引: user={len(user_indexes)}, sub={len(sub_indexes)}, failed={len(failed_indexes)}"
-    )
-    logger.debug(
-        f"备份触发器: user={len(user_triggers)}, sub={len(sub_triggers)}, failed={len(failed_triggers)}"
-    )
-
-    # conn 已从 _engine.begin() 传入，已在事务中，直接执行 SQL
-    try:
-        # === 迁移 rsshub_user 表 ===
-        # 1. 创建新表（从当前表结构复制）
-        await conn.exec_driver_sql("""
-            CREATE TABLE rsshub_user_new (
-                id TEXT PRIMARY KEY,
-                state INTEGER NOT NULL DEFAULT 0,
-                lang TEXT NOT NULL DEFAULT 'zh-Hans',
-                sub_limit INTEGER,
-                interval INTEGER,
-                notify INTEGER NOT NULL DEFAULT 1,
-                send_mode INTEGER NOT NULL DEFAULT 0,
-                length_limit INTEGER NOT NULL DEFAULT 0,
-                link_preview INTEGER NOT NULL DEFAULT 0,
-                display_author INTEGER NOT NULL DEFAULT 0,
-                display_via INTEGER NOT NULL DEFAULT 0,
-                display_title INTEGER NOT NULL DEFAULT 0,
-                display_entry_tags INTEGER NOT NULL DEFAULT -1,
-                style INTEGER NOT NULL DEFAULT 0,
-                display_media INTEGER NOT NULL DEFAULT 0,
-                default_target_session TEXT,
-                needs_binding_notice INTEGER NOT NULL DEFAULT 0,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-
-        # 2. 迁移数据
-        await conn.exec_driver_sql("""
-            INSERT INTO rsshub_user_new
-            SELECT CAST(id AS TEXT), state, lang, sub_limit, interval, notify, send_mode,
-                   length_limit, link_preview, display_author, display_via, display_title,
-                   display_entry_tags, style, display_media, default_target_session,
-                   needs_binding_notice, created_at, updated_at
-            FROM rsshub_user
-        """)
-
-        # 3. 删除旧表，重命名新表
-        await conn.exec_driver_sql("DROP TABLE rsshub_user")
-        await conn.exec_driver_sql("ALTER TABLE rsshub_user_new RENAME TO rsshub_user")
-
-        # 4. 重建索引
-        for idx in user_indexes:
-            try:
-                await conn.exec_driver_sql(idx["sql"])
-                logger.debug(f"重建索引: {idx['name']}")
-            except Exception as e:
-                logger.warning(f"重建索引 {idx['name']} 失败: {e}")
-
-        # 5. 重建触发器
-        for trig in user_triggers:
-            try:
-                await conn.exec_driver_sql(trig["sql"])
-                logger.debug(f"重建触发器: {trig['name']}")
-            except Exception as e:
-                logger.warning(f"重建触发器 {trig['name']} 失败: {e}")
-
-        logger.info("rsshub_user 表迁移完成")
-
-        # === 迁移 rsshub_sub 表 ===
-        # 1. 创建新表
-        await conn.exec_driver_sql("""
-            CREATE TABLE rsshub_sub_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                state INTEGER NOT NULL DEFAULT 1,
-                user_id TEXT NOT NULL,
-                feed_id INTEGER NOT NULL,
-                title TEXT,
-                tags TEXT,
-                target_session TEXT,
-                platform_name TEXT,
-                interval INTEGER,
-                notify INTEGER NOT NULL DEFAULT -100,
-                send_mode INTEGER NOT NULL DEFAULT -100,
-                length_limit INTEGER NOT NULL DEFAULT -100,
-                link_preview INTEGER NOT NULL DEFAULT -100,
-                display_author INTEGER NOT NULL DEFAULT -100,
-                display_via INTEGER NOT NULL DEFAULT -100,
-                display_title INTEGER NOT NULL DEFAULT -100,
-                display_entry_tags INTEGER NOT NULL DEFAULT -100,
-                style INTEGER NOT NULL DEFAULT -100,
-                display_media INTEGER NOT NULL DEFAULT -100,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES rsshub_user (id),
-                FOREIGN KEY (feed_id) REFERENCES rsshub_feed (id)
-            )
-        """)
-
-        # 2. 迁移数据
-        await conn.exec_driver_sql("""
-            INSERT INTO rsshub_sub_new
-            SELECT id, state, CAST(user_id AS TEXT), feed_id, title, tags, target_session,
-                   platform_name, interval, notify, send_mode, length_limit, link_preview,
-                   display_author, display_via, display_title, display_entry_tags, style,
-                   display_media, created_at, updated_at
-            FROM rsshub_sub
-        """)
-
-        # 3. 删除旧表，重命名新表
-        await conn.exec_driver_sql("DROP TABLE rsshub_sub")
-        await conn.exec_driver_sql("ALTER TABLE rsshub_sub_new RENAME TO rsshub_sub")
-
-        # 4. 重建索引
-        for idx in sub_indexes:
-            try:
-                await conn.exec_driver_sql(idx["sql"])
-                logger.debug(f"重建索引: {idx['name']}")
-            except Exception as e:
-                logger.warning(f"重建索引 {idx['name']} 失败: {e}")
-
-        # 5. 重建触发器
-        for trig in sub_triggers:
-            try:
-                await conn.exec_driver_sql(trig["sql"])
-                logger.debug(f"重建触发器: {trig['name']}")
-            except Exception as e:
-                logger.warning(f"重建触发器 {trig['name']} 失败: {e}")
-
-        logger.info("rsshub_sub 表迁移完成")
-
-        # === 迁移 rsshub_failed_notification 表 ===
-        # 1. 创建新表
-        await conn.exec_driver_sql("""
-            CREATE TABLE rsshub_failed_notification_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                sub_id INTEGER NOT NULL,
-                user_id TEXT NOT NULL,
-                content TEXT NOT NULL DEFAULT '',
-                media_urls TEXT,
-                entry_title TEXT,
-                entry_link TEXT,
-                feed_title TEXT,
-                feed_link TEXT,
-                platform_name TEXT,
-                target_session TEXT,
-                options TEXT,
-                retry_count INTEGER NOT NULL DEFAULT 0,
-                fail_reason TEXT,
-                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (sub_id) REFERENCES rsshub_sub (id),
-                FOREIGN KEY (user_id) REFERENCES rsshub_user (id)
-            )
-        """)
-
-        # 2. 迁移数据
-        await conn.exec_driver_sql("""
-            INSERT INTO rsshub_failed_notification_new
-            SELECT id, sub_id, CAST(user_id AS TEXT), content, media_urls, entry_title,
-                   entry_link, feed_title, feed_link, platform_name, target_session,
-                   options, retry_count, fail_reason, created_at, updated_at
-            FROM rsshub_failed_notification
-        """)
-
-        # 3. 删除旧表，重命名新表
-        await conn.exec_driver_sql("DROP TABLE rsshub_failed_notification")
-        await conn.exec_driver_sql(
-            "ALTER TABLE rsshub_failed_notification_new RENAME TO rsshub_failed_notification"
-        )
-
-        # 4. 重建索引
-        for idx in failed_indexes:
-            try:
-                await conn.exec_driver_sql(idx["sql"])
-                logger.debug(f"重建索引: {idx['name']}")
-            except Exception as e:
-                logger.warning(f"重建索引 {idx['name']} 失败: {e}")
-
-        # 5. 重建触发器
-        for trig in failed_triggers:
-            try:
-                await conn.exec_driver_sql(trig["sql"])
-                logger.debug(f"重建触发器: {trig['name']}")
-            except Exception as e:
-                logger.warning(f"重建触发器 {trig['name']} 失败: {e}")
-
-        logger.info("rsshub_failed_notification 表迁移完成")
-
-    except Exception:
-        # 异常由外层事务处理回滚
-        logger.error("user_id 类型迁移失败")
-        raise
-
-    logger.info("user_id 类型迁移完成 (INTEGER -> TEXT)")
+    for key in EFFECTIVE_OPTION_KEYS:
+        if sub.use_sub_config:
+            # 使用订阅自身配置
+            options[key] = getattr(sub, key)
+        elif user.use_user_config:
+            # 使用用户配置
+            options[key] = getattr(user, key)
+        else:
+            # 使用全局配置
+            if cfg and hasattr(cfg, key):
+                options[key] = getattr(cfg, key)
+            else:
+                # 如果全局配置没有，使用用户配置作为回退
+                options[key] = getattr(user, key)
+    return options
 
 
 class SubMethods:
     """Sub辅助方法。"""
 
-    @staticmethod
+    @classmethod
     async def create(
+        cls,
         user_id: str,
         feed_id: int,
         target_session: str | None = None,
@@ -624,12 +378,13 @@ class SubMethods:
 
     @staticmethod
     async def get_by_user(user_id: str) -> list[Sub]:
+        """获取用户的所有订阅（包括禁用状态）"""
         async with get_session() as session:
             from sqlmodel import select
 
             stmt = (
                 select(Sub)
-                .where(Sub.user_id == user_id, Sub.state == 1)
+                .where(Sub.user_id == user_id)
                 .options(selectinload(Sub.feed))
                 .order_by(Sub.id.asc())
             )
@@ -694,21 +449,22 @@ class SubMethods:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    @staticmethod
-    async def get_by_id(sub_id: int) -> Sub | None:
+    @classmethod
+    async def get_by_id(cls, sub_id: int) -> Sub | None:
+        """根据ID查询订阅（包含禁用状态的订阅）"""
         async with get_session() as session:
             from sqlmodel import select
 
             stmt = (
                 select(Sub)
-                .where(Sub.id == sub_id, Sub.state == 1)
+                .where(Sub.id == sub_id)
                 .options(selectinload(Sub.feed), selectinload(Sub.user))
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
-    @staticmethod
-    async def get_by_ids(sub_ids: list[int]) -> dict[int, Sub]:
+    @classmethod
+    async def get_by_ids(cls, sub_ids: list[int]) -> dict[int, Sub]:
         """Batch load subscriptions by IDs to avoid N+1 queries.
 
         Args:
@@ -723,7 +479,11 @@ class SubMethods:
         async with get_session() as session:
             from sqlmodel import select
 
-            stmt = select(Sub).where(Sub.id.in_(sub_ids), Sub.state == 1)
+            stmt = (
+                select(Sub)
+                .where(Sub.id.in_(sub_ids), Sub.state == 1)
+                .options(selectinload(Sub.feed), selectinload(Sub.user))
+            )
             result = await session.execute(stmt)
             subs = result.scalars().all()
             return {sub.id: sub for sub in subs if sub.id is not None}
@@ -765,10 +525,9 @@ class SubMethods:
         feed_link: str,
         target_session: str | None = None,
     ) -> Sub | None:
-        """Get subscription by platform and feed link (for shared data mode).
+        """Get subscription by platform and feed link.
 
-        When platform_shared_data is enabled, subscriptions are shared across
-        all BOTs in the same platform.
+        This method can be used to query subscriptions by platform name and URL.
         """
         async with get_session() as session:
             from sqlmodel import select
@@ -855,10 +614,6 @@ class SubMethods:
             db_sub = await session.get(Sub, sub.id)
             if db_sub:
                 await session.delete(db_sub)
-                if db_sub.id is not None:
-                    monitor = await session.get(MonitorSchedule, db_sub.id)
-                    if monitor is not None:
-                        await session.delete(monitor)
                 await session.commit()
 
     @staticmethod
@@ -872,10 +627,6 @@ class SubMethods:
             count = len(subs)
             for sub in subs:
                 await session.delete(sub)
-                if sub.id is not None:
-                    monitor = await session.get(MonitorSchedule, sub.id)
-                    if monitor is not None:
-                        await session.delete(monitor)
             if count > 0:
                 await session.commit()
             return count
@@ -902,8 +653,8 @@ class SubMethods:
 class UserMethods:
     """User辅助方法。"""
 
-    @staticmethod
-    async def get_or_create(user_id: str) -> User:
+    @classmethod
+    async def get_or_create(cls, user_id: str) -> User:
         async with get_session() as session:
             user = await session.get(User, user_id)
             if not user:
@@ -954,8 +705,8 @@ class UserMethods:
 class FeedMethods:
     """Feed辅助方法。"""
 
-    @staticmethod
-    async def get_or_create(link: str, title: str = "") -> Feed:
+    @classmethod
+    async def get_or_create(cls, link: str, title: str = "") -> Feed:
         async with get_session() as session:
             from sqlmodel import select
 
@@ -970,110 +721,130 @@ class FeedMethods:
                 await session.refresh(feed)
             return feed
 
-    @staticmethod
-    async def get_by_id(feed_id: int) -> Feed | None:
+    @classmethod
+    async def get_by_id(cls, feed_id: int) -> Feed | None:
         async with get_session() as session:
             return await session.get(Feed, feed_id)
 
 
-class MonitorScheduleMethods:
-    """MonitorSchedule helper methods."""
+class PushHistoryMethods:
+    """推送历史记录管理方法。"""
 
-    @staticmethod
-    async def get(sub_id: int) -> MonitorSchedule | None:
-        async with get_session() as session:
-            return await session.get(MonitorSchedule, sub_id)
-
-    @staticmethod
-    async def get_or_create(sub_id: int) -> MonitorSchedule:
-        async with get_session() as session:
-            row = await session.get(MonitorSchedule, sub_id)
-            if row is None:
-                row = MonitorSchedule(sub_id=sub_id)
-                session.add(row)
-                await session.commit()
-                await session.refresh(row)
-            return row
-
-    @staticmethod
-    async def upsert(
-        sub_id: int,
-        *,
-        next_check_time: datetime | None,
-        error_count: int,
-    ) -> MonitorSchedule:
-        async with get_session() as session:
-            row = await session.get(MonitorSchedule, sub_id)
-            if row is None:
-                row = MonitorSchedule(sub_id=sub_id)
-            row.next_check_time = next_check_time
-            row.error_count = error_count
-            session.add(row)
-            await session.commit()
-            await session.refresh(row)
-            return row
-
-    @staticmethod
-    async def delete(sub_id: int) -> None:
-        async with get_session() as session:
-            row = await session.get(MonitorSchedule, sub_id)
-            if row is not None:
-                await session.delete(row)
-                await session.commit()
-
-
-class FailedNotificationMethods:
-    """FailedNotification helper methods for retry queue management."""
-
-    @staticmethod
-    async def enqueue(
+    @classmethod
+    async def create(
+        cls,
         sub_id: int,
         user_id: str,
+        feed_id: int,
         content: str,
         media_urls: list[str] | None = None,
-        entry_title: str | None = None,
-        entry_link: str | None = None,
-        feed_title: str | None = None,
-        feed_link: str | None = None,
+        entry_title: str = "",
+        entry_link: str = "",
+        entry_guid: str | None = None,
+        feed_title: str = "",
+        feed_link: str = "",
         platform_name: str | None = None,
         target_session: str | None = None,
-        options: dict | None = None,
-        fail_reason: str | None = None,
-    ) -> FailedNotification:
-        """Add a failed notification to the queue."""
+        status: str = "pending",
+        max_retries: int = 3,
+    ) -> PushHistory:
+        """创建推送历史记录。"""
         async with get_session() as session:
-            notif = FailedNotification(
+            history = PushHistory(
                 sub_id=sub_id,
                 user_id=user_id,
+                feed_id=feed_id,
                 content=content,
                 media_urls=media_urls or [],
                 entry_title=entry_title,
                 entry_link=entry_link,
+                entry_guid=entry_guid,
                 feed_title=feed_title,
                 feed_link=feed_link,
                 platform_name=platform_name,
                 target_session=target_session,
-                options=options or {},
-                fail_reason=fail_reason,
+                status=status,
+                max_retries=max_retries,
             )
-            session.add(notif)
+            session.add(history)
             await session.commit()
-            await session.refresh(notif)
-            return notif
+            await session.refresh(history)
+            return history
+
+    @classmethod
+    async def update_status(
+        cls,
+        history_id: int,
+        status: str,
+        fail_reason: str | None = None,
+        http_status: int | None = None,
+        response_detail: str | None = None,
+    ) -> PushHistory | None:
+        """更新推送状态。
+
+        Args:
+            history_id: 推送历史记录ID
+            status: 推送状态 (success/failed/pending)
+            fail_reason: 失败原因（可选）
+            http_status: HTTP状态码（可选，用于兼容性）
+            response_detail: 响应详情（可选，用于兼容性）
+        """
+        from datetime import datetime
+
+        async with get_session() as session:
+            history = await session.get(PushHistory, history_id)
+            if not history:
+                return None
+
+            history.status = status
+            if fail_reason is not None:
+                history.fail_reason = fail_reason
+            # http_status and response_detail are accepted for compatibility
+            # but not stored in current schema (no corresponding columns)
+
+            if status in ("success", "failed"):
+                history.completed_at = datetime.utcnow()
+
+            session.add(history)
+            await session.commit()
+            await session.refresh(history)
+            return history
+
+    @classmethod
+    async def increment_retry(
+        cls,
+        history_id: int,
+        fail_reason: str | None = None,
+    ) -> PushHistory | None:
+        """增加重试次数并更新失败原因。"""
+        async with get_session() as session:
+            history = await session.get(PushHistory, history_id)
+            if not history:
+                return None
+
+            history.retry_count += 1
+            if fail_reason:
+                history.fail_reason = fail_reason
+            session.add(history)
+            await session.commit()
+            await session.refresh(history)
+            return history
 
     @staticmethod
-    async def get_pending(
+    async def get_pending_for_retry(
         limit: int = 100,
-        max_retries: int = 3,
-    ) -> list[FailedNotification]:
-        """Get pending failed notifications for retry."""
+    ) -> list[PushHistory]:
+        """获取需要重试的推送记录（status=failed 且 retry_count < max_retries）。"""
         async with get_session() as session:
             from sqlmodel import select
 
             stmt = (
-                select(FailedNotification)
-                .where(FailedNotification.retry_count < max_retries)
-                .order_by(FailedNotification.created_at.asc())
+                select(PushHistory)
+                .where(
+                    PushHistory.status == "failed",
+                    PushHistory.retry_count < PushHistory.max_retries,
+                )
+                .order_by(PushHistory.created_at.asc())
                 .limit(limit)
             )
             result = await session.execute(stmt)
@@ -1081,121 +852,36 @@ class FailedNotificationMethods:
 
     @staticmethod
     async def get_by_sub(
-        sub_id: int, limit: int | None = None
-    ) -> list[FailedNotification]:
-        """Get failed notifications for a subscription, ordered by creation time.
-
-        Args:
-            sub_id: Subscription ID
-            limit: Maximum number of notifications to fetch (for bounded processing)
-        """
+        sub_id: int,
+        limit: int | None = None,
+        status: str | None = None,
+    ) -> list[PushHistory]:
+        """获取订阅的推送历史。"""
         async with get_session() as session:
             from sqlmodel import select
 
-            stmt = (
-                select(FailedNotification)
-                .where(FailedNotification.sub_id == sub_id)
-                .order_by(FailedNotification.created_at.asc())
-            )
-            if limit is not None and limit > 0:
+            stmt = select(PushHistory).where(PushHistory.sub_id == sub_id)
+            if status:
+                stmt = stmt.where(PushHistory.status == status)
+            stmt = stmt.order_by(PushHistory.created_at.desc())
+            if limit:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
     @staticmethod
-    async def count_by_sub(sub_id: int) -> int:
-        """Count failed notifications for a subscription."""
-        async with get_session() as session:
-            from sqlmodel import func, select
+    async def delete_old_records(days: int = 30) -> int:
+        """删除指定天数前的历史记录。"""
+        from datetime import datetime
 
+        from sqlalchemy import delete
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        async with get_session() as session:
             stmt = (
-                select(func.count())
-                .select_from(FailedNotification)
-                .where(FailedNotification.sub_id == sub_id)
-            )
-            result = await session.execute(stmt)
-            return int(result.scalar_one() or 0)
-
-    @staticmethod
-    async def is_at_capacity(sub_id: int, capacity: int) -> bool:
-        """Check if the failed notification queue is at capacity.
-
-        Uses a cheaper existence check (LIMIT capacity+1) instead of full COUNT
-        to reduce DB load under high volume.
-
-        Args:
-            sub_id: Subscription ID
-            capacity: Maximum capacity
-
-        Returns:
-            True if queue has reached or exceeded capacity
-        """
-        async with get_session() as session:
-            from sqlmodel import select
-
-            stmt = (
-                select(FailedNotification.id)
-                .where(FailedNotification.sub_id == sub_id)
-                .limit(capacity + 1)
-            )
-            result = await session.execute(stmt)
-            rows = result.all()
-            return len(rows) >= capacity
-
-    @staticmethod
-    async def count_by_sub_ids(sub_ids: list[int]) -> dict[int, int]:
-        """Count failed notifications for multiple subscriptions in a single query.
-
-        Returns a mapping of {sub_id: count} to avoid N+1 query patterns.
-        """
-        if not sub_ids:
-            return {}
-
-        async with get_session() as session:
-            from sqlmodel import func, select
-
-            stmt = (
-                select(
-                    FailedNotification.sub_id,
-                    func.count().label("count"),
-                )
-                .where(FailedNotification.sub_id.in_(sub_ids))
-                .group_by(FailedNotification.sub_id)
-            )
-            result = await session.execute(stmt)
-            rows = result.all()
-            return {row[0]: row[1] for row in rows}
-
-    @staticmethod
-    async def increment_retry(notif_id: int, fail_reason: str | None = None) -> None:
-        """Increment retry count for a notification."""
-        async with get_session() as session:
-            notif = await session.get(FailedNotification, notif_id)
-            if notif:
-                notif.retry_count += 1
-                if fail_reason:
-                    notif.fail_reason = fail_reason
-                session.add(notif)
-                await session.commit()
-
-    @staticmethod
-    async def delete(notif_id: int) -> None:
-        """Delete a notification from the queue (on success or max retries)."""
-        async with get_session() as session:
-            notif = await session.get(FailedNotification, notif_id)
-            if notif:
-                await session.delete(notif)
-                await session.commit()
-
-    @staticmethod
-    async def delete_by_sub(sub_id: int) -> int:
-        """Delete all notifications for a subscription using SQL DELETE WHERE."""
-        async with get_session() as session:
-            from sqlalchemy import delete
-
-            stmt = (
-                delete(FailedNotification)
-                .where(FailedNotification.sub_id == sub_id)
+                delete(PushHistory)
+                .where(PushHistory.created_at < cutoff_date)
                 .execution_options(synchronize_session=False)
             )
             result = await session.execute(stmt)
@@ -1203,47 +889,129 @@ class FailedNotificationMethods:
             return result.rowcount or 0
 
     @staticmethod
-    async def delete_exceeded(max_retries: int = 3) -> int:
-        """Delete notifications that exceeded max retries using SQL DELETE WHERE."""
-        async with get_session() as session:
-            from sqlalchemy import delete
-
-            stmt = (
-                delete(FailedNotification)
-                .where(FailedNotification.retry_count >= max_retries)
-                .execution_options(synchronize_session=False)
-            )
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount or 0
-
-    @staticmethod
-    async def get_stats(max_retries: int = 3) -> dict:
-        """Get queue statistics.
-
-        Args:
-            max_retries: Maximum retry count threshold. Notifications with
-                        retry_count < max_retries are considered pending.
-                        Should match the system's configured max retries.
-        """
+    async def get_stats() -> dict[str, int]:
+        """获取推送统计信息。"""
         async with get_session() as session:
             from sqlmodel import func, select
 
-            total_stmt = select(func.count()).select_from(FailedNotification)
+            # 总数
+            total_stmt = select(func.count()).select_from(PushHistory)
             total = (await session.execute(total_stmt)).scalar_one() or 0
 
-            pending_stmt = (
-                select(func.count())
-                .select_from(FailedNotification)
-                .where(FailedNotification.retry_count < max_retries)
-            )
-            pending = (await session.execute(pending_stmt)).scalar_one() or 0
+            # 按状态统计
+            status_counts = {}
+            for status in ["pending", "success", "failed"]:
+                stmt = (
+                    select(func.count())
+                    .select_from(PushHistory)
+                    .where(PushHistory.status == status)
+                )
+                count = (await session.execute(stmt)).scalar_one() or 0
+                status_counts[status] = int(count)
 
             return {
                 "total": int(total),
-                "pending": int(pending),
-                "exhausted": int(total) - int(pending),
+                **status_counts,
             }
+
+
+class TranslationCacheMethods:
+    """Translation cache helper methods."""
+
+    @staticmethod
+    async def get_by_hash(hash: str) -> TranslationCache | None:
+        """Get cached translation by hash."""
+        async with get_session() as session:
+            from sqlmodel import select
+
+            stmt = select(TranslationCache).where(TranslationCache.hash == hash)
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    @classmethod
+    async def save(
+        cls,
+        hash: str,
+        provider: str,
+        target_lang: str,
+        translated_text: str,
+    ) -> TranslationCache:
+        """Save or update translation cache."""
+        async with get_session() as session:
+            from sqlmodel import select
+
+            # Try to get existing
+            stmt = select(TranslationCache).where(TranslationCache.hash == hash)
+            result = await session.execute(stmt)
+            cache = result.scalar_one_or_none()
+
+            if cache:
+                # Update existing
+                cache.translated_text = translated_text
+                cache.provider = provider
+                cache.target_lang = target_lang
+            else:
+                # Create new
+                cache = TranslationCache(
+                    hash=hash,
+                    provider=provider,
+                    target_lang=target_lang,
+                    translated_text=translated_text,
+                )
+                session.add(cache)
+
+            await session.commit()
+            await session.refresh(cache)
+            return cache
+
+    @staticmethod
+    async def delete_by_hash(hash: str) -> bool:
+        """Delete cache entry by hash."""
+        async with get_session() as session:
+            cache = await session.get(TranslationCache, hash)
+            if cache:
+                await session.delete(cache)
+                await session.commit()
+                return True
+            return False
+
+    @staticmethod
+    async def cleanup_old_entries(limit: int = 5000) -> int:
+        """Clean up old translation cache entries beyond limit.
+
+        Args:
+            limit: Maximum number of entries to keep
+
+        Returns:
+            Number of deleted entries
+        """
+        async with get_session() as session:
+            from sqlalchemy import delete
+            from sqlmodel import select
+
+            # Get count
+            count_stmt = select(func.count()).select_from(TranslationCache)
+            total = (await session.execute(count_stmt)).scalar_one() or 0
+
+            if total <= limit:
+                return 0
+
+            # Delete oldest entries
+            to_delete = total - limit
+            subq = (
+                select(TranslationCache.id)
+                .order_by(TranslationCache.created_at.asc())
+                .limit(to_delete)
+                .subquery()
+            )
+            delete_stmt = (
+                delete(TranslationCache)
+                .where(TranslationCache.id.in_(subq))
+                .execution_options(synchronize_session=False)
+            )
+            result = await session.execute(delete_stmt)
+            await session.commit()
+            return result.rowcount or 0
 
 
 class WebUIMethods:
@@ -1284,9 +1052,6 @@ class WebUIMethods:
             if row is None:
                 return False
             await session.delete(row)
-            monitor = await session.get(MonitorSchedule, sub_id)
-            if monitor is not None:
-                await session.delete(monitor)
             await session.commit()
             return True
 
@@ -1317,25 +1082,18 @@ Sub.resolve_effective_options = staticmethod(resolve_effective_options)
 Sub.list_for_webui = staticmethod(WebUIMethods.list_subscriptions)
 Sub.get_for_webui = staticmethod(WebUIMethods.get_subscription)
 Sub.delete_for_webui = staticmethod(WebUIMethods.delete_subscription)
-MonitorSchedule.get = staticmethod(MonitorScheduleMethods.get)
-MonitorSchedule.get_or_create = staticmethod(MonitorScheduleMethods.get_or_create)
-MonitorSchedule.upsert = staticmethod(MonitorScheduleMethods.upsert)
-MonitorSchedule.delete = staticmethod(MonitorScheduleMethods.delete)
-FailedNotification.enqueue = staticmethod(FailedNotificationMethods.enqueue)
-FailedNotification.get_pending = staticmethod(FailedNotificationMethods.get_pending)
-FailedNotification.get_by_sub = staticmethod(FailedNotificationMethods.get_by_sub)
-FailedNotification.get_count_by_sub = staticmethod(
-    FailedNotificationMethods.count_by_sub
+PushHistory.create = staticmethod(PushHistoryMethods.create)
+PushHistory.update_status = staticmethod(PushHistoryMethods.update_status)
+PushHistory.increment_retry = staticmethod(PushHistoryMethods.increment_retry)
+PushHistory.get_pending_for_retry = staticmethod(
+    PushHistoryMethods.get_pending_for_retry
 )
-FailedNotification.get_count_by_sub_ids = staticmethod(
-    FailedNotificationMethods.count_by_sub_ids
+PushHistory.get_by_sub = staticmethod(PushHistoryMethods.get_by_sub)
+PushHistory.delete_old_records = staticmethod(PushHistoryMethods.delete_old_records)
+PushHistory.get_stats = staticmethod(PushHistoryMethods.get_stats)
+TranslationCache.get_by_hash = staticmethod(TranslationCacheMethods.get_by_hash)
+TranslationCache.save = staticmethod(TranslationCacheMethods.save)
+TranslationCache.delete_by_hash = staticmethod(TranslationCacheMethods.delete_by_hash)
+TranslationCache.cleanup_old_entries = staticmethod(
+    TranslationCacheMethods.cleanup_old_entries
 )
-FailedNotification.increment_retry = staticmethod(
-    FailedNotificationMethods.increment_retry
-)
-FailedNotification.delete = staticmethod(FailedNotificationMethods.delete)
-FailedNotification.delete_by_sub = staticmethod(FailedNotificationMethods.delete_by_sub)
-FailedNotification.delete_exceeded = staticmethod(
-    FailedNotificationMethods.delete_exceeded
-)
-FailedNotification.get_stats = staticmethod(FailedNotificationMethods.get_stats)

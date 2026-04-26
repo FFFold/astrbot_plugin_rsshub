@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 import time
 from pathlib import Path
+from typing import Any
 
 from aiohttp import web
 
+from ..config import WebUIConfig
 from ..db import Sub
 from ..utils.log_utils import logger
 
@@ -16,23 +19,25 @@ from ..utils.log_utils import logger
 class RSSHubWebUI:
     """Simple web ui service for subscription management."""
 
-    def __init__(self, plugin, config) -> None:
+    def __init__(self, plugin, config: WebUIConfig) -> None:
         self._plugin = plugin
         self._config = config
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
         self._sessions: dict[str, float] = {}
+        self._login_attempts: dict[str, list[float]] = {}
+        self._cleanup_task: asyncio.Task | None = None
 
-        self._auth_enabled = bool(config.get("auth_enabled", True))
-        self._password = str(config.get("password", "") or "")
+        self._auth_enabled = config.auth_enabled
+        self._password = config.password
         if self._auth_enabled and not self._password:
-            self._password = f"{secrets.randbelow(900000) + 100000}"
-            logger.warning(f"RSSHub WebUI generated password: {self._password}")
+            self._password = secrets.token_urlsafe(24)
+            logger.warning(
+                "RSSHub WebUI: auto-generated password is active. "
+                "Set 'password' in config to use a known value."
+            )
 
-        self._session_timeout = max(
-            60,
-            int(config.get("session_timeout", 3600) or 3600),
-        )
+        self._session_timeout = max(60, config.session_timeout)
 
         web_dir = Path(__file__).parent
         self._template_path = web_dir / "templates" / "index.html"
@@ -54,14 +59,18 @@ class RSSHubWebUI:
         self._runner = web.AppRunner(app)
         await self._runner.setup()
 
-        host = str(self._config.get("host", "0.0.0.0") or "0.0.0.0")
-        port = int(self._config.get("port", 9191) or 9191)
+        host = self._config.host
+        port = self._config.port
 
         self._site = web.TCPSite(self._runner, host=host, port=port)
         await self._site.start()
+        self._cleanup_task = asyncio.create_task(self._session_cleanup_loop())
         logger.info(f"RSSHub WebUI started at http://{host}:{port}")
 
     async def stop(self) -> None:
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            self._cleanup_task = None
         if self._site is not None:
             await self._site.stop()
             self._site = None
@@ -70,7 +79,7 @@ class RSSHubWebUI:
             self._runner = None
 
     @staticmethod
-    def _json_response(data: dict, status: int = 200) -> web.Response:
+    def _json_response(data: dict[str, Any], status: int = 200) -> web.Response:
         return web.Response(
             text=json.dumps(data, ensure_ascii=False),
             status=status,
@@ -94,6 +103,34 @@ class RSSHubWebUI:
             return None
         return self._json_response({"ok": False, "error": "unauthorized"}, status=401)
 
+    _RATE_LIMIT_MAX = 5
+    _RATE_LIMIT_WINDOW = 60.0
+
+    def _check_rate_limit(self, ip: str) -> bool:
+        now = time.time()
+        attempts = self._login_attempts.get(ip, [])
+        attempts = [t for t in attempts if now - t < self._RATE_LIMIT_WINDOW]
+        self._login_attempts[ip] = attempts
+        return len(attempts) < self._RATE_LIMIT_MAX
+
+    async def _session_cleanup_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(300)
+                now = time.time()
+                expired = [k for k, v in self._sessions.items() if now > v]
+                for k in expired:
+                    del self._sessions[k]
+                stale_ips = [
+                    ip
+                    for ip, attempts in self._login_attempts.items()
+                    if not attempts or now - attempts[-1] > self._RATE_LIMIT_WINDOW
+                ]
+                for ip in stale_ips:
+                    del self._login_attempts[ip]
+        except asyncio.CancelledError:
+            pass
+
     async def _handle_index(self, request: web.Request) -> web.Response:
         html = self._template_path.read_text(encoding="utf-8")
         return web.Response(text=html, content_type="text/html")
@@ -101,6 +138,12 @@ class RSSHubWebUI:
     async def _handle_login(self, request: web.Request) -> web.Response:
         if not self._auth_enabled:
             return self._json_response({"ok": True, "token": "no-auth"})
+
+        ip = request.remote or "unknown"
+        if not self._check_rate_limit(ip):
+            return self._json_response(
+                {"ok": False, "error": "rate_limited"}, status=429
+            )
 
         try:
             data = await request.json()
@@ -110,6 +153,7 @@ class RSSHubWebUI:
             )
         password = str(data.get("password", ""))
         if not secrets.compare_digest(password, self._password):
+            self._login_attempts.setdefault(ip, []).append(time.time())
             return self._json_response(
                 {"ok": False, "error": "invalid_password"},
                 status=401,
@@ -195,10 +239,8 @@ class RSSHubWebUI:
         }
         str_keys = {"target_session", "tags", "title"}
 
-        plugin_config = getattr(self._plugin, "config", None)
-        minimal_interval = int(
-            getattr(plugin_config, "minimal_interval", 1) if plugin_config else 1
-        )
+        plugin_config = self._plugin.config
+        minimal_interval = plugin_config.minimal_interval
 
         for key, value in data.items():
             if key in int_keys:
@@ -248,18 +290,13 @@ class RSSHubWebUI:
         return self._json_response({"ok": True})
 
 
-def resolve_webui_config(config) -> dict:
-    default = {
-        "enabled": False,
-        "host": "0.0.0.0",
-        "port": 9191,
-        "auth_enabled": True,
-        "password": "",
-        "session_timeout": 3600,
-    }
-    webui_cfg = config.get("webui", default)
+def resolve_webui_config(config) -> WebUIConfig:
+    """Resolve webui configuration from astrbot config.
+
+    Returns:
+        WebUIConfig object
+    """
+    webui_cfg = config.get("webui", {})
     if isinstance(webui_cfg, dict):
-        merged = dict(default)
-        merged.update(webui_cfg)
-        return merged
-    return default
+        return WebUIConfig.from_dict(webui_cfg)
+    return WebUIConfig()  # 返回默认配置
