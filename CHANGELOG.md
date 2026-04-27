@@ -1,14 +1,20 @@
 # Changelog
 
+## [1.1.3] - 2026-04-28
+
+### Fixed
+
+- **优化 FFmpeg 查找策略**：`ensure_ffmpeg_ready` 方法现在优先使用系统 FFmpeg，以确保编解码器和协议的完整支持
+
+<details>
+<summary>历史更新记录</summary>
+
 ## [1.1.2] - 2026-04-26
 
 ### Fixed
 
 - **移除推送时图片上限**：
   - 解决 RSS 源包含大量图片时只推送 9-14 张的问题
-
-<details>
-<summary>历史更新记录</summary>
 
 ## [1.1.1] - 2026-04-26
 
@@ -90,8 +96,81 @@
   - v1.1.0 迁移：将 INHERIT_VALUE (-100) 替换为实际默认值
   - 完善数据库迁移逻辑，支持旧版本平滑升级
 
+### Added
+
+- **三层配置继承架构**：订阅级 → 用户级 → 全局级，开箱即用
+  - 新增 `/sub_set_user` / `/sub_get_user` - 用户配置管理
+  - 新增 `/sub_set_session` / `/sub_get_session` - 会话默认管理
+- **批量操作命令**：支持批量订阅、批量取消订阅、启用/禁用全部订阅
+- **RSS 内容自动翻译**：支持 Google（免费）和百度翻译
+- **订阅状态管理**：`/sub_state <ID> on/off` 快速启停单个订阅推送
+
+### Break Changed
+
+- **命令更名**：
+  - `/sub_set_default` → `/sub_set_user`
+  - `/sub_session_default_set` → `/sub_set_session`
+  - `/sub_session_default_get` → `/sub_get_session`
+  - `/sub_bind` → **已删除**
+- **`/sub_test` 命令重构**：参数从粒度模式改为条目编号范围，支持 URL 直接测试
+- **移除 `/rss_conf` 命令**：全局配置请前往 AstrBot 管理面板设置
+- **移除平台共享数据功能**：订阅数据不再支持跨 BOT 平台共享
+
+### Changed
+
+- **数据库表结构简化**：用 `rsshub_sub.next_check_time` 替代独立的 monitor_schedule 表
+- **监控调度优化**：按 (feed_id, interval) 分组以减少 HTTP 请求
+
+### Fixed
+
+- **修复 RSS 监控可能漏推的问题**：
+  - `history_entry_limit` 默认值从 `10` 改为 `0`（不限制）
+  - 修复时间解析失败导致的排序异常
+  - 修复数据库与推送非原子性问题（先推送成功后才更新数据库）
+- **修复批量操作 SQLAlchemy Greenlet 错误**
+- **修复媒体缓存 GC 与缓存写入并发竞争**
+- **修复 Telegram 媒体发送 `Wrong http url specified` 问题**
+- **修复 QQ Official Docker 场景下图片媒体路径被错误解析**
+- **修复同一 RSS 源在多平台/多会话并发订阅时的推送抢占**
+- **修复 `sub_list` 显示问题**：现在返回所有订阅（包括禁用状态）
+- **修复 `sub_test` URL 模式推送目标缺失**
+- **修复 aiocqhttp 合并转发失败时退化为直发文本消息的问题**
+
 ---
 
+
+### Refactored
+
+- **工具模块重构为 OOP 风格**：
+  - `utils/ffmpeg_helper.py` → `FFmpegTool` 类（静态方法）
+    - 删除无效的 `imageio_ffmpeg` try-except 导入
+    - 修复 `process` 变量未赋值警告（提前初始化为 `None`）
+    - 细化异常捕获：`except Exception` → `except (OSError, asyncio.TimeoutError, ValueError)`
+    - 删除 `process.kill()/wait()` 的冗余异常捕获
+    - 函数名变更：`transcode_video_to_mp4_for_qq()` → `transcode_to_mp4()`
+  - `utils/aio_helper.py` → `utils/concurrent.py`
+    - 删除旧文件，功能合并到 `concurrent.py`
+    - 提供 `AsyncTool` 静态方法类和装饰器
+  - `utils/locks.py` → 新增 `locked()` 装饰器（基于 SpEL 表达式）
+    - 支持 `@locked("#feed.id")`、`@locked("#user_id")` 等语法
+    - 保留向后兼容的便捷函数
+
+### Fixed
+
+- **修复批量操作 SQLAlchemy Greenlet 错误**：
+  - `batch_activate_subs` / `batch_deactivate_subs` 使用 `selectinload(Sub.feed)` 预加载 feed
+  - 避免访问 `sub.feed.title` 时触发懒加载导致的 greenlet 错误
+- **TranslationManager 单例化**：
+  - 避免每次通知都创建新的 TranslationManager 和 aiohttp.ClientSession
+  - 减少资源开销，提高性能
+- **修复 `sub_list` 显示问题**：
+  - `Sub.get_by_user()` 现在返回所有订阅（包括禁用状态）
+  - 添加会话状态统计：显示总订阅数、启用数、禁用数
+  - 每个订阅前添加状态图标（✓ 启用 / ✗ 禁用）
+- **修复 `sub_test` URL 模式推送目标缺失**：
+  - 创建临时 Sub 对象时添加 `target_session` 字段
+- **修复命令组语法**：
+  - `@filter.command(cmd_sub, sub_command="state")` → `@cmd_sub.command("state")`
 
 ## [1.0.20] - 2026-04-20
 
