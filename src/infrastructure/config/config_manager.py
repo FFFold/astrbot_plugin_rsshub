@@ -43,18 +43,12 @@ class BasicConfig(BaseModel):
         ]
     )
     failed_queue_capacity: int = Field(default=50, description="失败队列容量")
-    failed_queue_max_retries: int = Field(
-        default=3, description="失败队列最大重试次数"
-    )
+    failed_queue_max_retries: int = Field(default=3, description="失败队列最大重试次数")
     deduplicate_multi_bot: bool = Field(default=True, description="多BOT去重")
-    bootstrap_skip_history: bool = Field(
-        default=True, description="首轮跳过历史"
-    )
+    bootstrap_skip_history: bool = Field(default=True, description="首轮跳过历史")
     debug_payload: bool = Field(default=False, description="调试字段")
     history_entry_limit: int = Field(default=0, description="历史条目限制")
-    download_media_before_send: bool = Field(
-        default=False, description="先下载后发送"
-    )
+    download_media_before_send: bool = Field(default=False, description="先下载后发送")
     download_media_timeout: int = Field(default=30, description="媒体下载超时")
 
     @classmethod
@@ -114,9 +108,7 @@ class GlobalConfig(BaseModel):
             "send_mode": self._SEND_MODE_MAP.get(self.send_mode, 0),
             "length_limit": self.length_limit,
             "link_preview": self._LINK_PREVIEW_MAP.get(self.link_preview, 0),
-            "display_author": self._DISPLAY_AUTHOR_MAP.get(
-                self.display_author, 0
-            ),
+            "display_author": self._DISPLAY_AUTHOR_MAP.get(self.display_author, 0),
             "display_via": self._DISPLAY_VIA_MAP.get(self.display_via, 0),
             "display_title": self._DISPLAY_TITLE_MAP.get(self.display_title, 0),
             "display_entry_tags": -1 if not self.display_entry_tags else 0,
@@ -140,9 +132,7 @@ class GlobalConfig(BaseModel):
             display_author=cls._DISPLAY_AUTHOR_RMAP.get(
                 values.get("display_author", 0), "自动"
             ),
-            display_via=cls._DISPLAY_VIA_RMAP.get(
-                values.get("display_via", 0), "自动"
-            ),
+            display_via=cls._DISPLAY_VIA_RMAP.get(values.get("display_via", 0), "自动"),
             display_title=cls._DISPLAY_TITLE_RMAP.get(
                 values.get("display_title", 0), "自动"
             ),
@@ -223,9 +213,7 @@ class SenderStrategiesConfig(BaseModel):
     weixin_oc: bool = Field(default=True, description="微信策略")
 
     @classmethod
-    def from_dict(
-        cls, data: dict[str, Any] | None
-    ) -> SenderStrategiesConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> SenderStrategiesConfig:
         if not data:
             return cls()
         return cls.model_validate({**cls().model_dump(), **(data or {})})
@@ -279,9 +267,7 @@ class RsshubPluginConfig(BaseModel):
             basic_config=BasicConfig.from_dict(basic_cfg),
             global_config=GlobalConfig.from_dict(global_cfg),
             ffmpeg=FFmpegConfig.from_dict(ffmpeg_cfg),
-            sender_strategies=SenderStrategiesConfig.from_dict(
-                sender_strategies_cfg
-            ),
+            sender_strategies=SenderStrategiesConfig.from_dict(sender_strategies_cfg),
             translation=TranslationConfig.from_dict(translation_cfg),
             webui=WebUIConfig.from_dict(webui_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),

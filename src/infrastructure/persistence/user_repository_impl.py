@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-from sqlmodel import select
 
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository

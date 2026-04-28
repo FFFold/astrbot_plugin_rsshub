@@ -9,8 +9,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import zlib
-from calendar import timegm
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from itertools import chain
@@ -19,7 +17,6 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from ...domain.exceptions import WebError
 from ..persistence.database import get_database
 from ..persistence.models import FeedORM, SubORM
 from ..rss.rss_fetcher import RSSFeedFetcher
@@ -127,11 +124,23 @@ class RSSScheduler:
     HASH_HISTORY_MULTIPLIER: Final = 2
     HASH_HISTORY_HARD_LIMIT: Final = 5000
     HASH_HISTORY_ABSOLUTE_MAX: Final = 20000
-    TRACKING_QUERY_PARAMS: Final = frozenset({
-        "utm_source", "utm_medium", "utm_campaign", "utm_term",
-        "utm_content", "utm_id", "gclid", "fbclid", "mc_cid",
-        "mc_eid", "spm", "ref", "ref_src",
-    })
+    TRACKING_QUERY_PARAMS: Final = frozenset(
+        {
+            "utm_source",
+            "utm_medium",
+            "utm_campaign",
+            "utm_term",
+            "utm_content",
+            "utm_id",
+            "gclid",
+            "fbclid",
+            "mc_cid",
+            "mc_eid",
+            "spm",
+            "ref",
+            "ref_src",
+        }
+    )
 
     def __init__(
         self,
@@ -252,9 +261,7 @@ class RSSScheduler:
     ) -> None:
         """实际监控 Feed（已加锁）"""
         headers = {
-            "If-Modified-Since": format_datetime(
-                feed.last_modified or feed.updated_at
-            )
+            "If-Modified-Since": format_datetime(feed.last_modified or feed.updated_at)
         }
         if feed.etag:
             headers["If-None-Match"] = feed.etag
@@ -314,9 +321,7 @@ class RSSScheduler:
                     # 首次初始化
                     feed.last_modified = wf.last_modified
                     feed.entry_hashes = merged
-                    feed_updated_fields.update(
-                        {"last_modified", "entry_hashes"}
-                    )
+                    feed_updated_fields.update({"last_modified", "entry_hashes"})
 
                     if not updated_entries:
                         self._stats.not_updated()
@@ -328,14 +333,10 @@ class RSSScheduler:
                         )
                         self._stats.not_updated()
                     else:
-                        await self._send_notifications(
-                            feed, subs, updated_entries
-                        )
+                        await self._send_notifications(feed, subs, updated_entries)
                         feed.last_modified = wf.last_modified
                         feed.entry_hashes = merged
-                        feed_updated_fields.update(
-                            {"last_modified", "entry_hashes"}
-                        )
+                        feed_updated_fields.update({"last_modified", "entry_hashes"})
                         self._stats.updated()
 
                 elif not updated_entries:
@@ -345,14 +346,10 @@ class RSSScheduler:
                     self._stats.not_updated()
 
                 else:
-                    await self._send_notifications(
-                        feed, subs, updated_entries
-                    )
+                    await self._send_notifications(feed, subs, updated_entries)
                     feed.last_modified = wf.last_modified
                     feed.entry_hashes = merged
-                    feed_updated_fields.update(
-                        {"last_modified", "entry_hashes"}
-                    )
+                    feed_updated_fields.update({"last_modified", "entry_hashes"})
                     self._stats.updated()
 
         finally:
@@ -380,9 +377,7 @@ class RSSScheduler:
         # 按时间排序（新到旧）
         sorted_entries = sorted(
             entries,
-            key=lambda e: (
-                e.get("published_parsed") or e.get("updated_parsed") or ()
-            ),
+            key=lambda e: e.get("published_parsed") or e.get("updated_parsed") or (),
             reverse=True,
         )
 
@@ -418,9 +413,7 @@ class RSSScheduler:
             feed_entity, subscription_entities, sorted_entries
         )
 
-    async def _schedule_after_success(
-        self, subs: list[SubORM], interval: int
-    ) -> None:
+    async def _schedule_after_success(self, subs: list[SubORM], interval: int) -> None:
         """成功后更新下次检查时间"""
         now = datetime.now(timezone.utc)
         db = get_database()
@@ -434,9 +427,7 @@ class RSSScheduler:
                     session.add(db_sub)
             await session.commit()
 
-    async def _schedule_after_error(
-        self, subs: list[SubORM], interval: int
-    ) -> None:
+    async def _schedule_after_error(self, subs: list[SubORM], interval: int) -> None:
         """失败后更新下次检查时间"""
         now = datetime.now(timezone.utc)
         db = get_database()
@@ -486,9 +477,7 @@ class RSSScheduler:
 
         for entry in entries:
             entry_hashes = self._hash_entry(entry, feed_link)
-            stable_hash = next(
-                (h for h in entry_hashes if h.startswith("sid:")), ""
-            )
+            stable_hash = next((h for h in entry_hashes if h.startswith("sid:")), "")
 
             known_by_identity = bool(stable_hash) and stable_hash in known_hashes
             known_by_compat = False
@@ -504,15 +493,11 @@ class RSSScheduler:
 
         return new_groups, updated_entries
 
-    def _hash_entry(
-        self, entry: dict, feed_link: str | None = None
-    ) -> list[str]:
+    def _hash_entry(self, entry: dict, feed_link: str | None = None) -> list[str]:
         """计算条目的去重指纹"""
         upstream_material = self._upstream_material(entry)
         upstream_crc = (
-            hex(zlib.crc32(upstream_material.encode("utf-8", errors="ignore")))[
-                2:
-            ]
+            hex(zlib.crc32(upstream_material.encode("utf-8", errors="ignore")))[2:]
             if upstream_material
             else ""
         )
@@ -537,9 +522,7 @@ class RSSScheduler:
         elif summary:
             stable_material = f"v3|summary={summary[:256]}"
 
-        content_material = (
-            f"v3|title={title}|link={link}|summary={summary[:512]}"
-        )
+        content_material = f"v3|title={title}|link={link}|summary={summary[:512]}"
 
         fingerprints: list[str] = []
         if stable_material:
@@ -616,9 +599,7 @@ class RSSScheduler:
         for group in chain(new_groups, old_groups):
             if not group:
                 continue
-            identity = next(
-                (h for h in group if h.startswith("sid:")), None
-            )
+            identity = next((h for h in group if h.startswith("sid:")), None)
             if identity and identity in seen_identity:
                 continue
             if identity:

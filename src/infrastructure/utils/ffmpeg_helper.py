@@ -53,10 +53,7 @@ class FFmpegTool:
         Returns:
             Path to ffmpeg executable, or None if not found
         """
-        if (
-            FFmpegTool._ffmpeg_exe_cache
-            and Path(FFmpegTool._ffmpeg_exe_cache).exists()
-        ):
+        if FFmpegTool._ffmpeg_exe_cache and Path(FFmpegTool._ffmpeg_exe_cache).exists():
             return FFmpegTool._ffmpeg_exe_cache
 
         system_ffmpeg = shutil.which("ffmpeg")
@@ -69,9 +66,7 @@ class FFmpegTool:
             try:
                 ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
                 if ffmpeg_exe and Path(ffmpeg_exe).exists():
-                    FFmpegTool._ffmpeg_exe_cache = str(
-                        Path(ffmpeg_exe).resolve()
-                    )
+                    FFmpegTool._ffmpeg_exe_cache = str(Path(ffmpeg_exe).resolve())
                     logger.debug(
                         "Using imageio-ffmpeg bundled: %s",
                         FFmpegTool._ffmpeg_exe_cache,
@@ -118,9 +113,7 @@ class FFmpegTool:
 
         system_ffprobe = shutil.which("ffprobe")
         if system_ffprobe:
-            FFmpegTool._ffprobe_exe_cache = str(
-                Path(system_ffprobe).resolve()
-            )
+            FFmpegTool._ffprobe_exe_cache = str(Path(system_ffprobe).resolve())
             return FFmpegTool._ffprobe_exe_cache
 
         if auto_install and imageio_ffmpeg is not None:
@@ -134,9 +127,7 @@ class FFmpegTool:
                     ]
                     for candidate in ffprobe_candidates:
                         if candidate.exists():
-                            FFmpegTool._ffprobe_exe_cache = str(
-                                candidate.resolve()
-                            )
+                            FFmpegTool._ffprobe_exe_cache = str(candidate.resolve())
                             return FFmpegTool._ffprobe_exe_cache
             except Exception as ex:
                 logger.warning("FFprobe resolve via imageio-ffmpeg failed: %s", ex)
@@ -163,9 +154,7 @@ class FFmpegTool:
         Returns:
             True if audio stream exists, False otherwise
         """
-        ffprobe_exe = FFmpegTool.ensure_ffprobe_ready(
-            auto_install=auto_install_ffmpeg
-        )
+        ffprobe_exe = FFmpegTool.ensure_ffprobe_ready(auto_install=auto_install_ffmpeg)
         if not ffprobe_exe:
             logger.debug(
                 "FFprobe not available, assuming audio exists: path=%s",
@@ -201,9 +190,7 @@ class FFmpegTool:
                 timeout=max(1, int(timeout_seconds)),
             )
         except asyncio.TimeoutError:
-            logger.warning(
-                "FFprobe audio detection timeout: path=%s", video_path
-            )
+            logger.warning("FFprobe audio detection timeout: path=%s", video_path)
             if process is not None:
                 process.kill()
                 await process.wait()
@@ -242,9 +229,7 @@ class FFmpegTool:
         Returns:
             Path to the transcoded MP4 file, or None if failed
         """
-        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(
-            auto_install=auto_install_ffmpeg
-        )
+        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(auto_install=auto_install_ffmpeg)
         if not ffmpeg_exe:
             return None
 
@@ -265,11 +250,9 @@ class FFmpegTool:
         cache_root.mkdir(parents=True, exist_ok=True)
 
         digest = hashlib.sha256(
-            (
-                f"{source_path.resolve()}::"
-                f"{int(stat.st_mtime)}::"
-                f"{stat.st_size}"
-            ).encode("utf-8", errors="ignore")
+            (f"{source_path.resolve()}::{int(stat.st_mtime)}::{stat.st_size}").encode(
+                "utf-8", errors="ignore"
+            )
         ).hexdigest()
         output_path = cache_root / f"{digest}.mp4"
 
@@ -370,9 +353,7 @@ class FFmpegTool:
         Returns:
             Path to the generated GIF file, or None if transcoding failed
         """
-        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(
-            auto_install=auto_install_ffmpeg
-        )
+        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(auto_install=auto_install_ffmpeg)
         if not ffmpeg_exe:
             logger.warning(
                 "FFmpeg not available for GIF transcode: src=%s", source_path
@@ -507,13 +488,9 @@ class FFmpegTool:
         Returns:
             是否成功
         """
-        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(
-            auto_install=auto_install_ffmpeg
-        )
+        ffmpeg_exe = FFmpegTool.ensure_ffmpeg_ready(auto_install=auto_install_ffmpeg)
         if not ffmpeg_exe:
-            logger.warning(
-                "FFmpeg not available for m3u8 download: %s", m3u8_url
-            )
+            logger.warning("FFmpeg not available for m3u8 download: %s", m3u8_url)
             return False
 
         output_path.parent.mkdir(parents=True, exist_ok=True)

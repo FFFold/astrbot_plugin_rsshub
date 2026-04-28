@@ -13,9 +13,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Column, func
-from sqlalchemy.orm import selectinload
-from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import JSON, Column
+from sqlmodel import Field, Relationship
 
 from .database import RSSHubBaseModel
 

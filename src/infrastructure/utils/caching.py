@@ -174,7 +174,8 @@ class MemoryCache(BaseCache):
         now = time.time()
         for store in self._stores.values():
             expired_keys = [
-                k for k, entry in store.items()
+                k
+                for k, entry in store.items()
                 if entry.expires_at and now > entry.expires_at
             ]
             for k in expired_keys:
@@ -293,9 +294,7 @@ def caching(
 
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            cache_key = _build_cache_key(
-                compiled_key, args, kwargs, param_names
-            )
+            cache_key = _build_cache_key(compiled_key, args, kwargs, param_names)
 
             # 检查缓存
             cached = cache.get(cache_name, cache_key)
@@ -311,9 +310,7 @@ def caching(
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            cache_key = _build_cache_key(
-                compiled_key, args, kwargs, param_names
-            )
+            cache_key = _build_cache_key(compiled_key, args, kwargs, param_names)
 
             cached = cache.get(cache_name, cache_key)
             if cached is not None:
@@ -375,9 +372,7 @@ def cacheput(
             result = await func(*args, **kwargs)
 
             if _eval_condition(args, kwargs):
-                cache_key = _build_cache_key(
-                    compiled_key, args, kwargs, param_names
-                )
+                cache_key = _build_cache_key(compiled_key, args, kwargs, param_names)
                 cache.set(cache_name, cache_key, result, ttl)
             return result
 
@@ -386,9 +381,7 @@ def cacheput(
             result = func(*args, **kwargs)
 
             if _eval_condition(args, kwargs):
-                cache_key = _build_cache_key(
-                    compiled_key, args, kwargs, param_names
-                )
+                cache_key = _build_cache_key(compiled_key, args, kwargs, param_names)
                 cache.set(cache_name, cache_key, result, ttl)
             return result
 
@@ -438,9 +431,7 @@ def cacheevict(
             if all_entries:
                 cache.clear(cache_name)
             elif compiled_key is not None:
-                cache_key = _build_cache_key(
-                    compiled_key, args, kwargs, param_names
-                )
+                cache_key = _build_cache_key(compiled_key, args, kwargs, param_names)
                 cache.delete(cache_name, cache_key)
             else:
                 raise ValueError(

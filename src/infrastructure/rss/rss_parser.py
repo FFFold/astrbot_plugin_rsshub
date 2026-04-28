@@ -35,9 +35,7 @@ class EntryParsed(BaseModel):
     guid: str = Field(default="", description="全局唯一标识")
     entry_id: str = Field(default="", description="条目ID")
     tags: list[str] = Field(default_factory=list, description="标签列表")
-    enclosures: list[Enclosure] = Field(
-        default_factory=list, description="附件列表"
-    )
+    enclosures: list[Enclosure] = Field(default_factory=list, description="附件列表")
     published: datetime | None = Field(default=None, description="发布时间")
     updated: datetime | None = Field(default=None, description="更新时间")
 
@@ -76,9 +74,7 @@ class RSSParser:
             result.content = result.summary
 
         tags = entry.get("tags", [])
-        result.tags = [
-            tag.get("term", "") for tag in tags if tag.get("term")
-        ]
+        result.tags = [tag.get("term", "") for tag in tags if tag.get("term")]
 
         enclosures = entry.get("enclosures", [])
         result.enclosures = [
@@ -145,9 +141,7 @@ class RSSParser:
         return normalized
 
     @staticmethod
-    def normalize_config_positive_int(
-        raw: Any, key: str, default: int
-    ) -> int:
+    def normalize_config_positive_int(raw: Any, key: str, default: int) -> int:
         """将配置值标准化为正整数"""
         if isinstance(raw, bool):
             logger = get_logger()
@@ -157,17 +151,11 @@ class RSSParser:
         if isinstance(raw, numbers.Integral):
             if raw > 0:
                 return int(raw)
-            logger.warning(
-                "Invalid %s=%r; expected positive integer", key, raw
-            )
+            logger.warning("Invalid %s=%r; expected positive integer", key, raw)
             return default
 
         if isinstance(raw, numbers.Real):
-            if (
-                math.isfinite(float(raw))
-                and raw > 0
-                and float(raw).is_integer()
-            ):
+            if math.isfinite(float(raw)) and raw > 0 and float(raw).is_integer():
                 coerced = int(raw)
                 logger = get_logger()
                 logger.info(
@@ -192,9 +180,7 @@ class RSSParser:
             if re.fullmatch(r"\d+", stripped):
                 parsed = int(stripped)
                 return parsed if parsed > 0 else default
-            logger.warning(
-                "Invalid %s=%r; expected positive integer", key, raw
-            )
+            logger.warning("Invalid %s=%r; expected positive integer", key, raw)
             return default
 
         return default

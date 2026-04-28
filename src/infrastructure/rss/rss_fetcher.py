@@ -94,9 +94,7 @@ class RSSFeedFetcher:
             elif session is not None:
                 client = session
             else:
-                temp_session = aiohttp.ClientSession(
-                    proxy=effective_proxy or None
-                )
+                temp_session = aiohttp.ClientSession(proxy=effective_proxy or None)
                 client = temp_session
 
             async with client.get(
@@ -141,17 +139,12 @@ class RSSFeedFetcher:
                     return ret
 
                 with BytesIO(rss_content) as rss_content_io:
-                    rss_d = feedparser.parse(
-                        rss_content_io, sanitize_html=False
-                    )
+                    rss_d = feedparser.parse(rss_content_io, sanitize_html=False)
 
                 if not rss_d.feed.get("title"):
                     if not rss_d.entries and (
                         rss_d.bozo
-                        or not (
-                            rss_d.feed.get("link")
-                            or rss_d.feed.get("updated")
-                        )
+                        or not (rss_d.feed.get("link") or rss_d.feed.get("updated"))
                     ):
                         ret.error = WebError(
                             error_name="feed invalid",
@@ -164,9 +157,7 @@ class RSSFeedFetcher:
                 ret.rss_d = rss_d
 
         except aiohttp.InvalidURL:
-            ret.error = WebError(
-                error_name="URL invalid", url=url, log_level=log_level
-            )
+            ret.error = WebError(error_name="URL invalid", url=url, log_level=log_level)
         except (
             asyncio.TimeoutError,
             aiohttp.ClientError,

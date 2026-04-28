@@ -26,12 +26,14 @@ class Feed(BaseModel):
         default=None, description="已处理条目的哈希列表，用于去重"
     )
     etag: str | None = Field(default=None, max_length=128, description="HTTP ETag")
-    last_modified: datetime | None = Field(
-        default=None, description="最后修改时间"
-    )
+    last_modified: datetime | None = Field(default=None, description="最后修改时间")
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
+    )
 
     def model_post_init(self, __context: object) -> None:
         """初始化后验证链接格式"""

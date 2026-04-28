@@ -253,9 +253,7 @@ def timeout(seconds: float):
 
         @functools.wraps(func)
         async def wrapper(*args, **kwargs) -> T:
-            return await asyncio.wait_for(
-                func(*args, **kwargs), timeout=seconds
-            )
+            return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
 
         return wrapper
 

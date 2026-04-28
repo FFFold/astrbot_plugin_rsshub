@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 from urllib.parse import urlparse
 
-from .expression_parser import CompiledExpression, ExpressionParser
+from .expression_parser import CompiledExpression
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -174,5 +174,3 @@ def locked(key: str) -> Callable[[F], F]:
         return wrapper  # type: ignore[return-value]
 
     return decorator
-
-

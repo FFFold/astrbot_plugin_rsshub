@@ -89,15 +89,11 @@ class ExpressionParser:
                 )
             value = args[idx]
         else:
-            value = cls._find_param_by_name(
-                ref_name, args, kwargs, param_names
-            )
+            value = cls._find_param_by_name(ref_name, args, kwargs, param_names)
 
         for attr in chain_attrs:
             if value is None:
-                raise AttributeError(
-                    f"Cannot access attribute '{attr}' on None value"
-                )
+                raise AttributeError(f"Cannot access attribute '{attr}' on None value")
             if attr.startswith("_"):
                 raise AttributeError(
                     f"Cannot access private attribute '{attr}' in expression"

@@ -83,9 +83,7 @@ class MediaDownloader:
             parsed = urlparse(url)
             wrapped_values = parse_qs(parsed.query).get("url", [])
             for wrapped in wrapped_values:
-                if wrapped.startswith("http://") or wrapped.startswith(
-                    "https://"
-                ):
+                if wrapped.startswith("http://") or wrapped.startswith("https://"):
                     if wrapped not in candidates:
                         candidates.append(wrapped)
         except Exception:
@@ -136,8 +134,7 @@ class MediaDownloader:
                         data = await resp.read()
                         if not data:
                             raise RuntimeError(
-                                f"download failed: empty response, "
-                                f"url={candidate_url}"
+                                f"download failed: empty response, url={candidate_url}"
                             )
 
                     fd, tmp_name = tempfile.mkstemp(
@@ -206,9 +203,7 @@ class MediaDownloader:
 
         for meta_path in self._cache_dir.glob("*.meta"):
             try:
-                expire_ts = float(
-                    meta_path.read_text(encoding="utf-8").strip()
-                )
+                expire_ts = float(meta_path.read_text(encoding="utf-8").strip())
             except Exception:
                 expire_ts = 0.0
 
@@ -245,9 +240,7 @@ class MediaDownloader:
                 continue
 
             try:
-                expire_ts = float(
-                    meta_path.read_text(encoding="utf-8").strip()
-                )
+                expire_ts = float(meta_path.read_text(encoding="utf-8").strip())
             except Exception:
                 expire_ts = 0.0
             if expire_ts + self._CACHE_GC_GRACE_SECONDS >= now_ts:
@@ -287,15 +280,10 @@ class MediaDownloader:
 
         async with self._cache_gc_lock:
             now_ts = time.time()
-            if (
-                now_ts - self._cache_gc_last_run
-                < self._CACHE_GC_INTERVAL_SECONDS
-            ):
+            if now_ts - self._cache_gc_last_run < self._CACHE_GC_INTERVAL_SECONDS:
                 return
 
-            meta_paths, orphan_media = self._collect_expired_cache_paths(
-                now_ts
-            )
+            meta_paths, orphan_media = self._collect_expired_cache_paths(now_ts)
 
             async with self._cache_io_lock:
                 removed = self._apply_cache_gc_deletions(
@@ -326,8 +314,7 @@ class MediaDownloader:
 
         if file_path is None:
             logger.debug(
-                "Media cache miss: url=%s, no matching file found "
-                "for digest=%s",
+                "Media cache miss: url=%s, no matching file found for digest=%s",
                 url,
                 digest,
             )
@@ -336,9 +323,7 @@ class MediaDownloader:
         try:
             expire_ts = float(meta_path.read_text(encoding="utf-8").strip())
         except Exception:
-            logger.debug(
-                "Media cache meta invalid: url=%s, meta=%s", url, meta_path
-            )
+            logger.debug("Media cache meta invalid: url=%s, meta=%s", url, meta_path)
             return None
 
         now_ts = time.time()
@@ -540,22 +525,19 @@ class MediaDownloader:
                     if gif_path and gif_path.exists():
                         converted_path = gif_path
                         logger.debug(
-                            "GIF conversion successful: url=%s, gif_path=%s, "
-                            "size=%s",
+                            "GIF conversion successful: url=%s, gif_path=%s, size=%s",
                             url,
                             gif_path,
                             gif_path.stat().st_size,
                         )
                     else:
                         logger.warning(
-                            "GIF conversion failed, using original video: "
-                            "url=%s",
+                            "GIF conversion failed, using original video: url=%s",
                             url,
                         )
             except Exception as ex:
                 logger.warning(
-                    "GIF conversion error, using original video: url=%s, "
-                    "err=%s",
+                    "GIF conversion error, using original video: url=%s, err=%s",
                     url,
                     ex,
                 )

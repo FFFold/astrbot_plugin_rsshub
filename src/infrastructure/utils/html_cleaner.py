@@ -106,30 +106,39 @@ class ParsedResult(BaseModel):
     """HTML解析结果"""
 
     html_tree: HtmlNode = Field(..., description="解析后的HTML树")
-    media: list[ImageContent | VideoContent | AudioContent | FileContent] = (
-        Field(default_factory=list, description="媒体列表")
+    media: list[ImageContent | VideoContent | AudioContent | FileContent] = Field(
+        default_factory=list, description="媒体列表"
     )
     links: list[str] = Field(default_factory=list, description="链接列表")
-    mentions: list[MentionContent] = Field(
-        default_factory=list, description="提及列表"
-    )
+    mentions: list[MentionContent] = Field(default_factory=list, description="提及列表")
 
 
 class HTMLCleaner:
     """HTML 解析器，将 HTML 内容解析为结构化数据"""
 
     SEPARATORS = (
-        "\n", "。", ". ", "？", "? ", "！", "! ", "：", ": ", "；", "; ",
-        "，", ", ", "\t", " ",
+        "\n",
+        "。",
+        ". ",
+        "？",
+        "? ",
+        "！",
+        "! ",
+        "：",
+        ": ",
+        "；",
+        "; ",
+        "，",
+        ", ",
+        "\t",
+        " ",
     )
 
     def __init__(self, html: str, feed_link: str | None = None):
         self.html = html
         self.feed_link = feed_link
         self.soup: BeautifulSoup | None = None
-        self.media: list[
-            ImageContent | VideoContent | AudioContent | FileContent
-        ] = []
+        self.media: list[ImageContent | VideoContent | AudioContent | FileContent] = []
         self.links: list[str] = []
         self.mentions: list[MentionContent] = []
         self._parse_count = 0
@@ -143,9 +152,7 @@ class HTMLCleaner:
         Returns:
             ParsedResult 对象
         """
-        self.soup = await self._run_async(
-            BeautifulSoup, self.html, "lxml"
-        )
+        self.soup = await self._run_async(BeautifulSoup, self.html, "lxml")
         children = await self._parse_children(self.soup)
         return ParsedResult(
             html_tree=HtmlNode(children=children),
@@ -157,9 +164,7 @@ class HTMLCleaner:
     async def _run_async(self, func, *args, **kwargs) -> Any:
         """异步执行同步函数"""
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, lambda: func(*args, **kwargs)
-        )
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
     async def _parse_children(self, element) -> list[ContentNode | HtmlNode]:
         """解析子元素"""
@@ -239,9 +244,7 @@ class HTMLCleaner:
                 if (
                     alt
                     and len(alt) <= 3
-                    and not url.lower().endswith(
-                        (".gif", ".webm", ".mp4", ".m4v")
-                    )
+                    and not url.lower().endswith((".gif", ".webm", ".mp4", ".m4v"))
                 ):
                     return TextContent(text=alt)
                 img = ImageContent(url=url, alt=alt)
@@ -296,11 +299,7 @@ class HTMLCleaner:
         if tag_name in ("h1", "h2", "h3", "h4", "h5", "h6"):
             children = await self._parse_children(tag.children)
             if children:
-                return (
-                    [TextContent(text="\n")]
-                    + children
-                    + [TextContent(text="\n\n")]
-                )
+                return [TextContent(text="\n")] + children + [TextContent(text="\n\n")]
             return None
 
         if tag_name in ("ul", "menu", "dir"):
@@ -312,11 +311,7 @@ class HTMLCleaner:
         if tag_name == "li":
             children = await self._parse_children(tag.children)
             if children:
-                return (
-                    [TextContent(text="• ")]
-                    + children
-                    + [TextContent(text="\n")]
-                )
+                return [TextContent(text="• ")] + children + [TextContent(text="\n")]
             return None
 
         if tag_name == "hr":
@@ -325,11 +320,7 @@ class HTMLCleaner:
         if tag_name == "blockquote":
             children = await self._parse_children(tag.children)
             if children:
-                return (
-                    [TextContent(text="\n> ")]
-                    + children
-                    + [TextContent(text="\n")]
-                )
+                return [TextContent(text="\n> ")] + children + [TextContent(text="\n")]
             return None
 
         if tag_name == "q":
@@ -374,9 +365,7 @@ class HTMLCleaner:
 
         return await self._parse_children(tag.children)
 
-    async def _parse_ordered_list(
-        self, ordered_list: Tag
-    ) -> list[ContentNode]:
+    async def _parse_ordered_list(self, ordered_list: Tag) -> list[ContentNode]:
         """解析有序列表"""
         result: list[ContentNode] = []
         index = 1
@@ -389,9 +378,7 @@ class HTMLCleaner:
                 index += 1
         return result
 
-    async def _parse_table(
-        self, table: Tag
-    ) -> list[ContentNode] | None:
+    async def _parse_table(self, table: Tag) -> list[ContentNode] | None:
         """将表格简化为按行文本"""
         rows = table.find_all("tr")
         if not rows:
@@ -403,9 +390,7 @@ class HTMLCleaner:
             values: list[str] = []
             for col in cols:
                 parsed = await self._parse_children(col.children)
-                plain = "".join(
-                    item.get_plain() for item in parsed
-                ).strip()
+                plain = "".join(item.get_plain() for item in parsed).strip()
                 if plain:
                     values.append(plain)
             if values:
@@ -439,10 +424,32 @@ class HTMLCleaner:
             return True
         path = (urlparse(url).path or "").lower()
         file_exts = (
-            ".zip", ".rar", ".7z", ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-            ".ppt", ".pptx", ".txt", ".csv", ".epub", ".mobi", ".apk", ".exe",
-            ".msi", ".dmg", ".mp3", ".wav", ".ogg", ".flac", ".mp4", ".mkv",
-            ".mov", ".avi",
+            ".zip",
+            ".rar",
+            ".7z",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
+            ".txt",
+            ".csv",
+            ".epub",
+            ".mobi",
+            ".apk",
+            ".exe",
+            ".msi",
+            ".dmg",
+            ".mp3",
+            ".wav",
+            ".ogg",
+            ".flac",
+            ".mp4",
+            ".mkv",
+            ".mov",
+            ".avi",
         )
         return path.endswith(file_exts)
 
@@ -477,8 +484,12 @@ class HTMLCleaner:
                 return best_url
 
         for key in (
-            "src", "data-src", "data-original", "data-lazy-src",
-            "data-url", "data-fallback-src",
+            "src",
+            "data-src",
+            "data-original",
+            "data-lazy-src",
+            "data-url",
+            "data-fallback-src",
         ):
             value = tag.get(key, "")
             if value:
@@ -525,17 +536,11 @@ class HTMLCleaner:
             element.decompose()
         text = self.soup.get_text()
         lines = (line.strip() for line in text.splitlines())
-        chunks = (
-            phrase.strip()
-            for line in lines
-            for phrase in line.split("  ")
-        )
+        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
         return "\n".join(chunk for chunk in chunks if chunk)
 
 
-async def clean_html(
-    html: str, feed_link: str | None = None
-) -> ParsedResult:
+async def clean_html(html: str, feed_link: str | None = None) -> ParsedResult:
     """解析 HTML 内容
 
     Args:

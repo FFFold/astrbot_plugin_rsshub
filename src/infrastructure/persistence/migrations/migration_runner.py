@@ -44,7 +44,9 @@ def _extract_version(filename: str) -> int:
     """
     match = _MIGRATION_PATTERN.match(filename)
     if not match:
-        raise ValueError(f"无效的迁移文件名: {filename}, 期望格式: V{{数字}}_{{描述}}.py")
+        raise ValueError(
+            f"无效的迁移文件名: {filename}, 期望格式: V{{数字}}_{{描述}}.py"
+        )
     return int(match.group(1))
 
 
@@ -113,7 +115,9 @@ class MigrationRunner:
 
             upgrade = getattr(module, "upgrade", None)
             if upgrade is None:
-                logger.warning("迁移脚本 %s 缺少 upgrade 函数，已跳过", full_module_name)
+                logger.warning(
+                    "迁移脚本 %s 缺少 upgrade 函数，已跳过", full_module_name
+                )
                 continue
 
             scripts.append(

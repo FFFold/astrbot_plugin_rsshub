@@ -13,7 +13,7 @@ from ...domain.entities.subscription import Subscription
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..utils import get_logger
 from .database import get_database
-from .models import FeedORM, SubORM
+from .models import SubORM
 
 logger = get_logger()
 

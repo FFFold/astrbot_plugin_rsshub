@@ -31,7 +31,9 @@ class PushHistory(BaseModel):
     feed_title: str = Field(default="", max_length=1024, description="Feed标题")
     feed_link: str = Field(default="", max_length=4096, description="Feed链接")
 
-    platform_name: str | None = Field(default=None, max_length=64, description="平台名称")
+    platform_name: str | None = Field(
+        default=None, max_length=64, description="平台名称"
+    )
     target_session: str | None = Field(
         default=None, max_length=255, description="目标会话"
     )
@@ -41,10 +43,16 @@ class PushHistory(BaseModel):
     )
     retry_count: int = Field(default=0, description="重试次数")
     max_retries: int = Field(default=3, description="最大重试次数")
-    fail_reason: str | None = Field(default=None, max_length=512, description="失败原因")
+    fail_reason: str | None = Field(
+        default=None, max_length=512, description="失败原因"
+    )
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
+    )
     completed_at: datetime | None = Field(default=None, description="完成时间")
 
     def can_retry(self) -> bool:

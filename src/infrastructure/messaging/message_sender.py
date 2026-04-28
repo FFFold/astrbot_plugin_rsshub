@@ -7,16 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
-from astrbot.api.message_components import (
-    Image,
-    Node,
-    Nodes,
-    Plain,
-    Record,
-    Video,
-)
 
 from ..utils import get_logger
 
@@ -89,9 +81,7 @@ class BaseMessageSender:
         self.video_transcode_enabled = False
         self.video_transcode_timeout = 120
 
-    def configure_runtime(
-        self, *, timeout_seconds: int = 30, proxy: str = ""
-    ) -> None:
+    def configure_runtime(self, *, timeout_seconds: int = 30, proxy: str = "") -> None:
         """配置运行时参数"""
         self.timeout_seconds = max(1, int(timeout_seconds))
         self.proxy = proxy or ""

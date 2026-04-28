@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -61,17 +59,13 @@ class FeedDiscoverer:
                     html = await resp.text()
                     base_url = str(resp.url)
         except Exception as ex:
-            logger.warning(
-                "Feed discovery failed for %s: %s", page_url, ex
-            )
+            logger.warning("Feed discovery failed for %s: %s", page_url, ex)
             return []
 
         return self._discover_from_html(html, base_url)
 
     @staticmethod
-    def _discover_from_html(
-        html: str, base_url: str
-    ) -> list[FeedDiscoveryResult]:
+    def _discover_from_html(html: str, base_url: str) -> list[FeedDiscoveryResult]:
         """从 HTML 内容中解析 Feed 链接
 
         Args:
