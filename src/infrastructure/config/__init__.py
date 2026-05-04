@@ -11,6 +11,9 @@ from .config_manager import (
     SenderStrategiesConfig,
     TranslationConfig,
     WebUIConfig,
+    get_config,
+    get_config_manager,
+    set_config,
 )
 
 __all__ = [
@@ -21,4 +24,7 @@ __all__ = [
     "TranslationConfig",
     "SenderStrategiesConfig",
     "RsshubPluginConfig",
+    "get_config",
+    "get_config_manager",
+    "set_config",
 ]

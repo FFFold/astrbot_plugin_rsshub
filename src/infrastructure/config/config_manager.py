@@ -355,3 +355,22 @@ class RsshubPluginConfig(BaseModel):
     def download_image_before_send(self) -> bool:
         """向后兼容旧名称"""
         return self.basic_config.download_media_before_send
+
+
+_config: RsshubPluginConfig | None = None
+
+
+def get_config() -> RsshubPluginConfig | None:
+    """获取插件配置（兼容旧调用方）"""
+    return _config
+
+
+def get_config_manager() -> RsshubPluginConfig | None:
+    """获取插件配置管理器"""
+    return _config
+
+
+def set_config(config: RsshubPluginConfig) -> None:
+    """设置插件配置"""
+    global _config
+    _config = config
