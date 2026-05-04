@@ -59,15 +59,10 @@ class RSSHubWebUI:
         self._session_timeout = max(60, config.session_timeout)
 
         if template_path is None:
-            # 默认指向旧目录的模板
-            template_path = (
-                Path(__file__).parent.parent.parent.parent
-                / "_web"
-                / "templates"
-                / "index.html"
-            )
+            # 使用新架构的模板路径
+            template_path = Path(__file__).parent / "templates" / "index.html"
         if static_dir is None:
-            static_dir = Path(__file__).parent.parent.parent.parent / "_web" / "static"
+            static_dir = Path(__file__).parent / "static"
 
         self._template_path = template_path
         self._static_dir = static_dir
@@ -81,7 +76,9 @@ class RSSHubWebUI:
                 web.post("/api/login", self._handle_login),
                 web.get("/api/subscriptions", self._handle_list_subs),
                 web.patch("/api/subscriptions/{sub_id}", self._handle_patch_sub),
-                web.delete("/api/subscriptions/{sub_id}", self._handle_delete_sub),
+                web.delete(
+                    "/api/subscriptions/{sub_id}", self._handle_delete_sub
+                ),
             ]
         )
         if self._static_dir.exists():
@@ -111,7 +108,9 @@ class RSSHubWebUI:
             self._runner = None
 
     @staticmethod
-    def _json_response(data: dict[str, Any], status: int = 200) -> web.Response:
+    def _json_response(
+        data: dict[str, Any], status: int = 200
+    ) -> web.Response:
         return web.Response(
             text=json.dumps(data, ensure_ascii=False),
             status=status,
@@ -130,10 +129,14 @@ class RSSHubWebUI:
             return False
         return True
 
-    async def _require_auth(self, request: web.Request) -> web.Response | None:
+    async def _require_auth(
+        self, request: web.Request
+    ) -> web.Response | None:
         if self._is_authorized(request):
             return None
-        return self._json_response({"ok": False, "error": "unauthorized"}, status=401)
+        return self._json_response(
+            {"ok": False, "error": "unauthorized"}, status=401
+        )
 
     def _check_rate_limit(self, ip: str) -> bool:
         now = time.time()
@@ -153,7 +156,8 @@ class RSSHubWebUI:
                 stale_ips = [
                     ip
                     for ip, attempts in self._login_attempts.items()
-                    if not attempts or now - attempts[-1] > self._RATE_LIMIT_WINDOW
+                    if not attempts
+                    or now - attempts[-1] > self._RATE_LIMIT_WINDOW
                 ]
                 for ip in stale_ips:
                     del self._login_attempts[ip]
@@ -186,7 +190,9 @@ class RSSHubWebUI:
 
         body = await request.read()
         if not body:
-            return self._json_response({"ok": False, "error": "empty_body"}, status=400)
+            return self._json_response(
+                {"ok": False, "error": "empty_body"}, status=400
+            )
 
         try:
             data = json.loads(body.decode("utf-8"))
@@ -269,7 +275,9 @@ class RSSHubWebUI:
 
         body = await request.read()
         if not body:
-            return self._json_response({"ok": False, "error": "empty_body"}, status=400)
+            return self._json_response(
+                {"ok": False, "error": "empty_body"}, status=400
+            )
 
         try:
             data = json.loads(body.decode("utf-8"))
@@ -312,7 +320,8 @@ class RSSHubWebUI:
                             {
                                 "ok": False,
                                 "error": (
-                                    f"interval must be >= {self._minimal_interval}"
+                                    f"interval must be >= "
+                                    f"{self._minimal_interval}"
                                 ),
                             },
                             status=400,
@@ -325,7 +334,8 @@ class RSSHubWebUI:
                             {
                                 "ok": False,
                                 "error": (
-                                    f"interval must be >= {self._minimal_interval}"
+                                    f"interval must be >= "
+                                    f"{self._minimal_interval}"
                                 ),
                             },
                             status=400,
@@ -339,7 +349,9 @@ class RSSHubWebUI:
             elif key in str_keys:
                 patch[key] = str(value) if value is not None else None
 
-        updated = await self._sub_repo.update_options(sub_id, sub.user_id, **patch)
+        updated = await self._sub_repo.update_options(
+            sub_id, sub.user_id, **patch
+        )
         if not updated:
             return self._json_response(
                 {"ok": False, "error": "update_failed"},
