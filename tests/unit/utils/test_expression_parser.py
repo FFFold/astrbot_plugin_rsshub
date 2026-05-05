@@ -31,6 +31,7 @@ class TestExpressionParser:
 
     def test_parse_nested_attribute(self):
         """测试解析嵌套属性"""
+
         class Obj:
             def __init__(self):
                 self.id = 123
@@ -75,6 +76,7 @@ class TestExpressionParser:
 
     def test_parse_private_attribute_raises(self):
         """测试访问私有属性抛出异常"""
+
         class Obj:
             def __init__(self):
                 self._private = "secret"

@@ -133,13 +133,19 @@ class TestSubscriptionCommand:
         # 提取示例条目
         sample_entries = []
         for entry in entries[:sample_count]:
-            sample_entries.append({
-                "title": entry.title,
-                "link": entry.link,
-                "summary": entry.summary[:200] + "..." if entry.summary and len(entry.summary) > 200 else entry.summary,
-                "author": entry.author,
-                "published": entry.published.isoformat() if entry.published else None,
-            })
+            sample_entries.append(
+                {
+                    "title": entry.title,
+                    "link": entry.link,
+                    "summary": entry.summary[:200] + "..."
+                    if entry.summary and len(entry.summary) > 200
+                    else entry.summary,
+                    "author": entry.author,
+                    "published": entry.published.isoformat()
+                    if entry.published
+                    else None,
+                }
+            )
 
         result = TestResult(
             feed_info=feed_dto,
@@ -231,13 +237,19 @@ class TestSubscriptionCommand:
         # 提取示例条目
         sample_entries = []
         for entry in entries[:sample_count]:
-            sample_entries.append({
-                "title": entry.title,
-                "link": entry.link,
-                "summary": entry.summary[:200] + "..." if entry.summary and len(entry.summary) > 200 else entry.summary,
-                "author": entry.author,
-                "published": entry.published.isoformat() if entry.published else None,
-            })
+            sample_entries.append(
+                {
+                    "title": entry.title,
+                    "link": entry.link,
+                    "summary": entry.summary[:200] + "..."
+                    if entry.summary and len(entry.summary) > 200
+                    else entry.summary,
+                    "author": entry.author,
+                    "published": entry.published.isoformat()
+                    if entry.published
+                    else None,
+                }
+            )
 
         result = TestResult(
             feed_info=feed_dto,

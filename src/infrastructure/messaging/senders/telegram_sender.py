@@ -47,7 +47,9 @@ class TelegramMessageSender(DefaultMessageSender):
         2. 媒体会优先显示，文字作为 caption
         """
         try:
-            timeout = context.timeout_seconds if context else self._get_timeout_seconds()
+            timeout = (
+                context.timeout_seconds if context else self._get_timeout_seconds()
+            )
             proxy = context.proxy if context else self._get_proxy()
 
             # 准备媒体
@@ -70,9 +72,7 @@ class TelegramMessageSender(DefaultMessageSender):
             return SendResult(ok=False, detail="empty_message")
 
         except Exception as err:
-            logger.error(
-                "Telegram send failed: session=%s, error=%s", session_id, err
-            )
+            logger.error("Telegram send failed: session=%s, error=%s", session_id, err)
             return SendResult(
                 ok=False,
                 transient=self._is_transient_network_error(err),
@@ -91,7 +91,6 @@ class TelegramMessageSender(DefaultMessageSender):
         - 单条消息可包含多个媒体（最多10个）
         - 文字作为 caption（最多 1024 字符）
         """
-        from astrbot.api.message_components import Image, Video
         from astrbot.core.message.message_event_result import MessageChain
         from astrbot.core.star.star_tools import StarTools
 
@@ -99,8 +98,7 @@ class TelegramMessageSender(DefaultMessageSender):
         image_media = [m for m in prepared_media if m.media_type == "image"]
         video_media = [m for m in prepared_media if m.media_type == "video"]
         other_media = [
-            m for m in prepared_media
-            if m.media_type not in {"image", "video"}
+            m for m in prepared_media if m.media_type not in {"image", "video"}
         ]
 
         # 构建媒体组件（最多10个）
@@ -149,9 +147,7 @@ class TelegramMessageSender(DefaultMessageSender):
             else:
                 return SendResult(ok=False, detail="telegram_send_failed")
         except Exception as ex:
-            logger.warning(
-                "Telegram media send failed, fallback to text: %s", ex
-            )
+            logger.warning("Telegram media send failed, fallback to text: %s", ex)
             # 失败时回退到纯文本
             if failed_urls:
                 message = self._append_failed_media_links(message, failed_urls)

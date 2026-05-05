@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import unquote, urlparse
 from typing import TYPE_CHECKING
 
@@ -222,7 +221,9 @@ class DefaultMessageSender:
                 return SendResult(ok=True)
             else:
                 logger.warning("Message send returned False: session=%s", session_id)
-                return SendResult(ok=False, needs_rebind=True, detail="platform_or_session")
+                return SendResult(
+                    ok=False, needs_rebind=True, detail="platform_or_session"
+                )
         except Exception as ex:
             logger.error(
                 "Message send raised exception: session=%s, error=%s",
@@ -242,7 +243,9 @@ class DefaultMessageSender:
     ) -> SendResult:
         """发送消息给用户（默认实现）"""
         try:
-            timeout = context.timeout_seconds if context else self._get_timeout_seconds()
+            timeout = (
+                context.timeout_seconds if context else self._get_timeout_seconds()
+            )
             proxy = context.proxy if context else self._get_proxy()
 
             image_components = []

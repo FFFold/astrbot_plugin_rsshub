@@ -272,12 +272,20 @@ class Main(Star):
         yield event.plain_result(f"Feed {feed_id} 刷新完成")
 
     @filter.command("sub_set")
-    async def sub_set(self, event: AstrMessageEvent, sub_id: int = 0, option: str = "", value: str = ""):
+    async def sub_set(
+        self,
+        event: AstrMessageEvent,
+        sub_id: int = 0,
+        option: str = "",
+        value: str = "",
+    ):
         """修改订阅配置
         用法: /sub_set <sub_id> <option> <value>
         """
         if sub_id <= 0 or not option:
-            yield event.plain_result("用法: /sub_set <sub_id> <option> <value>\n示例: /sub_set 1 interval 30")
+            yield event.plain_result(
+                "用法: /sub_set <sub_id> <option> <value>\n示例: /sub_set 1 interval 30"
+            )
             return
         user_id = event.get_sender_id()
         result = await self._update_sub_cmd.execute(
@@ -296,8 +304,7 @@ class Main(Star):
         for sub in result.subscriptions:
             title = sub.title or f"Feed #{sub.feed_id}"
             lines.append(
-                f"[{sub.id}] {title[:40]} - "
-                f"{'启用' if sub.state == 1 else '停用'}"
+                f"[{sub.id}] {title[:40]} - {'启用' if sub.state == 1 else '停用'}"
             )
         if not lines:
             yield event.plain_result("暂无订阅")
@@ -323,7 +330,9 @@ class Main(Star):
         用法: /batch_deactivate <id1,id2,...>
         """
         if not sub_ids:
-            yield event.plain_result("请提供订阅 ID 列表\n用法: /batch_deactivate 1,2,3")
+            yield event.plain_result(
+                "请提供订阅 ID 列表\n用法: /batch_deactivate 1,2,3"
+            )
             return
         ids = [int(x.strip()) for x in sub_ids.split(",") if x.strip().isdigit()]
         user_id = event.get_sender_id()

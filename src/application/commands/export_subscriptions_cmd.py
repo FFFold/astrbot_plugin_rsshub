@@ -12,7 +12,7 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ..dto.result_dto import CommandResult
 
 if TYPE_CHECKING:
-    from ...infrastructure.utils.subscription_io import serialize_subscriptions_to_toml
+    pass
 
 
 @dataclass

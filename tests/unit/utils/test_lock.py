@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_asyncio
 
 from astrbot_plugin_rsshub.src.infrastructure.utils import (
     LockManager,
@@ -109,6 +108,7 @@ class TestLockedDecorator:
     @pytest.mark.asyncio
     async def test_locked_with_user_id(self):
         """测试用户锁"""
+
         @locked("#user_id")
         async def user_operation(user_id: str) -> str:
             await asyncio.sleep(0.01)
@@ -125,6 +125,7 @@ class TestLockedDecorator:
     @pytest.mark.asyncio
     async def test_locked_with_hostname(self):
         """测试主机名锁"""
+
         @locked("#url")
         async def fetch(url: str) -> str:
             await asyncio.sleep(0.01)
@@ -141,6 +142,7 @@ class TestLockedDecorator:
     @pytest.mark.asyncio
     async def test_locked_with_global_web(self):
         """测试全局网络锁"""
+
         @locked("'global_web'")
         async def global_request() -> str:
             await asyncio.sleep(0.01)

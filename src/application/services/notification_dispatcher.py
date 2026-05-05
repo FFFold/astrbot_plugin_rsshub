@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from ...domain.entities.push_history import PushHistory

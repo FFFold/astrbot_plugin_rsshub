@@ -47,19 +47,24 @@ class FeedSyncService:
         try:
             web_feed = await fetcher.fetch(feed.link)
             if web_feed.error or not web_feed.content:
-                logger.warning("sync_feed: 抓取失败: feed=%s, err=%s", feed.link, web_feed.error)
+                logger.warning(
+                    "sync_feed: 抓取失败: feed=%s, err=%s", feed.link, web_feed.error
+                )
                 return
 
             parser = RSSParser()
             entries, parse_err = parser.parse(web_feed.content)
             if parse_err:
-                logger.warning("sync_feed: 解析失败: feed=%s, err=%s", feed.link, parse_err)
+                logger.warning(
+                    "sync_feed: 解析失败: feed=%s, err=%s", feed.link, parse_err
+                )
                 return
 
             logger.info("sync_feed: feed=%s, entries=%d", feed.link, len(entries))
 
             # 去重 + 记录新条目哈希
             from ...domain.services.content_filter import ContentFilterService
+
             filter_svc = ContentFilterService()
             new_entries = []
             for entry in entries:
@@ -71,7 +76,9 @@ class FeedSyncService:
             await self._feed_repo.save(feed)
             logger.info(
                 "sync_feed: feed=%s, total=%d, new=%d",
-                feed.link, len(entries), len(new_entries),
+                feed.link,
+                len(entries),
+                len(new_entries),
             )
         finally:
             await fetcher.close()

@@ -95,9 +95,7 @@ class RSSFeedFetcher(HttpFetcher):
 
             etag_header = ret.etag
             if etag_header:
-                logger.debug(
-                    "feed_get: Received ETag '%s' for %s", etag_header, url
-                )
+                logger.debug("feed_get: Received ETag '%s' for %s", etag_header, url)
 
         except Exception as e:
             ret.error = WebError(

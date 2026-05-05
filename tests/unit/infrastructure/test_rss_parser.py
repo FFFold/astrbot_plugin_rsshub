@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from astrbot_plugin_rsshub.src.infrastructure.utils import get_lock_manager
 

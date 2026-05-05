@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # 测试工具函数
 # =============================================================================
 
+
 def print_header(text: str) -> None:
     """打印标题."""
     print("=" * 70)
@@ -54,6 +55,7 @@ def print_test(name: str, status: str, message: str = "") -> None:
 # =============================================================================
 # 表达式解析器测试
 # =============================================================================
+
 
 def test_expression_parser():
     """测试表达式解析器."""
@@ -119,7 +121,9 @@ def test_compiled_expression():
                 print_test(f"编译表达式 {expr}", "PASS")
                 passed += 1
             else:
-                print_test(f"编译表达式 {expr}", "FAIL", f"期望 {expected!r}, 得到 {result!r}")
+                print_test(
+                    f"编译表达式 {expr}", "FAIL", f"期望 {expected!r}, 得到 {result!r}"
+                )
                 failed += 1
         except Exception as e:
             print_test(f"编译表达式 {expr}", "FAIL", str(e))
@@ -131,6 +135,7 @@ def test_compiled_expression():
 # =============================================================================
 # 缓存测试
 # =============================================================================
+
 
 def test_memory_cache():
     """测试内存缓存."""
@@ -193,12 +198,16 @@ def test_memory_cache():
 # HTML 清理测试
 # =============================================================================
 
+
 def test_html_cleaner():
     """测试 HTML 清理."""
     # HTMLCleaner 是一个复杂的解析器类，需要 BeautifulSoup
     # 这里只做简单的存在性检查
     try:
-        from astrbot_plugin_rsshub.src.infrastructure.utils.html_cleaner import HTMLCleaner
+        from astrbot_plugin_rsshub.src.infrastructure.utils.html_cleaner import (
+            HTMLCleaner,
+        )
+
         print_test("HTMLCleaner 导入", "PASS")
         return 1, 0
     except ImportError as e:
@@ -212,6 +221,7 @@ def test_html_cleaner():
 # =============================================================================
 # 锁管理器测试
 # =============================================================================
+
 
 def test_lock_manager():
     """测试锁管理器."""
@@ -249,6 +259,7 @@ def test_lock_manager():
 # =============================================================================
 # RSS 解析器测试
 # =============================================================================
+
 
 def test_rss_parser_basic():
     """测试 RSS 解析器基本功能."""
@@ -301,6 +312,7 @@ def test_rss_parser_basic():
 # =============================================================================
 # 事件系统测试
 # =============================================================================
+
 
 async def test_event_bus():
     """测试事件总线."""
@@ -362,6 +374,7 @@ async def test_event_bus():
 # =============================================================================
 # 扩展系统测试
 # =============================================================================
+
 
 async def test_extension_system():
     """测试扩展系统."""
@@ -492,7 +505,8 @@ def main():
         description="RSSHub Plugin Test Runner",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="显示详细输出",
     )

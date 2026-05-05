@@ -12,12 +12,16 @@ class TestSubscribeFeedCommand:
     @pytest.mark.asyncio
     async def test_subscribe_new_feed(self, mock_event, mock_context):
         """测试订阅新 Feed"""
-        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import SubscribeFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
+            SubscribeFeedCommand,
+        )
 
         # Mock 依赖
         feed_repo = MagicMock()
         feed_repo.get_by_url.return_value = None  # Feed 不存在
-        feed_repo.create.return_value = MagicMock(id=1, url="https://example.com/rss.xml")
+        feed_repo.create.return_value = MagicMock(
+            id=1, url="https://example.com/rss.xml"
+        )
 
         sub_repo = MagicMock()
         sub_repo.get_by_user_and_feed.return_value = None  # 订阅不存在
@@ -50,7 +54,9 @@ class TestSubscribeFeedCommand:
     @pytest.mark.asyncio
     async def test_subscribe_existing_feed(self, mock_event, mock_context):
         """测试订阅已存在的 Feed"""
-        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import SubscribeFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
+            SubscribeFeedCommand,
+        )
 
         existing_feed = MagicMock(id=1, url="https://example.com/rss.xml")
 
@@ -83,7 +89,6 @@ class TestSubscribeFeedCommand:
         """测试订阅无效 URL"""
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
-            SubscribeResult,
         )
 
         feed_repo = MagicMock()
@@ -114,7 +119,9 @@ class TestUnsubscribeFeedCommand:
     @pytest.mark.asyncio
     async def test_unsubscribe_success(self):
         """测试成功取消订阅"""
-        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
+            UnsubscribeFeedCommand,
+        )
 
         sub_repo = MagicMock()
         sub_repo.get_by_id.return_value = MagicMock(
@@ -141,7 +148,9 @@ class TestUnsubscribeFeedCommand:
     @pytest.mark.asyncio
     async def test_unsubscribe_not_found(self):
         """测试取消不存在的订阅"""
-        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
+            UnsubscribeFeedCommand,
+        )
 
         sub_repo = MagicMock()
         sub_repo.get_by_id.return_value = None
@@ -161,7 +170,9 @@ class TestUnsubscribeFeedCommand:
     @pytest.mark.asyncio
     async def test_unsubscribe_permission_denied(self):
         """测试无权限取消订阅"""
-        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
+            UnsubscribeFeedCommand,
+        )
 
         sub_repo = MagicMock()
         sub_repo.get_by_id.return_value = MagicMock(
@@ -189,7 +200,9 @@ class TestRefreshFeedCommand:
     @pytest.mark.asyncio
     async def test_refresh_success(self, sample_entries):
         """测试成功刷新 Feed"""
-        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import RefreshFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
+            RefreshFeedCommand,
+        )
 
         feed = MagicMock(
             id=1,
@@ -230,7 +243,9 @@ class TestRefreshFeedCommand:
     @pytest.mark.asyncio
     async def test_refresh_no_update(self):
         """测试 Feed 无更新"""
-        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import RefreshFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
+            RefreshFeedCommand,
+        )
 
         feed = MagicMock(
             id=1,
@@ -259,7 +274,9 @@ class TestRefreshFeedCommand:
     @pytest.mark.asyncio
     async def test_refresh_fetch_error(self):
         """测试刷新时获取失败"""
-        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import RefreshFeedCommand
+        from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
+            RefreshFeedCommand,
+        )
 
         feed = MagicMock(id=1, url="https://example.com/rss.xml")
 

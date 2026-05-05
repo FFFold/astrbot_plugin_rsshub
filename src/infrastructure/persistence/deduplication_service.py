@@ -55,7 +55,6 @@ class DeduplicationService:
             3. upstream_crc - 上游 CRC32
             4. legacy_crc - 遗留 CRC32
         """
-        from ..fetcher.rss.parser import RSSParser
 
         fingerprints = []
 
@@ -64,7 +63,9 @@ class DeduplicationService:
             entry_id = str(entry.get("id") or entry.get("guid") or "").strip()
             link = str(entry.get("link") or "").strip()
             title = str(entry.get("title") or "").strip()
-            summary = str(entry.get("summary") or entry.get("description") or "").strip()
+            summary = str(
+                entry.get("summary") or entry.get("description") or ""
+            ).strip()
             published = str(entry.get("published") or "").strip()
         else:
             entry_id = entry.entry_id or entry.guid
@@ -74,13 +75,9 @@ class DeduplicationService:
             published = str(entry.published) if entry.published else ""
 
         # 1. 稳定身份指纹（sid:xxx）
-        stable_material = self._build_stable_material(
-            entry_id, link, title, summary
-        )
+        stable_material = self._build_stable_material(entry_id, link, title, summary)
         if stable_material:
-            stable_hash = hashlib.sha256(
-                stable_material.encode()
-            ).hexdigest()
+            stable_hash = hashlib.sha256(stable_material.encode()).hexdigest()
             fingerprints.append(f"sid:{stable_hash}")
 
         # 2. 内容哈希
@@ -91,9 +88,9 @@ class DeduplicationService:
         # 3. 上游 CRC32
         upstream_material = self._build_upstream_material(entry)
         if upstream_material:
-            upstream_crc = hex(zlib.crc32(
-                upstream_material.encode("utf-8", errors="ignore")
-            ))[2:]
+            upstream_crc = hex(
+                zlib.crc32(upstream_material.encode("utf-8", errors="ignore"))
+            )[2:]
             fingerprints.append(upstream_crc)
 
         # 4. 遗留 CRC32（向后兼容）
@@ -199,15 +196,14 @@ class DeduplicationService:
             return False, 0.0
 
         # 检查稳定身份指纹（最高优先级）
-        stable_hash = next(
-            (h for h in fingerprints if h.startswith("sid:")), None
-        )
+        stable_hash = next((h for h in fingerprints if h.startswith("sid:")), None)
         if stable_hash and stable_hash in known_hashes:
             return True, 1.0
 
         # 检查内容哈希
         content_hash = next(
-            (h for h in fingerprints if len(h) == 64), None  # SHA256 长度
+            (h for h in fingerprints if len(h) == 64),
+            None,  # SHA256 长度
         )
         if content_hash and content_hash in known_hashes:
             return True, 0.9
@@ -243,9 +239,7 @@ class DeduplicationService:
             if not group:
                 continue
             # 查找身份指纹
-            identity = next(
-                (h for h in group if h.startswith("sid:")), None
-            )
+            identity = next((h for h in group if h.startswith("sid:")), None)
             if identity and identity in seen_identity:
                 continue
             if identity:
@@ -274,7 +268,6 @@ class DeduplicationService:
         Returns:
             计算后的限制值
         """
-        import math
 
         # 确保参数在合理范围内
         min_limit = min(min_limit, 20000)  # 绝对最大值

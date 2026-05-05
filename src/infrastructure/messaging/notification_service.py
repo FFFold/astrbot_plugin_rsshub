@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...application.services.notification_dispatcher import NotificationDispatcher
-from ...application.dto.item_dto import ItemDTO
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..utils import get_logger

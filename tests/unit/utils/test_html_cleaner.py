@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from astrbot_plugin_rsshub.src.infrastructure.utils import HTMLCleaner, clean_html
 
@@ -21,7 +20,7 @@ class TestHTMLCleaner:
 
     def test_clean_removes_style_tags(self):
         """测试清除 style 标签"""
-        html = '<style>body{color:red}</style><p>Text</p>'
+        html = "<style>body{color:red}</style><p>Text</p>"
         result = HTMLCleaner.clean(html)
         assert "<style>" not in result
         assert "Text" in result
@@ -61,7 +60,7 @@ class TestHTMLCleaner:
 
     def test_strip_removes_all_tags(self):
         """测试 strip 移除所有标签"""
-        html = '<p>Hello <b>World</b></p>'
+        html = "<p>Hello <b>World</b></p>"
         result = HTMLCleaner.strip(html)
         assert "<p>" not in result
         assert "<b>" not in result
@@ -84,7 +83,7 @@ class TestHTMLCleaner:
 
     def test_extract_text_removes_tags(self):
         """测试 extract_text 移除标签"""
-        html = '<p>Hello <b>World</b></p>'
+        html = "<p>Hello <b>World</b></p>"
         result = HTMLCleaner.extract_text(html)
         assert "Hello" in result
         assert "World" in result
@@ -96,7 +95,7 @@ class TestCleanHtmlFunction:
 
     def test_clean_html_basic(self):
         """测试基本清理"""
-        html = '<p>Hello</p><script>alert(1)</script>'
+        html = "<p>Hello</p><script>alert(1)</script>"
         result = clean_html(html)
         assert "<p>" in result
         assert "<script>" not in result

@@ -88,11 +88,7 @@ class BaseMessageFormatter(ABC):
         """转义 HTML 特殊字符"""
         if not text:
             return ""
-        return (
-            text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     def _truncate_text(self, text: str, max_length: int) -> str:
         """截断文本"""
@@ -105,11 +101,13 @@ class BaseMessageFormatter(ABC):
     def _strip_html_tags(self, html: str) -> str:
         """移除 HTML 标签"""
         import re
+
         if not html:
             return ""
         # 简单的 HTML 标签移除
         text = re.sub(r"<[^>]+>", "", html)
         # 解码 HTML 实体
         import html
+
         text = html.unescape(text)
         return text.strip()

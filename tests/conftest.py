@@ -62,13 +62,16 @@ def sample_media_feed(fixtures_dir: Path) -> str:
 @pytest.fixture
 def sample_duplicate_feed(fixtures_dir: Path) -> str:
     """返回带重复条目的 RSS feed XML 内容."""
-    return (fixtures_dir / "feeds" / "rss_with_duplicate.xml").read_text(encoding="utf-8")
+    return (fixtures_dir / "feeds" / "rss_with_duplicate.xml").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.fixture
 def sample_entries():
     """提供示例条目列表."""
     from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
+
     return [
         EntryParsed(
             title="Test Entry 1",
@@ -97,6 +100,7 @@ def sample_entries():
 def mock_feed_entity():
     """提供模拟 Feed 实体."""
     from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+
     return Feed(
         id=1,
         url="https://example.com/rss.xml",
@@ -109,6 +113,7 @@ def mock_feed_entity():
 def mock_subscription_entity():
     """提供模拟 Subscription 实体."""
     from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
     return Subscription(
         id=1,
         feed_id=1,

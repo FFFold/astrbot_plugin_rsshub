@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 
 class TestRSSHubPluginIntegration:
@@ -149,7 +149,12 @@ class TestCommandIntegration:
         import inspect
         from main import RSSHubPlugin
 
-        methods = [name for name, _ in inspect.getmembers(RSSHubPlugin, predicate=inspect.isfunction)]
+        methods = [
+            name
+            for name, _ in inspect.getmembers(
+                RSSHubPlugin, predicate=inspect.isfunction
+            )
+        ]
 
         command_methods = [
             "cmd_sub",

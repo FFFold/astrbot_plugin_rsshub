@@ -24,10 +24,9 @@ Examples:
 from __future__ import annotations
 
 import asyncio
-import inspect
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from ...domain.entities.feed import Feed
 from ...domain.entities.push_history import PushHistory
@@ -36,7 +35,6 @@ from ..utils import get_logger
 
 if TYPE_CHECKING:
     from ..fetcher.rss.parser import EntryParsed
-    from ...application.dto import WebFeed
 
 logger = get_logger()
 
@@ -318,9 +316,7 @@ class EventBus:
                     e,
                 )
 
-    def off(
-        self, event_type: type[BaseEvent], handler: Callable | None = None
-    ) -> None:
+    def off(self, event_type: type[BaseEvent], handler: Callable | None = None) -> None:
         """取消订阅
 
         Args:

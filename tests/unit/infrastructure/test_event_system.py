@@ -218,24 +218,23 @@ class TestPluginManager:
         """测试加载扩展"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
             PluginManager,
-            Extension,
         )
 
         manager = PluginManager()
 
         # 创建临时扩展文件
-        ext_code = '''
+        ext_code = """
 from astrbot_plugin_rsshub.src.infrastructure.messaging import Extension
 
 class TestExtension(Extension):
     name = "test_ext"
     version = "1.0.0"
-'''
+"""
 
         import tempfile
         import os
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(ext_code)
             temp_path = f.name
 

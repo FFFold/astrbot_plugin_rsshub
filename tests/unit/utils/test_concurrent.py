@@ -5,9 +5,13 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-import pytest_asyncio
 
-from astrbot_plugin_rsshub.src.infrastructure.utils import AsyncTool, retry, semaphore, timeout
+from astrbot_plugin_rsshub.src.infrastructure.utils import (
+    AsyncTool,
+    retry,
+    semaphore,
+    timeout,
+)
 
 
 class TestAsyncTool:
@@ -16,6 +20,7 @@ class TestAsyncTool:
     @pytest.mark.asyncio
     async def test_async_map_concurrent(self):
         """测试异步并发映射"""
+
         async def double(x: int) -> int:
             await asyncio.sleep(0.01)
             return x * 2
@@ -26,6 +31,7 @@ class TestAsyncTool:
     @pytest.mark.asyncio
     async def test_async_map_empty_list(self):
         """测试空列表映射"""
+
         async def dummy(x: int) -> int:
             return x
 
@@ -35,6 +41,7 @@ class TestAsyncTool:
     @pytest.mark.asyncio
     async def test_async_filter(self):
         """测试异步过滤"""
+
         async def is_even(x: int) -> bool:
             await asyncio.sleep(0.01)
             return x % 2 == 0
@@ -67,6 +74,7 @@ class TestAsyncTool:
     @pytest.mark.asyncio
     async def test_run_with_timeout_success(self):
         """测试超时成功"""
+
         async def quick_task() -> str:
             await asyncio.sleep(0.01)
             return "done"
@@ -77,6 +85,7 @@ class TestAsyncTool:
     @pytest.mark.asyncio
     async def test_run_with_timeout_expires(self):
         """测试超时过期"""
+
         async def slow_task() -> str:
             await asyncio.sleep(1.0)
             return "done"
@@ -165,6 +174,7 @@ class TestTimeoutDecorator:
     @pytest.mark.asyncio
     async def test_timeout_success(self):
         """测试超时成功"""
+
         @timeout(0.5)
         async def quick_task() -> str:
             await asyncio.sleep(0.01)
@@ -176,6 +186,7 @@ class TestTimeoutDecorator:
     @pytest.mark.asyncio
     async def test_timeout_expires(self):
         """测试超时过期"""
+
         @timeout(0.05)
         async def slow_task() -> str:
             await asyncio.sleep(1.0)
