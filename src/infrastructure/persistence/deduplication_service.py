@@ -10,7 +10,7 @@ import zlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..rss.rss_parser import EntryParsed
+    from ..fetcher.rss.parser import EntryParsed
 
 
 class DeduplicationService:
@@ -55,7 +55,7 @@ class DeduplicationService:
             3. upstream_crc - 上游 CRC32
             4. legacy_crc - 遗留 CRC32
         """
-        from .rss_parser import RSSParser
+        from ..fetcher.rss.parser import RSSParser
 
         fingerprints = []
 

@@ -19,8 +19,8 @@ from sqlmodel import select
 
 from ..persistence.database import get_database
 from ..persistence.models import FeedORM, SubORM
-from ..rss.rss_fetcher import RSSFeedFetcher
-from ..rss.rss_parser import RSSParser
+from ..fetcher.rss import RSSFeedFetcher
+from ..fetcher.rss.parser import RSSParser
 from ..utils import get_logger
 from ..utils.lock import locked
 

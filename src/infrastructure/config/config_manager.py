@@ -192,7 +192,7 @@ class TranslationConfig(BaseModel):
     force_translate: bool = Field(default=False, description="强制翻译")
     translate_title: bool = Field(default=True, description="翻译标题")
     translate_content: bool = Field(default=True, description="翻译内容")
-    display_orignal_content: bool = Field(default=False, description="显示原文")
+    display_original_content: bool = Field(default=False, description="显示原文")
     cache_translations: bool = Field(default=True, description="缓存翻译")
     translation_template: list[dict[str, Any]] = Field(
         default_factory=list, description="翻译模板"

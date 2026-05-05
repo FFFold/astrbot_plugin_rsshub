@@ -41,9 +41,9 @@ class BaiduTranslator(BaseTranslator):
     def _load_credentials(self) -> bool:
         """从配置加载百度API凭证"""
         try:
-            from ...config import get_config
+            from ...config import get_config_manager
 
-            config = get_config()
+            config = get_config_manager()
             if config and hasattr(config, "baidu_translate"):
                 baidu_config = config.baidu_translate
                 self._app_id = getattr(baidu_config, "app_id", None)
@@ -93,13 +93,13 @@ class BaiduTranslator(BaseTranslator):
 
             url = "https://fanyi-api.baidu.com/api/trans/vip/translate"
 
-            if self._session:
-                async with self._session.get(url, params=params) as response:
+            session = self._session or aiohttp.ClientSession()
+            try:
+                async with session.get(url, params=params) as response:
                     data = await response.json()
-            else:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, params=params) as response:
-                        data = await response.json()
+            finally:
+                if not self._session:
+                    await session.close()
 
             if "error_code" in data:
                 logger.warning(f"Baidu翻译API错误: {data}")

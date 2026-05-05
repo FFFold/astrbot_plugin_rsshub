@@ -1,17 +1,14 @@
-"""RSS Feed 抓取器
+"""通用 HTTP 抓取器
 
-提供 RSS/Atom 内容的异步抓取和解析功能。
+提供异步 HTTP 请求的基础设施，管理共享 aiohttp session。
 """
 
 from __future__ import annotations
 
 import asyncio
-from io import BytesIO
 from ssl import SSLError
-from typing import Final
 
 import aiohttp
-import feedparser
 
 from ...application.dto import WebFeed
 from ...domain.exceptions import WebError
@@ -19,14 +16,9 @@ from ..utils import get_logger
 
 logger = get_logger()
 
-FEED_ACCEPT: Final = (
-    "application/rss+xml, application/rdf+xml, application/atom+xml, "
-    "application/xml;q=0.9, text/xml;q=0.8, text/*;q=0.7, application/*;q=0.6"
-)
 
-
-class RSSFeedFetcher:
-    """RSS Feed 异步抓取器，管理共享 aiohttp session。"""
+class HttpFetcher:
+    """通用异步 HTTP 抓取器，管理共享 aiohttp session。"""
 
     def __init__(self, timeout: int = 30, proxy: str = "") -> None:
         self.timeout = max(1, int(timeout or 30))
@@ -61,10 +53,10 @@ class RSSFeedFetcher:
         proxy: str | None = None,
         session: aiohttp.ClientSession | None = None,
     ) -> WebFeed:
-        """抓取 RSS/Atom 内容并解析为 ``WebFeed``。
+        """执行 HTTP GET 请求，返回 WebFeed（不含 rss_d）。
 
         Args:
-            url: Feed URL
+            url: 请求 URL
             timeout: 请求超时（秒），默认使用实例配置
             headers: 额外请求头
             verbose: 是否输出详细日志
@@ -72,7 +64,7 @@ class RSSFeedFetcher:
             session: 外部 session（若提供则直接使用）
 
         Returns:
-            WebFeed 抓取结果对象
+            WebFeed 响应结果
         """
         ret = WebFeed(url=url, ori_url=url)
         log_level = 30 if verbose else 10
@@ -81,8 +73,6 @@ class RSSFeedFetcher:
         _headers: dict[str, str] = {}
         if headers:
             _headers.update(headers)
-        if "Accept" not in _headers:
-            _headers["Accept"] = FEED_ACCEPT
 
         use_shared = not effective_proxy and session is None
         client: aiohttp.ClientSession
@@ -103,18 +93,12 @@ class RSSFeedFetcher:
                 timeout=timeout or self.timeout,
                 proxy=effective_proxy or None if not use_shared else None,
             ) as resp:
-                rss_content = await resp.read()
-                ret.content = rss_content
+                content = await resp.read()
+                ret.content = content
                 ret.url = str(resp.url)
                 ret.headers = dict(resp.headers.items())
                 ret.status = resp.status
                 ret.reason = resp.reason
-
-                etag_header = ret.etag
-                if etag_header:
-                    logger.debug(
-                        "feed_get: Received ETag '%s' for %s", etag_header, url
-                    )
 
                 if (
                     resp.status == 200
@@ -126,7 +110,7 @@ class RSSFeedFetcher:
                 if resp.status == 304:
                     return ret
 
-                if rss_content is None or resp.status != 200:
+                if content is None or resp.status != 200:
                     status_caption = f"{resp.status}" + (
                         f" {resp.reason}" if resp.reason else ""
                     )
@@ -137,24 +121,6 @@ class RSSFeedFetcher:
                         log_level=log_level,
                     )
                     return ret
-
-                with BytesIO(rss_content) as rss_content_io:
-                    rss_d = feedparser.parse(rss_content_io, sanitize_html=False)
-
-                if not rss_d.feed.get("title"):
-                    if not rss_d.entries and (
-                        rss_d.bozo
-                        or not (rss_d.feed.get("link") or rss_d.feed.get("updated"))
-                    ):
-                        ret.error = WebError(
-                            error_name="feed invalid",
-                            url=ret.url,
-                            log_level=log_level,
-                        )
-                        return ret
-                    rss_d.feed["title"] = ret.url
-
-                ret.rss_d = rss_d
 
         except aiohttp.InvalidURL:
             ret.error = WebError(error_name="URL invalid", url=url, log_level=log_level)

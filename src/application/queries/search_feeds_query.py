@@ -7,7 +7,10 @@
 from pydantic import BaseModel, Field
 
 from ...domain.repositories.feed_repository import FeedRepository
+from ...infrastructure.utils import get_logger
 from ..dto.feed_dto import FeedDTO
+
+logger = get_logger()
 
 
 class SearchFeedsResult(BaseModel):
@@ -53,11 +56,35 @@ class SearchFeedsQuery:
         Returns:
             SearchFeedsResult: 查询结果
         """
-        # TODO: Phase 4 实现 Feed 搜索逻辑
-        # 目前返回空列表
+        query_lower = query.strip().lower()
+        if not query_lower:
+            return SearchFeedsResult(feeds=[], total=0, query=query)
+
+        all_feeds = await self._feed_repo.get_all_active()
+
+        matched: list[FeedDTO] = []
+        for feed in all_feeds:
+            if query_lower in feed.link.lower() or query_lower in feed.title.lower():
+                matched.append(
+                    FeedDTO(
+                        id=feed.id,
+                        link=feed.link,
+                        title=feed.title,
+                        state=feed.state,
+                        etag=feed.etag,
+                        last_modified=feed.last_modified,
+                        created_at=feed.created_at,
+                        updated_at=feed.updated_at,
+                    )
+                )
+
+        total = len(matched)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paged = matched[start:end] if start < total else []
 
         return SearchFeedsResult(
-            feeds=[],
-            total=0,
+            feeds=paged,
+            total=total,
             query=query,
         )

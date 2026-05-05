@@ -93,9 +93,9 @@ class TranslationService:
         self._init_provider("google")
 
         try:
-            from ..config import get_config
+            from ..config import get_config_manager
 
-            config = get_config()
+            config = get_config_manager()
             if config and hasattr(config, "translation"):
                 trans = config.translation
                 self._target_lang = getattr(trans, "target_lang", "zh-CN")

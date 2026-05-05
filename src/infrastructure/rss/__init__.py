@@ -1,12 +1,18 @@
-"""RSS 服务包
+"""RSS 服务包（兼容别名）
 
-提供 RSS 抓取、解析和自动发现功能。
+此包已迁移至 ``fetcher/``，保留此文件仅用于向后兼容。
+请优先引用 ``from ...infrastructure.fetcher import ...``。
 """
 
+from ..fetcher.rss import (
+    Enclosure,
+    EntryParsed,
+    FeedDiscoverer,
+    FeedDiscoveryResult,
+    RSSFeedFetcher,
+    RSSParser,
+)
 from ...application.dto import WebFeed
-from .feed_discoverer import FeedDiscoverer, FeedDiscoveryResult
-from .rss_fetcher import RSSFeedFetcher
-from .rss_parser import Enclosure, EntryParsed, RSSParser
 
 __all__ = [
     "WebFeed",

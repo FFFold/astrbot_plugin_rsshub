@@ -1,6 +1,9 @@
 # Plugin runtime data
 data/
 
+# Reference clone for architecture analysis
+_ref/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -3,7 +3,6 @@
 提供技术能力实现：数据库、网络、文件系统、配置管理等。
 """
 
-from ...domain.exceptions import WebError
 from .api import RSSHubRadarAPI
 from .config import (
     BasicConfig,
@@ -15,13 +14,29 @@ from .config import (
     WebUIConfig,
 )
 from .messaging import (
+    BaseEvent,
     BaseMessageSender,
     ChannelInfo,
-    DirectMessageSender,
-    ForwardMessageSender,
+    DefaultMessageSender,
+    EventBus,
+    Extension,
     MessageContext,
+    NotificationServiceImpl,
+    OneBotMessageSender,
+    PluginManager,
+    PreparedMedia,
+    QQOfficialMessageSender,
     SendResult,
+    TelegramMessageSender,
+    WechatMessageSender,
+    get_bot_self_id,
+    get_event_bus,
+    get_notification_service,
+    get_plugin_manager,
     get_sender_for_platform,
+    on_event,
+    register_sender,
+    set_bot_self_id_provider,
 )
 from .persistence import (
     DatabaseManager,
@@ -41,10 +56,12 @@ from .persistence import (
     get_subscription_repository,
     get_user_repository,
 )
-from .rss import (
+from .fetcher import (
     Enclosure,
     EntryParsed,
     FeedDiscoverer,
+    FeedDiscoveryResult,
+    HttpFetcher,
     RSSFeedFetcher,
     RSSParser,
     WebFeed,
@@ -71,25 +88,45 @@ from .utils import (
 from .web import RSSHubWebUI
 
 __all__ = [
-    # RSS
+    # Fetcher
+    "HttpFetcher",
     "WebFeed",
-    "WebError",
     "RSSFeedFetcher",
     "RSSParser",
     "EntryParsed",
     "Enclosure",
     "FeedDiscoverer",
+    "FeedDiscoveryResult",
     # Schedule
     "RSSScheduler",
     "SchedulerStats",
-    # Messaging
+    # Messaging - Senders
     "SendResult",
+    "PreparedMedia",
     "ChannelInfo",
     "MessageContext",
     "BaseMessageSender",
-    "DirectMessageSender",
-    "ForwardMessageSender",
+    "DefaultMessageSender",
+    "TelegramMessageSender",
+    "OneBotMessageSender",
+    "QQOfficialMessageSender",
+    "WechatMessageSender",
     "get_sender_for_platform",
+    "register_sender",
+    "get_bot_self_id",
+    "set_bot_self_id_provider",
+    # Messaging - Events
+    "BaseEvent",
+    "EventBus",
+    "get_event_bus",
+    # Messaging - Extensions
+    "Extension",
+    "PluginManager",
+    "get_plugin_manager",
+    "on_event",
+    # Messaging - Notification
+    "NotificationServiceImpl",
+    "get_notification_service",
     # Config
     "BasicConfig",
     "GlobalConfig",

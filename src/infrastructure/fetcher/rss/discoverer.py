@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlparse
 import aiohttp
 from bs4 import BeautifulSoup
 
-from ..utils import get_logger
+from ...utils import get_logger
 
 logger = get_logger()
 
@@ -79,7 +79,6 @@ class FeedDiscoverer:
         results: list[FeedDiscoveryResult] = []
         seen: set[str] = set()
 
-        # 查找 <link rel="alternate"> 标签
         for link in soup.find_all("link", rel="alternate"):
             feed_type = link.get("type", "").lower()
             if feed_type not in (
@@ -108,7 +107,6 @@ class FeedDiscoverer:
                 )
             )
 
-        # 查找常见的 RSS 链接模式
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
             if not href:
