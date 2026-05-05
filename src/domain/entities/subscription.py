@@ -52,11 +52,16 @@ class Subscription(BaseModel):
     )
 
     use_sub_config: bool = Field(
-        default=False, description="是否使用订阅自身配置: true=使用Sub表, false=继承上层"
+        default=False,
+        description="是否使用订阅自身配置: true=使用Sub表, false=继承上层",
     )
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
+    )
 
     def is_active(self) -> bool:
         """检查订阅是否启用"""

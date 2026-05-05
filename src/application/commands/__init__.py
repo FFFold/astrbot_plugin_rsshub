@@ -1,13 +1,29 @@
 """应用命令包"""
 
-from .refresh_feed_command import RefreshFeedCommand
-from .subscribe_feed_command import SubscribeFeedCommand
-from .unsubscribe_feed_command import UnsubscribeFeedCommand
-from .update_subscription_command import UpdateSubscriptionCommand
+from .batch_activate_cmd import BatchActivateCommand
+from .batch_deactivate_cmd import BatchDeactivateCommand
+from .batch_unsubscribe_cmd import BatchUnsubscribeCommand
+from .export_subscriptions_cmd import ExportSubscriptionsCommand
+from .get_user_settings_cmd import GetUserSettingsCommand
+from .import_subscriptions_cmd import ImportSubscriptionsCommand
+from .refresh_feed_cmd import RefreshFeedCommand
+from .set_user_settings_cmd import SetUserSettingsCommand
+from .subscribe_feed_cmd import SubscribeFeedCommand
+from .test_subscription_cmd import TestSubscriptionCommand
+from .unsubscribe_feed_cmd import UnsubscribeFeedCommand
+from .update_subscription_cmd import UpdateSubscriptionCommand
 
 __all__ = [
+    "BatchActivateCommand",
+    "BatchDeactivateCommand",
+    "BatchUnsubscribeCommand",
+    "ExportSubscriptionsCommand",
+    "GetUserSettingsCommand",
+    "ImportSubscriptionsCommand",
     "RefreshFeedCommand",
+    "SetUserSettingsCommand",
     "SubscribeFeedCommand",
+    "TestSubscriptionCommand",
     "UnsubscribeFeedCommand",
     "UpdateSubscriptionCommand",
 ]

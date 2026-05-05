@@ -8,7 +8,6 @@ from ...domain.entities.feed import Feed
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.value_objects.feed_url import FeedUrl
-from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 

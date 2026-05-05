@@ -21,7 +21,9 @@ class User(BaseModel):
     id: str
     """用户ID（主键）"""
 
-    state: int = Field(default=0, description="用户状态: -1=封禁, 0=访客, 1=用户, 100=管理员")
+    state: int = Field(
+        default=0, description="用户状态: -1=封禁, 0=访客, 1=用户, 100=管理员"
+    )
 
     interval: int | None = Field(default=None, description="监控间隔（分钟）")
     notify: int = Field(default=1, description="是否通知: 0=禁用, 1=启用")
@@ -51,16 +53,18 @@ class User(BaseModel):
     default_target_session: str | None = Field(
         default=None, max_length=255, description="默认推送目标会话(unified_msg_origin)"
     )
-    needs_binding_notice: int = Field(
-        default=0, description="是否需要提示绑定推送目标"
-    )
+    needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
     use_user_config: bool = Field(
         default=False,
         description="是否使用用户自身配置: true=使用User表, false=继承全局配置",
     )
 
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="创建时间")
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="更新时间")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
+    )
 
     def is_active(self) -> bool:
         """检查用户是否处于启用状态（非封禁）"""
