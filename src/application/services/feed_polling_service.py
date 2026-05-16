@@ -640,8 +640,10 @@ class FeedPollingService:
             ]
             if self._media_fingerprint_service is not None and media_urls:
                 try:
-                    media_hashes = await self._media_fingerprint_service.fingerprint_urls(
-                        media_urls
+                    media_hashes = (
+                        await self._media_fingerprint_service.fingerprint_urls(
+                            media_urls
+                        )
                     )
                     if media_hashes:
                         logger.debug(

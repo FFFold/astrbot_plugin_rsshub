@@ -119,8 +119,16 @@ async def test_scheduler_groups_due_subscriptions_by_feed_and_triggers_polling(
     assert subs[0].next_check_time is not None
     assert subs[1].next_check_time is not None
     assert subs[2].next_check_time is not None
-    assert 590 <= (subs[1].next_check_time - subs[0].next_check_time).total_seconds() <= 610
-    assert 290 <= (subs[2].next_check_time - subs[0].next_check_time).total_seconds() <= 310
+    assert (
+        590
+        <= (subs[1].next_check_time - subs[0].next_check_time).total_seconds()
+        <= 610
+    )
+    assert (
+        290
+        <= (subs[2].next_check_time - subs[0].next_check_time).total_seconds()
+        <= 310
+    )
 
 
 @pytest.mark.asyncio
