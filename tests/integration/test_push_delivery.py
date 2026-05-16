@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import pytest
-
 from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
 
 
@@ -93,7 +91,11 @@ class TestMessageFormatting:
 
         # 模拟截断逻辑（例如限制500字符）
         max_length = 500
-        truncated = entry.summary[:max_length] + "..." if len(entry.summary) > max_length else entry.summary
+        truncated = (
+            entry.summary[:max_length] + "..."
+            if len(entry.summary) > max_length
+            else entry.summary
+        )
 
         assert len(truncated) <= max_length + 3  # +3 for "..."
         assert "..." in truncated
@@ -137,7 +139,9 @@ class TestSendModes:
         )
 
         # 转发消息可能包含来源标记
-        message = f"[Forwarded]\n**{entry.title}**\n\n{entry.summary}\n\nSource: {entry.link}"
+        message = (
+            f"[Forwarded]\n**{entry.title}**\n\n{entry.summary}\n\nSource: {entry.link}"
+        )
         assert "Forwarded" in message
         assert "Source:" in message
 

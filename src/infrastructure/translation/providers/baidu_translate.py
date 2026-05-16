@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import random
-from typing import TYPE_CHECKING
 
 import aiohttp
 
@@ -33,7 +32,7 @@ class BaiduTranslator(BaseTranslator):
         "it": "it",
     }
 
-    def __init__(self, session: "aiohttp.ClientSession | None" = None):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         super().__init__(session)
         self._app_id: str | None = None
         self._secret_key: str | None = None

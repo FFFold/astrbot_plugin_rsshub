@@ -126,7 +126,4 @@ class RSStTMessageFormatter(BaseMessageFormatter):
         feed_link: str = "",
     ) -> list[FormattedMessage]:
         """格式化多个条目"""
-        return [
-            self.format_entry(entry, feed_title, feed_link)
-            for entry in entries
-        ]
+        return [self.format_entry(entry, feed_title, feed_link) for entry in entries]

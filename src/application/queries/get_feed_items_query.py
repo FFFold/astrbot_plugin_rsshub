@@ -4,9 +4,6 @@
 处理获取 Feed 条目的查询。
 """
 
-from datetime import datetime, timezone
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 from ...domain.repositories.feed_repository import FeedRepository
@@ -88,12 +85,14 @@ class GetFeedItemsQuery:
             parser = RSSParser()
             entries, parse_err = parser.parse(web_feed.content)
             if parse_err:
-                logger.warning("解析 Feed 内容失败: feed=%s, err=%s", feed.link, parse_err)
+                logger.warning(
+                    "解析 Feed 内容失败: feed=%s, err=%s", feed.link, parse_err
+                )
 
             item_dtos: list[ItemDTO] = []
             for entry in entries:
                 published = None
-                if hasattr(entry, 'published_at') and entry.published_at:
+                if hasattr(entry, "published_at") and entry.published_at:
                     published = entry.published_at
                 item_dto = ItemDTO(
                     title=entry.title or "",

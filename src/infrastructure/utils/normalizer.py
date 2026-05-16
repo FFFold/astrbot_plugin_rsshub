@@ -91,8 +91,7 @@ def normalize_config_positive_int(raw: Any, key: str, default: int) -> int:
             )
             return coerced
         logger.warning(
-            "Invalid %s=%r; expected positive integer "
-            "(got non-integral numeric type)",
+            "Invalid %s=%r; expected positive integer (got non-integral numeric type)",
             key,
             raw,
         )

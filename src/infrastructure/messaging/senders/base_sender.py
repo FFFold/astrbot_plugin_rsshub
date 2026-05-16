@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from astrbot.api.message_components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.star.star_tools import StarTools
 
@@ -169,7 +168,9 @@ class DefaultMessageSender:
                 return SendResult(ok=True)
             else:
                 logger.warning("Message send returned False: session=%s", session_id)
-                return SendResult(ok=False, needs_rebind=True, detail="platform_or_session")
+                return SendResult(
+                    ok=False, needs_rebind=True, detail="platform_or_session"
+                )
         except Exception as ex:
             logger.error(
                 "Message send raised exception: session=%s, error=%s",
@@ -190,7 +191,9 @@ class DefaultMessageSender:
         """
         try:
             session_id = request.session_id
-            timeout = context.timeout_seconds if context else self._get_timeout_seconds()
+            timeout = (
+                context.timeout_seconds if context else self._get_timeout_seconds()
+            )
             proxy = context.proxy if context else self._get_proxy()
             platform = context.platform_name if context else ""
 
@@ -217,7 +220,9 @@ class DefaultMessageSender:
             return await self._send_chain(session_id, chain)
 
         except Exception as err:
-            logger.error("Send to user failed: session=%s, error=%s", request.session_id, err)
+            logger.error(
+                "Send to user failed: session=%s, error=%s", request.session_id, err
+            )
             return SendResult(
                 ok=False,
                 transient=self._is_transient_network_error(err),

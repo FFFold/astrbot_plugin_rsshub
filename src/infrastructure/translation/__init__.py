@@ -10,7 +10,11 @@ from .language_detection import (
     should_translate,
 )
 from .providers import BaiduTranslator, BaseTranslator, GoogleTranslator
-from .translation_service import TranslationService, get_available_providers, register_provider
+from .translation_service import (
+    TranslationService,
+    get_available_providers,
+    register_provider,
+)
 
 __all__ = [
     "BaseTranslator",

@@ -17,13 +17,14 @@ Examples:
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import inspect
 from abc import ABC
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
+from ..utils import get_logger
 from .event_bus import (
     BaseEvent,
     DeduplicationEvent,
@@ -159,7 +160,9 @@ class PluginManager:
         self._config = config
         self._logger = get_logger()
 
-    async def load_from_config(self, config: RsshubPluginConfig | None = None) -> list[str]:
+    async def load_from_config(
+        self, config: RsshubPluginConfig | None = None
+    ) -> list[str]:
         """从配置加载扩展，按配置列表顺序注册
 
         配置列表顺序即为优先级顺序，越靠前优先级越高。
@@ -178,7 +181,9 @@ class PluginManager:
 
         loaded: list[str] = []
         extensions_config = getattr(cfg, "basic_config", None)
-        extension_names: list[str] = getattr(extensions_config, "extensions", []) if extensions_config else []
+        extension_names: list[str] = (
+            getattr(extensions_config, "extensions", []) if extensions_config else []
+        )
 
         if extension_names:
             # 按配置列表顺序加载
@@ -243,7 +248,11 @@ class PluginManager:
         candidates: list[tuple[str, Path, int]] = []  # (name, path, priority)
 
         for item in plugins_dir.iterdir():
-            if item.is_file() and item.suffix == ".py" and not item.name.startswith("_"):
+            if (
+                item.is_file()
+                and item.suffix == ".py"
+                and not item.name.startswith("_")
+            ):
                 # 单文件扩展
                 name = item.stem
                 candidates.append((name, item, 100))
@@ -264,9 +273,7 @@ class PluginManager:
 
         return loaded
 
-    async def load_extension(
-        self, name: str, path: str | Path
-    ) -> Extension | None:
+    async def load_extension(self, name: str, path: str | Path) -> Extension | None:
         """从文件加载扩展
 
         Args:
@@ -355,7 +362,11 @@ class PluginManager:
             [(名称, 扩展实例, 是否启用), ...]
         """
         return [
-            (name, extension, name not in self._disabled_extensions and extension.is_enabled)
+            (
+                name,
+                extension,
+                name not in self._disabled_extensions and extension.is_enabled,
+            )
             for name, extension in self._extensions.items()
         ]
 
@@ -398,10 +409,6 @@ def reset_plugin_manager() -> None:
     """重置扩展管理器（主要用于测试）"""
     global _plugin_manager
     _plugin_manager = None
-
-
-# 延迟导入避免循环依赖
-from ..utils import get_logger
 
 
 __all__ = [

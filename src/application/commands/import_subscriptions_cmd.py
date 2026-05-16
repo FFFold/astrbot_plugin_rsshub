@@ -16,10 +16,7 @@ from ...domain.value_objects.feed_url import FeedUrl
 from ..dto.result_dto import CommandResult
 
 if TYPE_CHECKING:
-    from ...application.services.subscription_serializer import (
-        parse_subscriptions_toml,
-        SubscriptionImportPayload,
-    )
+    pass
 
 
 @dataclass
@@ -81,7 +78,6 @@ class ImportSubscriptionsCommand:
         """
         from ...application.services.subscription_serializer import (
             parse_subscriptions_toml,
-            SubscriptionImportPayload,
         )
 
         payload = parse_subscriptions_toml(content)

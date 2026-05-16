@@ -42,7 +42,9 @@ class TelegramMessageSender(DefaultMessageSender):
         """
         try:
             session_id = request.session_id
-            timeout = context.timeout_seconds if context else self._get_timeout_seconds()
+            timeout = (
+                context.timeout_seconds if context else self._get_timeout_seconds()
+            )
             proxy = context.proxy if context else self._get_proxy()
 
             effective_prepared = request.prepared_media

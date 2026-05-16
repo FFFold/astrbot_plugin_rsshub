@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from datetime import datetime, timezone
-
 import pytest
-import pytest_asyncio
 
 
 class TestEndToEndFlow:
@@ -36,7 +32,6 @@ class TestEndToEndFlow:
         """测试完整订阅流程"""
         # 1. 用户订阅一个 RSS 源
         user_id = "test_user_123"
-        feed_url = "https://example.com/rss.xml"
         target_session = "test:Group:12345"
 
         # 模拟订阅命令
