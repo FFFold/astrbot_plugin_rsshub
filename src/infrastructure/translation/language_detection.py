@@ -206,5 +206,5 @@ def normalize_lang_code(lang_code: str) -> str:
         "kr": "ko",
     }
 
-    normalized = lang_code.lower().strip()
+    normalized = lang_code.lower().strip().replace("_", "-")
     return lang_map.get(normalized, lang_code)

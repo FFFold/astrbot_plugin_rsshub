@@ -5,9 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
-import pytest
-
-from astrbot_plugin_rsshub.src.infrastructure.rss import RSSParser, EntryParsed
+from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed, RSSParser
 
 
 class TestEntryDeduplication:
@@ -133,7 +131,7 @@ class TestEntryDeduplication:
         # 相同内容应该生成相同哈希
         assert hash1 == hash2
 
-    def test_no_false_positive_deduplication(self):
+    def test_no_false_positive_deduplication(self, sample_rss_feed):
         """测试不误判不同条目为重复"""
         parser = RSSParser()
         entries, error = parser.parse(sample_rss_feed)
@@ -213,7 +211,9 @@ class TestMultiAlgorithmDeduplication:
 
         # 按 GUID 去重（最优先）
         seen_guids = set()
-        unique_by_guid = [e for e in entries if not (e.id in seen_guids or seen_guids.add(e.id))]
+        unique_by_guid = [
+            e for e in entries if not (e.id in seen_guids or seen_guids.add(e.id))
+        ]
 
         # GUID 不同，所以应该保留2个
         assert len(unique_by_guid) == 2
@@ -245,7 +245,11 @@ class TestMultiAlgorithmDeduplication:
         ]
 
         seen_guids_2 = set()
-        unique_by_guid_2 = [e for e in entries_with_same_guid if not (e.id in seen_guids_2 or seen_guids_2.add(e.id))]
+        unique_by_guid_2 = [
+            e
+            for e in entries_with_same_guid
+            if not (e.id in seen_guids_2 or seen_guids_2.add(e.id))
+        ]
 
         # 相同 GUID，按 GUID 去重后只剩1个
         assert len(unique_by_guid_2) == 1

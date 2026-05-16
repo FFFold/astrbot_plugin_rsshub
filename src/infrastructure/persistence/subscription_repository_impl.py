@@ -6,14 +6,12 @@
 
 from __future__ import annotations
 
-from sqlalchemy.orm import selectinload
-from sqlmodel import select
+from sqlmodel import asc, select
 
-from ...domain.entities.subscription import Subscription
-from ...domain.repositories.subscription_repository import SubscriptionRepository
-from ..utils import get_logger
 from .database import get_database
 from .models import SubORM
+from ..utils import get_logger
+from ...domain.entities.subscription import Subscription
 
 logger = get_logger()
 
@@ -28,7 +26,7 @@ class SubscriptionRepositoryImpl:
             stmt = (
                 select(SubORM)
                 .where(SubORM.id == sub_id)
-                .options(selectinload(SubORM.feed))
+                
             )
             result = await session.execute(stmt)
             orm = result.scalar_one_or_none()
@@ -41,8 +39,7 @@ class SubscriptionRepositoryImpl:
             stmt = (
                 select(SubORM)
                 .where(SubORM.user_id == user_id)
-                .options(selectinload(SubORM.feed))
-                .order_by(SubORM.id.asc())
+                .order_by(asc(SubORM.id))
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
@@ -69,8 +66,8 @@ class SubscriptionRepositoryImpl:
             stmt = (
                 select(SubORM)
                 .where(SubORM.state == 1)
-                .options(selectinload(SubORM.feed))
-                .order_by(SubORM.id.asc())
+                
+                .order_by(asc(SubORM.id))
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
@@ -83,8 +80,8 @@ class SubscriptionRepositoryImpl:
             stmt = (
                 select(SubORM)
                 .where(SubORM.feed_id == feed_id, SubORM.state == 1)
-                .options(selectinload(SubORM.feed), selectinload(SubORM.user))
-                .order_by(SubORM.id.asc())
+                
+                .order_by(asc(SubORM.id))
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
@@ -213,7 +210,7 @@ class SubscriptionRepositoryImpl:
 _sub_repo_instance: SubscriptionRepositoryImpl | None = None
 
 
-def get_subscription_repository() -> SubscriptionRepository:
+def get_subscription_repository() -> SubscriptionRepositoryImpl:
     """获取订阅仓库实例"""
     global _sub_repo_instance
     if _sub_repo_instance is None:

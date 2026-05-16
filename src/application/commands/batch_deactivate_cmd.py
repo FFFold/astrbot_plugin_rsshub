@@ -171,3 +171,58 @@ class BatchDeactivateCommand:
 
         sub_ids = [sub.id for sub in enabled_subs]
         return await self.execute(sub_ids, user_id)
+
+    async def execute_by_session(
+        self,
+        user_id: str,
+        current_session: str,
+    ) -> CommandResult:
+        """禁用当前会话中的所有订阅
+
+        Args:
+            user_id: 用户 ID
+            current_session: 当前会话 ID
+
+        Returns:
+            CommandResult: 命令执行结果
+        """
+        subscriptions = await self._subscription_repo.get_by_user(user_id)
+        if not subscriptions:
+            return CommandResult(
+                success=True,
+                message="当前会话没有需要禁用的订阅",
+            )
+
+        # 过滤当前会话中启用的订阅
+        # NULL target_session 视为当前会话
+        subs = [
+            sub
+            for sub in subscriptions
+            if sub.state == 1
+            and (
+                sub.target_session == current_session
+                or not sub.target_session
+            )
+        ]
+
+        if not subs:
+            return CommandResult(
+                success=True,
+                message="当前会话没有需要禁用的订阅",
+            )
+
+        # 禁用所有订阅
+        deactivated_count = 0
+        for sub in subs:
+            sub.state = 0
+            await self._subscription_repo.save(sub)
+            deactivated_count += 1
+
+        return CommandResult(
+            success=True,
+            message=(
+                f"已禁用当前会话的 {deactivated_count} 个订阅\n\n"
+                "当前会话订阅已全部禁用，不再推送更新\n"
+                "使用 /activate_subs 可随时重新启用"
+            ),
+        )

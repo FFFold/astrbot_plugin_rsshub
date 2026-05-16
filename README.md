@@ -400,3 +400,9 @@ src/
 ## 📄 开源协议
 
 本项目基于 [AGPL](LICENSE) 协议开源。
+
+## 致谢
+
+- [RSS-to-Telegram-Bot：关心你的阅读体验的 Telegram RSS 机器人](https://github.com/Rongronggg9/RSS-to-Telegram-Bot)
+- [AstrBot](https://github.com/AstrBotDevs/AstrBot)
+- [feedparser：](https://github.com/kurtmckee/feedparser)

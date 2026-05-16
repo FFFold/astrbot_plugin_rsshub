@@ -6,17 +6,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
-
-if TYPE_CHECKING:
-    from ...infrastructure.fetcher.rss import RSSFeedFetcher
-    from ...infrastructure.fetcher.rss.parser import RSSParser
+from ..ports import FeedFetcher, FeedParser
 
 
 @dataclass
@@ -39,8 +35,8 @@ class TestSubscriptionCommand:
         self,
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository,
-        fetcher: RSSFeedFetcher,
-        parser: RSSParser,
+        fetcher: FeedFetcher,
+        parser: FeedParser,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
@@ -133,13 +129,19 @@ class TestSubscriptionCommand:
         # 提取示例条目
         sample_entries = []
         for entry in entries[:sample_count]:
-            sample_entries.append({
-                "title": entry.title,
-                "link": entry.link,
-                "summary": entry.summary[:200] + "..." if entry.summary and len(entry.summary) > 200 else entry.summary,
-                "author": entry.author,
-                "published": entry.published.isoformat() if entry.published else None,
-            })
+            sample_entries.append(
+                {
+                    "title": entry.title,
+                    "link": entry.link,
+                    "summary": entry.summary[:200] + "..."
+                    if entry.summary and len(entry.summary) > 200
+                    else entry.summary,
+                    "author": entry.author,
+                    "published": entry.published.isoformat()
+                    if entry.published
+                    else None,
+                }
+            )
 
         result = TestResult(
             feed_info=feed_dto,
@@ -231,13 +233,19 @@ class TestSubscriptionCommand:
         # 提取示例条目
         sample_entries = []
         for entry in entries[:sample_count]:
-            sample_entries.append({
-                "title": entry.title,
-                "link": entry.link,
-                "summary": entry.summary[:200] + "..." if entry.summary and len(entry.summary) > 200 else entry.summary,
-                "author": entry.author,
-                "published": entry.published.isoformat() if entry.published else None,
-            })
+            sample_entries.append(
+                {
+                    "title": entry.title,
+                    "link": entry.link,
+                    "summary": entry.summary[:200] + "..."
+                    if entry.summary and len(entry.summary) > 200
+                    else entry.summary,
+                    "author": entry.author,
+                    "published": entry.published.isoformat()
+                    if entry.published
+                    else None,
+                }
+            )
 
         result = TestResult(
             feed_info=feed_dto,

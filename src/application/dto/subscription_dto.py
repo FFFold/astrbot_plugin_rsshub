@@ -18,6 +18,8 @@ class SubscriptionDTO(BaseModel):
     user_id: str = Field(..., description="用户 ID")
     feed_id: int = Field(..., description="Feed ID")
     title: str = Field(default="", description="订阅标题")
+    feed_title: str | None = Field(default=None, description="Feed 标题")
+    feed_link: str | None = Field(default=None, description="Feed 链接")
     tags: str = Field(default="", description="标签")
     target_session: str | None = Field(default=None, description="推送目标会话")
     platform_name: str | None = Field(default=None, description="平台类型名")

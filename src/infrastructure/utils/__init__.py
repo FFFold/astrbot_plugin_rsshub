@@ -2,6 +2,9 @@
 
 from .caching import (
     BaseCache,
+    CacheProviderType,
+    DiskCache,
+    HybridCache,
     MemoryCache,
     cacheevict,
     cacheput,
@@ -16,14 +19,18 @@ from .expression_parser import (
     ExpressionParser,
 )
 from .ffmpeg_helper import FFmpegTool
-from .html_cleaner import HTMLCleaner, ParsedResult, clean_html
 from .lock import (
     LockManager,
     get_lock_manager,
     locked,
 )
 from .logger import get_logger
-from .media_downloader import MediaDownloader
+from .normalizer import (
+    normalize_config_positive_int,
+    normalize_identifier,
+    normalize_path,
+    normalize_text,
+)
 
 __all__ = [
     # Logger
@@ -44,16 +51,19 @@ __all__ = [
     # Cache
     "BaseCache",
     "MemoryCache",
+    "DiskCache",
+    "HybridCache",
+    "CacheProviderType",
     "get_memory_cache",
     "set_cache_backend",
     "caching",
     "cacheput",
     "cacheevict",
-    # Media
-    "MediaDownloader",
+    # FFmpeg
     "FFmpegTool",
-    # HTML
-    "HTMLCleaner",
-    "ParsedResult",
-    "clean_html",
+    # Normalizer
+    "normalize_text",
+    "normalize_identifier",
+    "normalize_path",
+    "normalize_config_positive_int",
 ]

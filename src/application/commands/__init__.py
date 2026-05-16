@@ -8,6 +8,7 @@ from .get_user_settings_cmd import GetUserSettingsCommand
 from .import_subscriptions_cmd import ImportSubscriptionsCommand
 from .refresh_feed_cmd import RefreshFeedCommand
 from .set_user_settings_cmd import SetUserSettingsCommand
+from .sub_state_cmd import SubStateCommand
 from .subscribe_feed_cmd import SubscribeFeedCommand
 from .test_subscription_cmd import TestSubscriptionCommand
 from .unsubscribe_feed_cmd import UnsubscribeFeedCommand
@@ -22,6 +23,7 @@ __all__ = [
     "ImportSubscriptionsCommand",
     "RefreshFeedCommand",
     "SetUserSettingsCommand",
+    "SubStateCommand",
     "SubscribeFeedCommand",
     "TestSubscriptionCommand",
     "UnsubscribeFeedCommand",

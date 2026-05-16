@@ -1,18 +1,34 @@
 """内容处理管线
 
-提供通用的文本标准化、内容处理等管道能力。
+提供内容过滤、翻译、格式化等管道能力。
 """
 
-from .normalizer import (
-    normalize_config_positive_int,
-    normalize_identifier,
-    normalize_path,
-    normalize_text,
+from .filters import (
+    BaseFilter,
+    FilterChain,
+    FilterContext,
+    FilterResult,
+    KeywordFilter,
+    LLMEnrichFilter,
+    LLMFilter,
+    PassThroughFilter,
+    TranslationFilter,
+    build_default_chain,
 )
+from .formatter import MessageFormatter
 
 __all__ = [
-    "normalize_text",
-    "normalize_identifier",
-    "normalize_path",
-    "normalize_config_positive_int",
+    # 过滤器链
+    "BaseFilter",
+    "FilterChain",
+    "FilterContext",
+    "FilterResult",
+    "KeywordFilter",
+    "LLMFilter",
+    "LLMEnrichFilter",
+    "TranslationFilter",
+    "PassThroughFilter",
+    "build_default_chain",
+    # 格式化器
+    "MessageFormatter",
 ]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from astrbot_plugin_rsshub.src.infrastructure.utils import (
     CompiledExpression,
     ExpressionEvaluator,
@@ -31,6 +30,7 @@ class TestExpressionParser:
 
     def test_parse_nested_attribute(self):
         """测试解析嵌套属性"""
+
         class Obj:
             def __init__(self):
                 self.id = 123
@@ -75,6 +75,7 @@ class TestExpressionParser:
 
     def test_parse_private_attribute_raises(self):
         """测试访问私有属性抛出异常"""
+
         class Obj:
             def __init__(self):
                 self._private = "secret"
@@ -119,7 +120,7 @@ class TestCompiledExpression:
     def test_call_expression(self):
         """测试直接调用表达式"""
         compiled = CompiledExpression("#id")
-        result = compiled((), {"id": 456}, ["id"])
+        result = compiled(id=456)
         assert result == 456
 
 
@@ -129,7 +130,7 @@ class TestExpressionEvaluator:
     def test_evaluate(self):
         """测试求值"""
         evaluator = ExpressionEvaluator()
-        result = evaluator.evaluate("#name", (), {"name": "test"})
+        result = evaluator.evaluate("#name", name="test")
         assert result == "test"
 
     def test_compile_and_cache(self):

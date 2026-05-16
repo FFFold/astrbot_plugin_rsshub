@@ -6,13 +6,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
+from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.result_dto import CommandResult
-
-if TYPE_CHECKING:
-    from ...infrastructure.utils.subscription_io import serialize_subscriptions_to_toml
 
 
 @dataclass
@@ -33,12 +30,15 @@ class ExportSubscriptionsCommand:
     def __init__(
         self,
         subscription_repo: SubscriptionRepository,
+        feed_repo: FeedRepository | None = None,
     ):
         self._subscription_repo = subscription_repo
+        self._feed_repo = feed_repo
 
     async def execute(
         self,
         user_id: str,
+        is_admin: bool = False,
     ) -> CommandResult:
         """执行导出命令
 
@@ -53,11 +53,19 @@ class ExportSubscriptionsCommand:
         if not subscriptions:
             return CommandResult(
                 success=False,
-                message="没有可导出的订阅",
+                message="您当前没有可导出的订阅",
             )
 
+        if self._feed_repo is not None:
+            for subscription in subscriptions:
+                if getattr(subscription, "feed", None) is not None:
+                    continue
+                feed = await self._feed_repo.get_by_id(subscription.feed_id)
+                if feed is not None:
+                    subscription.feed = feed
+
         try:
-            from ...infrastructure.utils.subscription_io import (
+            from ...application.services.subscription_serializer import (
                 serialize_subscriptions_to_toml,
             )
 

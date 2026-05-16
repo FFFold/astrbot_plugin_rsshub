@@ -171,3 +171,64 @@ class BatchActivateCommand:
 
         sub_ids = [sub.id for sub in disabled_subs]
         return await self.execute(sub_ids, user_id)
+
+    async def execute_by_session(
+        self,
+        user_id: str,
+        current_session: str,
+    ) -> CommandResult:
+        """启用当前会话中的所有订阅
+
+        Args:
+            user_id: 用户 ID
+            current_session: 当前会话 ID
+
+        Returns:
+            CommandResult: 命令执行结果
+        """
+        subscriptions = await self._subscription_repo.get_by_user(user_id)
+        if not subscriptions:
+            return CommandResult(
+                success=True,
+                message="当前会话没有需要启用的订阅",
+            )
+
+        # 过滤当前会话中禁用的订阅
+        # NULL target_session 视为当前会话
+        subs = [
+            sub
+            for sub in subscriptions
+            if sub.state == 0
+            and (
+                sub.target_session == current_session
+                or not sub.target_session
+            )
+        ]
+
+        if not subs:
+            return CommandResult(
+                success=True,
+                message="当前会话没有需要启用的订阅",
+            )
+
+        # 激活所有订阅
+        activated_count = 0
+        sub_titles = []
+        for sub in subs:
+            sub.state = 1
+            await self._subscription_repo.save(sub)
+            activated_count += 1
+            # 尝试获取 feed 标题
+            title = sub.title or f"订阅 {sub.id}"
+            sub_titles.append(f"  • {title}")
+
+        message_lines = [
+            f"已启用当前会话的 {activated_count} 个订阅：",
+            *sub_titles,
+            "\n当前会话订阅已全部启用",
+        ]
+
+        return CommandResult(
+            success=True,
+            message="\n".join(message_lines),
+        )

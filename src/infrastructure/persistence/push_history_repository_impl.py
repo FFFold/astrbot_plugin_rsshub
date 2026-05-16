@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, func
-from sqlmodel import select
+from sqlmodel import asc, desc, select
 
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
@@ -39,7 +39,7 @@ class PushHistoryRepositoryImpl:
             stmt = select(PushHistoryORM).where(PushHistoryORM.sub_id == sub_id)
             if status:
                 stmt = stmt.where(PushHistoryORM.status == status)
-            stmt = stmt.order_by(PushHistoryORM.created_at.desc())
+            stmt = stmt.order_by(desc(PushHistoryORM.created_at))
             if limit:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
@@ -47,7 +47,7 @@ class PushHistoryRepositoryImpl:
             return [self._to_entity(orm) for orm in orms]
 
     async def get_pending_for_retry(self, limit: int = 100) -> list[PushHistory]:
-        """获取需要重试的推送记录"""
+        """获取需要重试的推送记录（已标记为 failed 且未超限）"""
         db = get_database()
         async with db.get_session() as session:
             stmt = (
@@ -56,22 +56,78 @@ class PushHistoryRepositoryImpl:
                     PushHistoryORM.status == "failed",
                     PushHistoryORM.retry_count < PushHistoryORM.max_retries,
                 )
-                .order_by(PushHistoryORM.created_at.asc())
+                .order_by(asc(PushHistoryORM.created_at))
                 .limit(limit)
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
 
+    async def get_and_mark_retrying(self, limit: int = 100) -> list[PushHistory]:
+        """原子获取并标记待重试记录，防止多 worker 重复拉取。
+
+        在同一事务内：先 UPDATE status='retrying'，再 SELECT 返回。
+        同时将此前卡在 retrying 状态的记录重新激活（fallback），
+        防止 worker 崩溃导致记录永久卡死。
+        SQLite 的 SERIALIZABLE 隔离级别保证原子性。
+        """
+        db = get_database()
+        async with db.get_session() as session:
+            now = datetime.now(timezone.utc)
+            # fallback：重新激活 retrying 状态的旧记录（超过 5 分钟的）
+            from datetime import timedelta
+            retrying_cutoff = now - timedelta(minutes=5)
+            fallback_stmt = (
+                select(PushHistoryORM)
+                .where(
+                    PushHistoryORM.status == "retrying",
+                    PushHistoryORM.updated_at < retrying_cutoff,
+                )
+            )
+            fallback_result = await session.execute(fallback_stmt)
+            stale = list(fallback_result.scalars().all())
+            for orm in stale:
+                orm.status = "failed"
+                orm.updated_at = now
+
+            if stale:
+                await session.flush()
+
+            # 原子获取新记录并标记为 retrying
+            update_stmt = (
+                select(PushHistoryORM)
+                .where(
+                    PushHistoryORM.status == "failed",
+                    PushHistoryORM.retry_count < PushHistoryORM.max_retries,
+                )
+                .order_by(asc(PushHistoryORM.created_at))
+                .limit(limit)
+            )
+            result = await session.execute(update_stmt)
+            orms = list(result.scalars().all())
+            if not orms:
+                return []
+            for orm in orms:
+                orm.status = "retrying"
+                orm.updated_at = now
+            await session.flush()
+            # 再查询返回（同一事务中）
+            ids = [orm.id for orm in orms]
+            select_stmt = select(PushHistoryORM).where(PushHistoryORM.id.in_(ids))
+            result2 = await session.execute(select_stmt)
+            updated_orms = result2.scalars().all()
+            return [self._to_entity(orm) for orm in updated_orms]
+
     async def save(self, history: PushHistory) -> PushHistory:
         """保存推送历史"""
         db = get_database()
         async with db.get_session() as session:
             orm = self._to_orm(history)
-            session.add(orm)
+            # 使用 merge 而不是 add，以正确处理新增和更新
+            merged_orm = await session.merge(orm)
             await session.commit()
-            await session.refresh(orm)
-            return self._to_entity(orm)
+            await session.refresh(merged_orm)
+            return self._to_entity(merged_orm)
 
     async def delete_old_records(self, days: int = 30) -> int:
         """删除指定天数前的历史记录"""

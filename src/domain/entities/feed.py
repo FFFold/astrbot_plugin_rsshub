@@ -22,8 +22,8 @@ class Feed(BaseModel):
     state: int = Field(default=1, description="Feed状态: 0=停用, 1=启用")
     link: str = Field(..., max_length=4096, description="Feed链接URL")
     title: str = Field(default="", max_length=1024, description="Feed标题")
-    entry_hashes: list[str] | None = Field(
-        default=None, description="已处理条目的哈希列表，用于去重"
+    entry_hashes: list[list[str]] | None = Field(
+        default=None, description="已处理条目的哈希分组列表，每组对应一个条目"
     )
     etag: str | None = Field(default=None, max_length=128, description="HTTP ETag")
     last_modified: datetime | None = Field(default=None, description="最后修改时间")
@@ -78,16 +78,15 @@ class Feed(BaseModel):
         return self
 
     def has_entry(self, entry_hash: str) -> bool:
-        """检查条目是否已处理过"""
+        """检查条目是否已处理过（在任意哈希分组中搜索）"""
         if self.entry_hashes is None:
             return False
-        return entry_hash in self.entry_hashes
+        return any(entry_hash in group for group in self.entry_hashes)
 
     def add_entry_hash(self, entry_hash: str) -> "Feed":
         """添加条目哈希到去重列表"""
         if self.entry_hashes is None:
             self.entry_hashes = []
-        if entry_hash not in self.entry_hashes:
-            self.entry_hashes.append(entry_hash)
-            self.updated_at = datetime.now(timezone.utc)
+        self.entry_hashes.append([entry_hash])
+        self.updated_at = datetime.now(timezone.utc)
         return self

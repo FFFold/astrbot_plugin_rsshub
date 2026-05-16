@@ -39,13 +39,15 @@ class SetUserSettingsCommand:
     async def execute(
         self,
         user_id: str,
-        settings: dict[str, int | str],
+        key: str,
+        value: str,
     ) -> CommandResult:
         """执行设置用户设置命令
 
         Args:
             user_id: 用户 ID
-            settings: 设置项字典
+            key: 设置项名称
+            value: 设置值
 
         Returns:
             CommandResult: 命令执行结果
@@ -53,77 +55,53 @@ class SetUserSettingsCommand:
         # 获取或创建用户
         user = await self._user_repo.get_by_id(user_id)
         if not user:
+            # 创建新用户
+            from ...domain.entities.user import User
             user = User(id=user_id)
 
-        # 验证并应用设置
-        errors = []
-        applied = []
+        option_key = key.strip().lower()
+        parsed_value: int | str
 
-        for key, value in settings.items():
-            # 跳过未知设置项
-            if not hasattr(user, key):
-                errors.append(f"未知设置项: {key}")
-                continue
+        # 解析值
+        if option_key in {"title", "tags", "translate_target_lang"}:
+            parsed_value = str(value).strip()
+        else:
+            try:
+                parsed_value = int(value)
+            except ValueError:
+                return CommandResult(
+                    success=False,
+                    message=f"选项 {option_key} 需要数字值",
+                )
 
-            # 验证整数值范围
-            if key in VALID_SETTINGS:
-                min_val, max_val = VALID_SETTINGS[key]
-                try:
-                    int_value = int(value)
-                    if not min_val <= int_value <= max_val:
-                        errors.append(
-                            f"{key} 的值 {int_value} 超出范围 [{min_val}, {max_val}]"
-                        )
-                        continue
-                    setattr(user, key, int_value)
-                    applied.append(f"{key}={int_value}")
-                except (ValueError, TypeError):
-                    errors.append(f"{key} 必须是整数")
-                    continue
-            else:
-                # 字符串类型设置
-                setattr(user, key, str(value) if value is not None else None)
-                applied.append(f"{key}={value}")
+            # 验证范围
+            if option_key in VALID_SETTINGS:
+                min_val, max_val = VALID_SETTINGS[option_key]
+                if not min_val <= parsed_value <= max_val:
+                    return CommandResult(
+                        success=False,
+                        message=f"{option_key} 的值 {parsed_value} 超出范围 [{min_val}, {max_val}]",
+                    )
+
+        # 获取旧值用于显示
+        old_value = getattr(user, option_key, None)
+
+        # 应用设置
+        setattr(user, option_key, parsed_value)
 
         # 保存用户
-        user = await self._user_repo.save(user)
+        await self._user_repo.save(user)
 
-        # 构建结果
-        user_dto = UserDTO(
-            id=user.id,
-            state=user.state,
-            interval=user.interval,
-            notify=user.notify,
-            send_mode=user.send_mode,
-            length_limit=user.length_limit,
-            link_preview=user.link_preview,
-            display_author=user.display_author,
-            display_via=user.display_via,
-            display_title=user.display_title,
-            display_entry_tags=user.display_entry_tags,
-            style=user.style,
-            display_media=user.display_media,
-            translate=user.translate,
-            translate_target_lang=user.translate_target_lang,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
+        # 格式化显示值
+        def fmt(val):
+            if val is None:
+                return "未设置"
+            if isinstance(val, bool) or val in (0, 1, -100, -1, -2):
+                val_map = {0: "禁用", 1: "启用", -100: "继承", -1: "禁用", -2: "不显示"}
+                return val_map.get(val, str(val))
+            return str(val)
+
+        return CommandResult(
+            success=True,
+            message=f"用户配置已更新:\n{option_key}: {fmt(old_value)} → {fmt(parsed_value)}",
         )
-
-        if errors and not applied:
-            return CommandResult(
-                success=False,
-                message=f"设置失败: {'; '.join(errors[:3])}",
-                data=user_dto,
-            )
-        elif errors:
-            return CommandResult(
-                success=True,
-                message=f"部分设置成功 ({len(applied)} 项), 失败: {'; '.join(errors[:3])}",
-                data=user_dto,
-            )
-        else:
-            return CommandResult(
-                success=True,
-                message=f"设置成功: {', '.join(applied)}",
-                data=user_dto,
-            )

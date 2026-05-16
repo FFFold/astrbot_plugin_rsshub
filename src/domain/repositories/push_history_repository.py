@@ -56,6 +56,18 @@ class PushHistoryRepository(Protocol):
         """
         ...
 
+    async def get_and_mark_retrying(self, limit: int = 100) -> list[PushHistory]:
+        """
+        原子获取并标记待重试记录，防止多 worker 重复拉取。
+
+        Args:
+            limit: 限制数量
+
+        Returns:
+            被标记为 retrying 的推送历史列表
+        """
+        ...
+
     async def save(self, history: PushHistory) -> PushHistory:
         """
         保存推送历史

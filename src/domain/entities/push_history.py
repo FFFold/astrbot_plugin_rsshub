@@ -66,14 +66,32 @@ class PushHistory(BaseModel):
         self.updated_at = datetime.now(timezone.utc)
         return self
 
-    def mark_failed(self, reason: str | None = None) -> "PushHistory":
-        """标记推送失败"""
+    def record_first_failure(self, reason: str | None = None) -> "PushHistory":
+        """记录首次失败（不增加重试计数）"""
+        self.status = "failed"
+        if reason:
+            self.fail_reason = reason
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    def record_retry_failure(self, reason: str | None = None) -> "PushHistory":
+        """记录重试失败（增加重试计数）"""
         self.status = "failed"
         self.retry_count += 1
         if reason:
             self.fail_reason = reason
         self.updated_at = datetime.now(timezone.utc)
         return self
+
+    def mark_retrying(self) -> "PushHistory":
+        """标记为正在重试（原子更新用）"""
+        self.status = "retrying"
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    def mark_failed(self, reason: str | None = None) -> "PushHistory":
+        """标记推送失败（保持向后兼容，调用 record_first_failure）"""
+        return self.record_first_failure(reason)
 
     def is_pending(self) -> bool:
         """检查是否处于待推送状态"""

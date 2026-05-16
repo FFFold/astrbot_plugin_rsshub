@@ -22,11 +22,13 @@ class GetUserSettingsCommand:
     async def execute(
         self,
         user_id: str,
+        key: str | None = None,
     ) -> CommandResult:
         """执行获取用户设置命令
 
         Args:
             user_id: 用户 ID
+            key: 可选的单个配置项名称
 
         Returns:
             CommandResult: 命令执行结果
@@ -39,28 +41,36 @@ class GetUserSettingsCommand:
                 message=f"用户不存在 (ID: {user_id})",
             )
 
-        user_dto = UserDTO(
-            id=user.id,
-            state=user.state,
-            interval=user.interval,
-            notify=user.notify,
-            send_mode=user.send_mode,
-            length_limit=user.length_limit,
-            link_preview=user.link_preview,
-            display_author=user.display_author,
-            display_via=user.display_via,
-            display_title=user.display_title,
-            display_entry_tags=user.display_entry_tags,
-            style=user.style,
-            display_media=user.display_media,
-            translate=user.translate,
-            translate_target_lang=user.translate_target_lang,
-            created_at=user.created_at,
-            updated_at=user.updated_at,
-        )
+        if key:
+            # 获取单个配置项
+            current_value = getattr(user, key, None)
+            return CommandResult(
+                success=True,
+                message=f"{key} = {current_value if current_value is not None else '未设置'}",
+            )
+
+        # 获取所有配置
+        settings_map = {
+            "interval": user.interval,
+            "notify": user.notify,
+            "send_mode": user.send_mode,
+            "length_limit": user.length_limit,
+            "link_preview": user.link_preview,
+            "display_author": user.display_author,
+            "display_via": user.display_via,
+            "display_title": user.display_title,
+            "display_entry_tags": user.display_entry_tags,
+            "style": user.style,
+            "display_media": user.display_media,
+            "translate": user.translate,
+            "translate_target_lang": user.translate_target_lang,
+        }
+
+        lines = ["用户配置:"]
+        for k, v in settings_map.items():
+            lines.append(f"  {k} = {v if v is not None else '未设置'}")
 
         return CommandResult(
             success=True,
-            message="获取用户设置成功",
-            data=user_dto,
+            message="\n".join(lines),
         )

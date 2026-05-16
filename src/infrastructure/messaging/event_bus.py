@@ -24,10 +24,10 @@ Examples:
 from __future__ import annotations
 
 import asyncio
-import inspect
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ...domain.entities.feed import Feed
 from ...domain.entities.push_history import PushHistory
@@ -36,7 +36,6 @@ from ..utils import get_logger
 
 if TYPE_CHECKING:
     from ..fetcher.rss.parser import EntryParsed
-    from ...application.dto import WebFeed
 
 logger = get_logger()
 
@@ -255,7 +254,9 @@ class EventBus:
         self._logger = get_logger()
 
     def on(
-        self, event_type: type[T]
+        self,
+        event_type: type[T],
+        priority: int = DEFAULT_PRIORITY,
     ) -> Callable[[Callable[[T], Any]], Callable[[T], Any]]:
         """订阅事件
 
@@ -269,7 +270,8 @@ class EventBus:
         def decorator(handler: Callable[[T], Any]) -> Callable[[T], Any]:
             if event_type not in self._handlers:
                 self._handlers[event_type] = []
-            self._handlers[event_type].append(handler)
+            self._handlers[event_type].append((priority, handler))
+            self._handlers[event_type].sort(key=lambda item: item[0])
             self._logger.debug(
                 "注册事件处理器: %s -> %s",
                 event_type.__name__,
@@ -297,7 +299,7 @@ class EventBus:
             len(handlers),
         )
 
-        for handler in handlers:
+        for _, handler in handlers:
             try:
                 if event.cancelled:
                     self._logger.debug(
@@ -318,9 +320,7 @@ class EventBus:
                     e,
                 )
 
-    def off(
-        self, event_type: type[BaseEvent], handler: Callable | None = None
-    ) -> None:
+    def off(self, event_type: type[BaseEvent], handler: Callable | None = None) -> None:
         """取消订阅
 
         Args:
@@ -334,7 +334,7 @@ class EventBus:
             self._handlers[event_type].clear()
         else:
             self._handlers[event_type] = [
-                h for h in self._handlers[event_type] if h != handler
+                item for item in self._handlers[event_type] if item[1] != handler
             ]
 
 

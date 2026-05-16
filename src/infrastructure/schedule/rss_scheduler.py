@@ -12,21 +12,28 @@ import zlib
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Final, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 
-from sqlalchemy.orm import selectinload
-from sqlmodel import select
+import aiohttp
+from sqlmodel import or_, select
 
+from ...application.ports import MessageSenderProvider
+from ...application.services.notification_dispatcher import NotificationDispatcher
+from ..fetcher.rss import RSSFeedFetcher
+from ..messaging.senders.provider import InfrastructureMessageSenderProvider
 from ..persistence.database import get_database
 from ..persistence.models import FeedORM, SubORM
-from ..fetcher.rss import RSSFeedFetcher
-from ..fetcher.rss.parser import RSSParser
+from ..persistence.push_history_repository_impl import get_push_history_repository
+from ..persistence.subscription_repository_impl import get_subscription_repository
 from ..utils import get_logger
 from ..utils.lock import locked
+from ..utils.normalizer import normalize_identifier, normalize_text
 
 if TYPE_CHECKING:
-    from ..domain.entities.feed import Feed
-    from ..domain.entities.subscription import Subscription
+    from ...domain.entities.feed import Feed
+    from ...domain.entities.subscription import Subscription
+    from ...domain.repositories.push_history_repository import PushHistoryRepository
+    from ...domain.repositories.subscription_repository import SubscriptionRepository
 
 logger = get_logger()
 
@@ -36,8 +43,8 @@ class NotificationService(Protocol):
 
     async def notify_feed_update(
         self,
-        feed: "Feed",
-        subscriptions: list["Subscription"],
+        feed: Feed,
+        subscriptions: list[Subscription],
         entries: list[dict[str, Any]],
     ) -> bool:
         """通知订阅者 Feed 更新
@@ -54,8 +61,8 @@ class NotificationService(Protocol):
 
     async def notify_feed_error(
         self,
-        feed: "Feed",
-        subscriptions: list["Subscription"],
+        feed: Feed,
+        subscriptions: list[Subscription],
         error: str,
     ) -> None:
         """通知订阅者 Feed 错误
@@ -151,6 +158,9 @@ class RSSScheduler:
         hash_history_hard_limit: int = 5000,
         bootstrap_skip_history: bool = True,
         history_entry_limit: int = 0,
+        default_interval: int = 10,
+        history_retention_days: int = 30,
+        sender_provider: MessageSenderProvider | None = None,
     ) -> None:
         self._fetcher = fetcher or RSSFeedFetcher()
         self._notification_service = notification_service
@@ -164,6 +174,20 @@ class RSSScheduler:
         )
         self._bootstrap_skip_history = bootstrap_skip_history
         self._history_entry_limit = max(0, history_entry_limit)
+        self._default_interval = max(1, default_interval)
+        self._history_retention_days = max(1, history_retention_days)
+        self._sender_provider = sender_provider or InfrastructureMessageSenderProvider()
+
+        # 初始化 NotificationDispatcher 用于重试机制
+        self._notification_dispatcher = NotificationDispatcher(
+            subscription_repo=cast(
+                "SubscriptionRepository", get_subscription_repository()
+            ),
+            push_history_repo=cast(
+                "PushHistoryRepository", get_push_history_repository()
+            ),
+            sender_provider=self._sender_provider,
+        )
 
     async def start(self) -> None:
         """启动调度器"""
@@ -191,6 +215,21 @@ class RSSScheduler:
         if now.minute == 0:
             await self._cleanup_old_records()
 
+        # 处理待重试的推送（每分钟都执行）
+        try:
+            retry_stats = await self._notification_dispatcher.dispatch_pending_retries(
+                limit=50
+            )
+            if retry_stats.get("success", 0) > 0 or retry_stats.get("failed", 0) > 0:
+                logger.info(
+                    "重试推送完成: 成功=%s, 失败=%s, 跳过=%s",
+                    retry_stats.get("success", 0),
+                    retry_stats.get("failed", 0),
+                    retry_stats.get("skipped", 0),
+                )
+        except Exception as e:
+            logger.error("处理重试推送失败: %s", e, exc_info=True)
+
         try:
             db = get_database()
             async with db.get_session() as session:
@@ -200,10 +239,11 @@ class RSSScheduler:
                     .where(
                         SubORM.state == 1,
                         FeedORM.state == 1,
-                        (SubORM.next_check_time.is_(None))
-                        | (SubORM.next_check_time <= now),
+                        or_(
+                            cast(Any, SubORM.next_check_time).is_(None),
+                            SubORM.next_check_time <= now,
+                        ),
                     )
-                    .options(selectinload(SubORM.feed))
                 )
                 result = await session.execute(stmt)
                 due_subs = list(result.scalars().all())
@@ -214,30 +254,41 @@ class RSSScheduler:
                 # 按 (feed_id, interval) 分组
                 groups: dict[tuple[int, int], list[SubORM]] = {}
                 for sub in due_subs:
-                    if not sub.feed or sub.feed_id is None:
+                    if sub.feed_id is None:
                         continue
                     effective_interval = self._resolve_interval(sub)
                     key = (sub.feed_id, effective_interval)
                     groups.setdefault(key, []).append(sub)
 
                 for (feed_id, interval), subs in groups.items():
-                    feed = subs[0].feed
-                    await self._process_feed_group(session, feed, subs, interval)
+                    feed_orm = await session.get(FeedORM, feed_id)  # type: ignore[arg-type]
+                    if not feed_orm:
+                        continue
+                    await self._process_feed_group(session, feed_orm, subs, interval)
 
         except Exception as ex:
             logger.error("执行定时任务失败: %s", ex, exc_info=True)
 
     async def _cleanup_old_records(self) -> None:
-        """清理30天前的推送历史记录"""
-        # TODO: 实现清理逻辑，通过 PushHistoryRepository
-        pass
+        """清理指定天数前的推送历史记录"""
+        try:
+            deleted_count = await self._notification_dispatcher.cleanup_old_records(
+                days=self._history_retention_days
+            )
+            if deleted_count > 0:
+                logger.info(
+                    "清理了 %s 条超过 %s 天的推送历史记录",
+                    deleted_count,
+                    self._history_retention_days,
+                )
+        except Exception as e:
+            logger.error("清理推送历史记录失败: %s", e, exc_info=True)
 
     def _resolve_interval(self, sub: SubORM) -> int:
         """解析订阅生效的监控间隔"""
         if sub.interval and sub.interval > 0:
             return sub.interval
-        # TODO: 从用户配置读取
-        return 10
+        return self._default_interval
 
     async def _process_feed_group(
         self,
@@ -413,8 +464,8 @@ class RSSScheduler:
             feed_entity, subscription_entities, sorted_entries
         )
 
-    async def _schedule_after_success(self, subs: list[SubORM], interval: int) -> None:
-        """成功后更新下次检查时间"""
+    async def _update_next_check_times(self, subs: list[SubORM], interval: int) -> None:
+        """更新订阅的下次检查时间"""
         now = datetime.now(timezone.utc)
         db = get_database()
         async with db.get_session() as session:
@@ -427,19 +478,13 @@ class RSSScheduler:
                     session.add(db_sub)
             await session.commit()
 
+    async def _schedule_after_success(self, subs: list[SubORM], interval: int) -> None:
+        """成功后更新下次检查时间"""
+        await self._update_next_check_times(subs, interval)
+
     async def _schedule_after_error(self, subs: list[SubORM], interval: int) -> None:
         """失败后更新下次检查时间"""
-        now = datetime.now(timezone.utc)
-        db = get_database()
-        async with db.get_session() as session:
-            for sub in subs:
-                if sub.id is None:
-                    continue
-                db_sub = await session.get(SubORM, sub.id)
-                if db_sub:
-                    db_sub.next_check_time = now + timedelta(minutes=interval)
-                    session.add(db_sub)
-            await session.commit()
+        await self._update_next_check_times(subs, interval)
 
     @staticmethod
     def _all_subs_blocked(subs: list[SubORM]) -> bool:
@@ -463,7 +508,7 @@ class RSSScheduler:
             groups.append(current)
         return groups
 
-    def _calculate_update(
+    async def _calculate_update(
         self,
         old_groups: list[list[str]],
         entries: list,
@@ -476,7 +521,7 @@ class RSSScheduler:
         updated_entries = []
 
         for entry in entries:
-            entry_hashes = self._hash_entry(entry, feed_link)
+            entry_hashes = await self._hash_entry(entry, feed_link)
             stable_hash = next((h for h in entry_hashes if h.startswith("sid:")), "")
 
             known_by_identity = bool(stable_hash) and stable_hash in known_hashes
@@ -493,8 +538,8 @@ class RSSScheduler:
 
         return new_groups, updated_entries
 
-    def _hash_entry(self, entry: dict, feed_link: str | None = None) -> list[str]:
-        """计算条目的去重指纹"""
+    async def _hash_entry(self, entry: dict, feed_link: str | None = None) -> list[str]:
+        """计算条目的去重指纹（含文本和媒体内容）"""
         upstream_material = self._upstream_material(entry)
         upstream_crc = (
             hex(zlib.crc32(upstream_material.encode("utf-8", errors="ignore")))[2:]
@@ -502,12 +547,10 @@ class RSSScheduler:
             else ""
         )
 
-        entry_id = RSSParser.normalize_identifier(
-            str(entry.get("id") or entry.get("guid") or "")
-        )
+        entry_id = normalize_identifier(str(entry.get("id") or entry.get("guid") or ""))
         link = self._resolve_entry_link(entry, feed_link)
-        title = RSSParser.normalize_text(str(entry.get("title") or ""))
-        summary = RSSParser.normalize_text(
+        title = normalize_text(str(entry.get("title") or ""))
+        summary = normalize_text(
             str(entry.get("summary") or entry.get("description") or ""),
             max_length=2048,
         )
@@ -540,7 +583,64 @@ class RSSScheduler:
         if legacy_hash and legacy_hash not in fingerprints:
             fingerprints.append(legacy_hash)
 
+        # 媒体内容指纹：下载 enclosure 并计算 SHA256
+        media_hashes = await self._media_content_hashes(entry)
+        for mh in media_hashes:
+            if mh not in fingerprints:
+                fingerprints.append(mh)
+
         return fingerprints
+
+    async def _media_content_hashes(self, entry: dict) -> list[str]:
+        """下载 entry 的媒体内容并计算 SHA256 指纹"""
+        enclosures = entry.get("enclosures") or []
+        if not enclosures:
+            media_list = entry.get("media_content") or []
+            enclosures = [m for m in media_list if isinstance(m, dict)]
+
+        hashes: list[str] = []
+        for enc in enclosures[:3]:  # 最多取 3 个
+            url = str(enc.get("url") or enc.get("href") or "")
+            if not url or not url.startswith("http"):
+                continue
+            mime = str(enc.get("type") or "")
+            # 只处理图片和视频
+            if not (mime.startswith("image/") or mime.startswith("video/")):
+                continue
+            try:
+                sha256 = await self._fetch_media_sha256(url)
+                if sha256:
+                    hashes.append(f"media:{sha256}")
+            except Exception:
+                pass  # 单个媒体下载失败不影响整体
+        return hashes
+
+    async def _fetch_media_sha256(self, url: str) -> str | None:
+        """下载媒体（限 5MB）并返回 SHA256，不阻塞整个流程"""
+        try:
+            session_lock = self._fetcher._session_lock
+            if session_lock is None:
+                return None
+            async with session_lock:
+                session = self._fetcher._session
+                if session is None or session.closed:
+                    return None
+            timeout = aiohttp.ClientTimeout(total=10, connect=5)
+            async with session.get(url, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return None
+                chunk_size = 8192
+                limit = 5 * 1024 * 1024  # 5MB
+                sha = hashlib.sha256()
+                async for chunk in resp.content.iter_chunked(chunk_size):
+                    sha.update(chunk)
+                    if resp.content.total_bytes and resp.content.total_bytes > limit:
+                        return None  # 文件太大，忽略
+                    if sha.digest_size > limit:  # 简单大小保护
+                        return None
+                return sha.hexdigest()
+        except Exception:
+            return None
 
     @staticmethod
     def _upstream_material(entry: dict) -> str:
@@ -564,7 +664,7 @@ class RSSScheduler:
 
     @staticmethod
     def _resolve_entry_link(entry: dict, feed_link: str | None = None) -> str:
-        """解析条目链接"""
+        """解析条目链接（清理追踪参数）"""
         link = str(entry.get("link") or entry.get("guid") or "").strip()
         if not link:
             return ""
@@ -572,6 +672,33 @@ class RSSScheduler:
             from urllib.parse import urljoin
 
             link = urljoin(feed_link, link)
+
+        # 清理追踪参数
+        try:
+            from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+            parsed = urlparse(link)
+            if parsed.query:
+                # 过滤掉追踪参数
+                filtered_params = [
+                    (k, v)
+                    for k, v in parse_qsl(parsed.query)
+                    if k not in RSSScheduler.TRACKING_QUERY_PARAMS
+                ]
+                # 重建URL
+                link = urlunparse(
+                    (
+                        parsed.scheme,
+                        parsed.netloc,
+                        parsed.path,
+                        parsed.params,
+                        urlencode(filtered_params),
+                        parsed.fragment,
+                    )
+                )
+        except Exception:
+            pass  # 清理失败时保持原链接
+
         return link
 
     @staticmethod
