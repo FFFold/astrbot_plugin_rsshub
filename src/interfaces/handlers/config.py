@@ -6,30 +6,53 @@ from astrbot.api.event import AstrMessageEvent
 
 SESSION_DEFAULT_KV_PREFIX = "rsshub_session_defaults_"
 SESSION_DEFAULT_KEYS = {
-    "interval", "notify", "send_mode", "length_limit", "link_preview",
-    "display_author", "display_via", "display_title", "display_entry_tags",
-    "style", "display_media", "translate", "translate_target_lang",
-    "title", "tags",
+    "interval",
+    "notify",
+    "send_mode",
+    "length_limit",
+    "link_preview",
+    "display_author",
+    "display_via",
+    "display_title",
+    "display_entry_tags",
+    "style",
+    "display_media",
+    "translate",
+    "translate_target_lang",
+    "title",
+    "tags",
 }
 
 
-async def handle_sub_set(event: AstrMessageEvent, sub_id: int, option: str, value: str, deps: dict) -> dict:
+async def handle_sub_set(
+    event: AstrMessageEvent, sub_id: int, option: str, value: str, deps: dict
+) -> dict:
     """修改订阅配置"""
     if sub_id <= 0 or not option:
-        return {"plain": "用法: /sub_set <sub_id> <option> <value>\n示例: /sub_set 1 interval 30"}
+        return {
+            "plain": "用法: /sub_set <sub_id> <option> <value>\n示例: /sub_set 1 interval 30"
+        }
     user_id = event.get_sender_id()
-    result = await deps["update_sub_cmd"].execute(sub_id=sub_id, user_id=user_id, **{option: value})
+    result = await deps["update_sub_cmd"].execute(
+        sub_id=sub_id, user_id=user_id, **{option: value}
+    )
     return {"plain": result.message}
 
 
-async def handle_sub_set_user(event: AstrMessageEvent, key: str, value: str, deps: dict) -> dict:
+async def handle_sub_set_user(
+    event: AstrMessageEvent, key: str, value: str, deps: dict
+) -> dict:
     """设置用户配置"""
     if not key or not value:
-        result = await deps["get_user_settings_cmd"].execute(user_id=event.get_sender_id())
+        result = await deps["get_user_settings_cmd"].execute(
+            user_id=event.get_sender_id()
+        )
         return {"plain": result.message}
     user_id = event.get_sender_id()
     result = await deps["set_user_settings_cmd"].execute(
-        user_id=user_id, key=key.strip().lower(), value=value,
+        user_id=user_id,
+        key=key.strip().lower(),
+        value=value,
     )
     return {"plain": result.message}
 
@@ -38,15 +61,20 @@ async def handle_sub_get_user(event: AstrMessageEvent, key: str, deps: dict) -> 
     """获取用户配置"""
     user_id = event.get_sender_id()
     result = await deps["get_user_settings_cmd"].execute(
-        user_id=user_id, key=key.strip().lower() if key else None,
+        user_id=user_id,
+        key=key.strip().lower() if key else None,
     )
     return {"plain": result.message}
 
 
-async def handle_sub_set_session(event: AstrMessageEvent, key: str, value: str, deps: dict, ctx) -> dict:
+async def handle_sub_set_session(
+    event: AstrMessageEvent, key: str, value: str, deps: dict, ctx
+) -> dict:
     """设置会话默认配置"""
     if not key or not value:
-        return {"plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, length_limit, display_title, display_media, translate 等"}
+        return {
+            "plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, length_limit, display_title, display_media, translate 等"
+        }
 
     session_id = event.unified_msg_origin
     defaults = await _get_session_defaults(ctx, session_id)
@@ -67,7 +95,9 @@ async def handle_sub_set_session(event: AstrMessageEvent, key: str, value: str, 
     return {"plain": f"会话默认配置已更新: {option_key} = {parsed_value}"}
 
 
-async def handle_sub_get_session(event: AstrMessageEvent, key: str, deps: dict, ctx) -> dict:
+async def handle_sub_get_session(
+    event: AstrMessageEvent, key: str, deps: dict, ctx
+) -> dict:
     """获取会话默认配置"""
     session_id = event.unified_msg_origin
     defaults = await _get_session_defaults(ctx, session_id)

@@ -35,7 +35,8 @@ class PipelineConfig:
     def from_config(cls, config: Any) -> PipelineConfig:
         return cls(
             keyword_blacklist=list(getattr(config, "keyword_blacklist", []) or []),
-            keyword_whitelist=list(getattr(config, "keyword_whitelist", None) or []) or None,
+            keyword_whitelist=list(getattr(config, "keyword_whitelist", None) or [])
+            or None,
             min_content_length=int(getattr(config, "min_content_length", 0) or 0),
             min_media_count=int(getattr(config, "min_media_count", 0) or 0),
         )
@@ -67,8 +68,9 @@ class BaseFilter(ABC):
     name: str = "base"
 
     @abstractmethod
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
-        ...
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult: ...
 
 
 class FilterChain:
@@ -108,9 +110,7 @@ class FilterChain:
                     "filtered_out": current.filtered_out,
                 }
             except Exception as e:
-                logger.warning(
-                    "filter-chain: %s raised %s, skipping", filter_.name, e
-                )
+                logger.warning("filter-chain: %s raised %s, skipping", filter_.name, e)
                 context.stats[filter_.name] = {
                     "ok": False,
                     "error": str(e),

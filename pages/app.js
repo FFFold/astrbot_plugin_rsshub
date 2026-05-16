@@ -166,7 +166,7 @@ const store = PetiteVue.reactive({
     this.dialog.okText = okText;
     this.dialog.okClass = okClass;
     this.dialog.show = true;
-    
+
     return new Promise((resolve) => {
       this.dialog.resolve = (result) => {
         this.dialog.show = false;

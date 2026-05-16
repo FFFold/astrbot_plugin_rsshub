@@ -76,13 +76,11 @@ class PushHistoryRepositoryImpl:
             now = datetime.now(timezone.utc)
             # fallback：重新激活 retrying 状态的旧记录（超过 5 分钟的）
             from datetime import timedelta
+
             retrying_cutoff = now - timedelta(minutes=5)
-            fallback_stmt = (
-                select(PushHistoryORM)
-                .where(
-                    PushHistoryORM.status == "retrying",
-                    PushHistoryORM.updated_at < retrying_cutoff,
-                )
+            fallback_stmt = select(PushHistoryORM).where(
+                PushHistoryORM.status == "retrying",
+                PushHistoryORM.updated_at < retrying_cutoff,
             )
             fallback_result = await session.execute(fallback_stmt)
             stale = list(fallback_result.scalars().all())

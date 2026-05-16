@@ -5,7 +5,9 @@ from __future__ import annotations
 from astrbot.api.event import AstrMessageEvent
 
 
-async def handle_batch_activate(event: AstrMessageEvent, sub_ids: str, deps: dict) -> dict:
+async def handle_batch_activate(
+    event: AstrMessageEvent, sub_ids: str, deps: dict
+) -> dict:
     """启用订阅"""
     user_id = event.get_sender_id()
     current_session = event.unified_msg_origin
@@ -17,12 +19,15 @@ async def handle_batch_activate(event: AstrMessageEvent, sub_ids: str, deps: dic
         result = await deps["batch_activate_cmd"].execute(sub_ids=ids, user_id=user_id)
     else:
         result = await deps["batch_activate_cmd"].execute_by_session(
-            user_id=user_id, current_session=current_session,
+            user_id=user_id,
+            current_session=current_session,
         )
     return {"plain": result.message}
 
 
-async def handle_batch_deactivate(event: AstrMessageEvent, sub_ids: str, deps: dict) -> dict:
+async def handle_batch_deactivate(
+    event: AstrMessageEvent, sub_ids: str, deps: dict
+) -> dict:
     """禁用订阅"""
     user_id = event.get_sender_id()
     current_session = event.unified_msg_origin
@@ -31,10 +36,13 @@ async def handle_batch_deactivate(event: AstrMessageEvent, sub_ids: str, deps: d
         ids = [int(x.strip()) for x in sub_ids.split(",") if x.strip().isdigit()]
         if not ids:
             return {"plain": "请提供订阅 ID 列表\n用法: /deactivate_subs 1,2,3"}
-        result = await deps["batch_deactivate_cmd"].execute(sub_ids=ids, user_id=user_id)
+        result = await deps["batch_deactivate_cmd"].execute(
+            sub_ids=ids, user_id=user_id
+        )
     else:
         result = await deps["batch_deactivate_cmd"].execute_by_session(
-            user_id=user_id, current_session=current_session,
+            user_id=user_id,
+            current_session=current_session,
         )
     return {"plain": result.message}
 
@@ -60,7 +68,8 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         scope_desc = "所有会话"
     else:
         to_delete = [
-            sub for sub in subscriptions
+            sub
+            for sub in subscriptions
             if (sub.target_session or current_session) == current_session
         ]
         scope_desc = "当前会话"
@@ -69,7 +78,6 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         return {"plain": f"当前{scope_desc}没有订阅"}
 
     # 导出备份
-    from datetime import datetime
     from pathlib import Path
 
     export_result = await deps["export_cmd"].execute(user_id=user_id, is_admin=is_admin)
@@ -82,6 +90,7 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         file_path = temp_dir / filename
         file_path.write_text(export_result.data.content)
         from astrbot.api.message_components import File
+
         result["chain"] = [File(name=filename, file=str(file_path))]
 
     # 删除订阅

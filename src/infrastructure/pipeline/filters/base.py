@@ -23,7 +23,9 @@ class PassThroughFilter(BaseFilter):
 
     name: str = "pass-through"
 
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult:
         return FilterResult(entry=entry, engine="pass-through")
 
 
@@ -38,17 +40,23 @@ class KeywordFilter(BaseFilter):
 
     name: str = "keyword"
 
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult:
         config = context.config
 
         title = str(entry.get("title", "") or "").strip()
-        summary = str(entry.get("summary", "") or entry.get("content", "") or "").strip()
+        summary = str(
+            entry.get("summary", "") or entry.get("content", "") or ""
+        ).strip()
         full_text = f"{title}\n{summary}".lower()
 
         if config.keyword_blacklist:
             for kw in config.keyword_blacklist:
                 if kw.lower() in full_text:
-                    logger.debug("keyword-filter: blacklisted '%s' matched, discarding", kw)
+                    logger.debug(
+                        "keyword-filter: blacklisted '%s' matched, discarding", kw
+                    )
                     return FilterResult(
                         entry=None,
                         engine="keyword",
@@ -68,7 +76,11 @@ class KeywordFilter(BaseFilter):
                 )
 
         if config.min_content_length > 0 and len(full_text) < config.min_content_length:
-            logger.debug("keyword-filter: content too short (%d < %d)", len(full_text), config.min_content_length)
+            logger.debug(
+                "keyword-filter: content too short (%d < %d)",
+                len(full_text),
+                config.min_content_length,
+            )
             return FilterResult(
                 entry=None,
                 engine="keyword",
@@ -79,7 +91,11 @@ class KeywordFilter(BaseFilter):
         if config.min_media_count > 0:
             media_count = len(entry.get("media_urls", []) or [])
             if media_count < config.min_media_count:
-                logger.debug("keyword-filter: media too few (%d < %d)", media_count, config.min_media_count)
+                logger.debug(
+                    "keyword-filter: media too few (%d < %d)",
+                    media_count,
+                    config.min_media_count,
+                )
                 return FilterResult(
                     entry=None,
                     engine="keyword",
@@ -102,7 +118,9 @@ class LLMFilter(BaseFilter):
     def __init__(self, llm_generate_func=None):
         self._llm_generate = llm_generate_func
 
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult:
         if not context.config.ai_filter_enabled:
             return FilterResult(entry=entry, engine="llm-filter:disabled")
 
@@ -122,7 +140,9 @@ class LLMFilter(BaseFilter):
             result = await self._llm_generate(prompt=prompt)
             answer = str(result).strip().lower() if result else ""
             if answer == "no":
-                logger.debug("llm-filter: LLM rejected entry: %s", entry.get("title", ""))
+                logger.debug(
+                    "llm-filter: LLM rejected entry: %s", entry.get("title", "")
+                )
                 return FilterResult(
                     entry=None,
                     engine="llm-filter",
@@ -147,7 +167,9 @@ class LLMEnrichFilter(BaseFilter):
     def __init__(self, llm_generate_func=None):
         self._llm_generate = llm_generate_func
 
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult:
         if not context.config.ai_enrich_enabled:
             return FilterResult(entry=entry, engine="llm-enrich:disabled")
 
@@ -160,11 +182,9 @@ class LLMEnrichFilter(BaseFilter):
 
         prompt_template = context.config.ai_enrich_prompt or (
             "请处理以下 RSS 条目，返回 JSON：\n"
-            "{\"title\": \"中文标题\", \"summary\": \"中文摘要（150字内）\"}\n\n"
+            '{"title": "中文标题", "summary": "中文摘要（150字内）"}\n\n'
             f"标题：{title}\n摘要：{summary}"
         )
-
-        import json
 
         try:
             result = await self._llm_generate(prompt=prompt_template)
@@ -173,7 +193,9 @@ class LLMEnrichFilter(BaseFilter):
             if parsed and parsed.get("title"):
                 enriched = dict(entry)
                 enriched["title"] = parsed["title"]
-                enriched["summary"] = parsed.get("summary", "") or enriched.get("summary", "")
+                enriched["summary"] = parsed.get("summary", "") or enriched.get(
+                    "summary", ""
+                )
                 return FilterResult(entry=enriched, engine="llm-enrich")
             return FilterResult(entry=entry, engine="llm-enrich:parse-failed")
         except Exception as e:
@@ -214,7 +236,9 @@ class TranslationFilter(BaseFilter):
     def __init__(self, translate_func=None):
         self._translate = translate_func
 
-    async def process(self, entry: dict[str, Any], context: FilterContext) -> FilterResult:
+    async def process(
+        self, entry: dict[str, Any], context: FilterContext
+    ) -> FilterResult:
         if not context.config.translate_enabled:
             return FilterResult(entry=entry, engine="translation:disabled")
 
@@ -243,7 +267,9 @@ class TranslationFilter(BaseFilter):
             if len(translated) >= 2:
                 enriched["summary"] = translated[1]
 
-            return FilterResult(entry=enriched, engine=f"translation:{context.config.translate_engine}")
+            return FilterResult(
+                entry=enriched, engine=f"translation:{context.config.translate_engine}"
+            )
         except Exception as e:
             logger.warning("translation-filter: failed, passing through: %s", e)
             return FilterResult(entry=entry, engine="translation:fallback")

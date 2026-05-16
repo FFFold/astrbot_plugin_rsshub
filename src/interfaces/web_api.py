@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from ..application.commands.batch_activate_cmd import BatchActivateCommand
     from ..application.commands.batch_deactivate_cmd import BatchDeactivateCommand
     from ..application.commands.batch_unsubscribe_cmd import BatchUnsubscribeCommand
-    from ..application.commands.export_subscriptions_cmd import ExportSubscriptionsCommand
+    from ..application.commands.export_subscriptions_cmd import (
+        ExportSubscriptionsCommand,
+    )
     from ..application.commands.get_user_settings_cmd import GetUserSettingsCommand
     from ..application.commands.set_user_settings_cmd import SetUserSettingsCommand
     from ..application.commands.subscribe_feed_cmd import SubscribeFeedCommand
@@ -86,7 +88,12 @@ class WebApiHandler:
             ("GET", "/subscriptions", self.handle_list_subscriptions, "列出所有订阅"),
             ("POST", "/subscribe", self.handle_subscribe, "订阅 RSS"),
             ("POST", "/unsubscribe", self.handle_unsubscribe, "取消订阅"),
-            ("POST", "/subscriptions/update", self.handle_update_subscription, "更新订阅"),
+            (
+                "POST",
+                "/subscriptions/update",
+                self.handle_update_subscription,
+                "更新订阅",
+            ),
             ("GET", "/feeds/items", self.handle_feed_items, "获取 Feed 条目"),
             ("POST", "/feeds/refresh", self.handle_refresh_feed, "刷新 Feed"),
             ("GET", "/settings", self.handle_get_settings, "获取用户设置"),
@@ -175,34 +182,36 @@ class WebApiHandler:
         items = []
         for s in subs:
             feed = feeds.get(s.feed_id) if s.feed_id else None
-            items.append({
-                "id": s.id,
-                "state": s.state,
-                "user_id": s.user_id,
-                "feed_id": s.feed_id,
-                "feed_title": feed.title if feed else "",
-                "feed_link": feed.link if feed else "",
-                "title": s.title,
-                "tags": s.tags,
-                "target_session": s.target_session,
-                "platform_name": s.platform_name,
-                "interval": s.interval,
-                "notify": s.notify,
-                "send_mode": s.send_mode,
-                "length_limit": s.length_limit,
-                "link_preview": s.link_preview,
-                "display_author": s.display_author,
-                "display_via": s.display_via,
-                "display_title": s.display_title,
-                "display_entry_tags": s.display_entry_tags,
-                "style": s.style,
-                "display_media": s.display_media,
-                "translate": s.translate,
-                "translate_target_lang": s.translate_target_lang,
-                "use_sub_config": s.use_sub_config,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-                "updated_at": s.updated_at.isoformat() if s.updated_at else None,
-            })
+            items.append(
+                {
+                    "id": s.id,
+                    "state": s.state,
+                    "user_id": s.user_id,
+                    "feed_id": s.feed_id,
+                    "feed_title": feed.title if feed else "",
+                    "feed_link": feed.link if feed else "",
+                    "title": s.title,
+                    "tags": s.tags,
+                    "target_session": s.target_session,
+                    "platform_name": s.platform_name,
+                    "interval": s.interval,
+                    "notify": s.notify,
+                    "send_mode": s.send_mode,
+                    "length_limit": s.length_limit,
+                    "link_preview": s.link_preview,
+                    "display_author": s.display_author,
+                    "display_via": s.display_via,
+                    "display_title": s.display_title,
+                    "display_entry_tags": s.display_entry_tags,
+                    "style": s.style,
+                    "display_media": s.display_media,
+                    "translate": s.translate,
+                    "translate_target_lang": s.translate_target_lang,
+                    "use_sub_config": s.use_sub_config,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                    "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+                }
+            )
 
         return jsonify({"ok": True, "items": items, "total": len(items)})
 
@@ -228,7 +237,9 @@ class WebApiHandler:
 
         resp = {"ok": result.success, "message": result.message}
         if result.data:
-            resp["data"] = {"id": result.data.id} if hasattr(result.data, "id") else result.data
+            resp["data"] = (
+                {"id": result.data.id} if hasattr(result.data, "id") else result.data
+            )
         self._bump_counter()
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify(resp)
@@ -242,7 +253,9 @@ class WebApiHandler:
         if not sub_id:
             return jsonify({"ok": False, "error": "sub_id 不能为空"})
 
-        result = await self._unsubscribe_cmd.execute(sub_id=int(sub_id), user_id=user_id)
+        result = await self._unsubscribe_cmd.execute(
+            sub_id=int(sub_id), user_id=user_id
+        )
         self._bump_counter()
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify({"ok": result.success, "message": result.message})
@@ -288,22 +301,30 @@ class WebApiHandler:
 
         items = []
         for item in result.items:
-            items.append({
-                "title": item.title,
-                "link": item.link,
-                "summary": item.summary[:300] + "..." if item.summary and len(item.summary) > 300 else item.summary,
-                "author": item.author,
-                "published_at": item.published_at.isoformat() if item.published_at else None,
-            })
+            items.append(
+                {
+                    "title": item.title,
+                    "link": item.link,
+                    "summary": item.summary[:300] + "..."
+                    if item.summary and len(item.summary) > 300
+                    else item.summary,
+                    "author": item.author,
+                    "published_at": item.published_at.isoformat()
+                    if item.published_at
+                    else None,
+                }
+            )
 
-        return jsonify({
-            "ok": not result.error,
-            "items": items,
-            "total": result.total,
-            "page": result.page,
-            "page_size": result.page_size,
-            "error": result.error or "",
-        })
+        return jsonify(
+            {
+                "ok": not result.error,
+                "items": items,
+                "total": result.total,
+                "page": result.page,
+                "page_size": result.page_size,
+                "error": result.error or "",
+            }
+        )
 
     async def handle_refresh_feed(self):
         """手动刷新 Feed"""
@@ -340,7 +361,9 @@ class WebApiHandler:
         user_id = data.get("user_id", "webadmin")
         settings = data.get("settings", {})
 
-        result = await self._set_user_settings_cmd.execute(user_id=user_id, settings=settings)
+        result = await self._set_user_settings_cmd.execute(
+            user_id=user_id, settings=settings
+        )
         self._bump_counter()
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify({"ok": result.success, "message": result.message})
@@ -385,7 +408,9 @@ class WebApiHandler:
         if not sub_ids:
             return jsonify({"ok": False, "error": "sub_ids 不能为空"})
 
-        result = await self._batch_activate_cmd.execute(sub_ids=sub_ids, user_id=user_id)
+        result = await self._batch_activate_cmd.execute(
+            sub_ids=sub_ids, user_id=user_id
+        )
         self._bump_counter()
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify({"ok": result.success, "message": result.message})
@@ -399,7 +424,9 @@ class WebApiHandler:
         if not sub_ids:
             return jsonify({"ok": False, "error": "sub_ids 不能为空"})
 
-        result = await self._batch_deactivate_cmd.execute(sub_ids=sub_ids, user_id=user_id)
+        result = await self._batch_deactivate_cmd.execute(
+            sub_ids=sub_ids, user_id=user_id
+        )
         self._bump_counter()
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify({"ok": result.success, "message": result.message})
@@ -427,15 +454,17 @@ class WebApiHandler:
 
         result = await self._export_cmd.execute(user_id=user_id)
         if result.success and result.data:
-            return jsonify({
-                "ok": True,
-                "message": result.message,
-                "data": {
-                    "content": result.data.content,
-                    "filename": result.data.filename,
-                    "count": result.data.count,
-                },
-            })
+            return jsonify(
+                {
+                    "ok": True,
+                    "message": result.message,
+                    "data": {
+                        "content": result.data.content,
+                        "filename": result.data.filename,
+                        "count": result.data.count,
+                    },
+                }
+            )
         return jsonify({"ok": False, "error": result.message})
 
     async def handle_stats(self):
@@ -447,12 +476,14 @@ class WebApiHandler:
         feed_ids = {s.feed_id for s in all_subs if s.feed_id}
         unique_users = {s.user_id for s in all_subs if s.user_id}
 
-        return jsonify({
-            "ok": True,
-            "stats": {
-                "total_subscriptions": len(all_subs),
-                "active_subscriptions": total_active,
-                "total_feeds": len(feed_ids),
-                "unique_users": len(unique_users),
-            },
-        })
+        return jsonify(
+            {
+                "ok": True,
+                "stats": {
+                    "total_subscriptions": len(all_subs),
+                    "active_subscriptions": total_active,
+                    "total_feeds": len(feed_ids),
+                    "unique_users": len(unique_users),
+                },
+            }
+        )

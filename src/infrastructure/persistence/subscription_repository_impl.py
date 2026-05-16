@@ -23,11 +23,7 @@ class SubscriptionRepositoryImpl:
         """根据ID获取订阅"""
         db = get_database()
         async with db.get_session() as session:
-            stmt = (
-                select(SubORM)
-                .where(SubORM.id == sub_id)
-                
-            )
+            stmt = select(SubORM).where(SubORM.id == sub_id)
             result = await session.execute(stmt)
             orm = result.scalar_one_or_none()
             return self._to_entity(orm) if orm else None
@@ -37,9 +33,7 @@ class SubscriptionRepositoryImpl:
         db = get_database()
         async with db.get_session() as session:
             stmt = (
-                select(SubORM)
-                .where(SubORM.user_id == user_id)
-                .order_by(asc(SubORM.id))
+                select(SubORM).where(SubORM.user_id == user_id).order_by(asc(SubORM.id))
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
@@ -63,12 +57,7 @@ class SubscriptionRepositoryImpl:
         """获取所有启用的订阅"""
         db = get_database()
         async with db.get_session() as session:
-            stmt = (
-                select(SubORM)
-                .where(SubORM.state == 1)
-                
-                .order_by(asc(SubORM.id))
-            )
+            stmt = select(SubORM).where(SubORM.state == 1).order_by(asc(SubORM.id))
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
@@ -80,7 +69,6 @@ class SubscriptionRepositoryImpl:
             stmt = (
                 select(SubORM)
                 .where(SubORM.feed_id == feed_id, SubORM.state == 1)
-                
                 .order_by(asc(SubORM.id))
             )
             result = await session.execute(stmt)

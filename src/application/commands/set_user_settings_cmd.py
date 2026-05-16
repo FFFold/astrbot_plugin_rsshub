@@ -5,10 +5,8 @@
 
 from __future__ import annotations
 
-from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ..dto.result_dto import CommandResult
-from ..dto.user_dto import UserDTO
 
 # 设置选项的合法值范围
 VALID_SETTINGS = {
@@ -57,6 +55,7 @@ class SetUserSettingsCommand:
         if not user:
             # 创建新用户
             from ...domain.entities.user import User
+
             user = User(id=user_id)
 
         option_key = key.strip().lower()

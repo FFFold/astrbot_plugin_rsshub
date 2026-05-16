@@ -39,7 +39,9 @@ class OneBotMessageSender(DefaultMessageSender):
         """
         try:
             session_id = request.session_id
-            timeout = context.timeout_seconds if context else self._get_timeout_seconds()
+            timeout = (
+                context.timeout_seconds if context else self._get_timeout_seconds()
+            )
             proxy = context.proxy if context else self._get_proxy()
 
             effective_prepared = request.prepared_media
@@ -49,8 +51,7 @@ class OneBotMessageSender(DefaultMessageSender):
                 )
 
             nickname = (
-                context.channel.title if context and context.channel.title
-                else "RSSHub"
+                context.channel.title if context and context.channel.title else "RSSHub"
             )
 
             nodes: list[Node] = []
@@ -68,9 +69,7 @@ class OneBotMessageSender(DefaultMessageSender):
                         failed_media_urls.append(item.original_url)
                         continue
                     path = (
-                        str(item.local_path)
-                        if item.local_path
-                        else item.original_url
+                        str(item.local_path) if item.local_path else item.original_url
                     )
                     match item.media_type:
                         case "image":
@@ -78,13 +77,14 @@ class OneBotMessageSender(DefaultMessageSender):
                         case "video":
                             image_components.append(Video(file=path))
                         case "audio":
-                            tail_components.append(
-                                Record(file=path, text="audio")
-                            )
+                            tail_components.append(Record(file=path, text="audio"))
                         case "file":
                             from urllib.parse import unquote, urlparse
+
                             filename = (
-                                unquote(urlparse(item.original_url).path.rsplit("/", 1)[-1])
+                                unquote(
+                                    urlparse(item.original_url).path.rsplit("/", 1)[-1]
+                                )
                                 or "attachment"
                             )
                             tail_components.append(

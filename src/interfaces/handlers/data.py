@@ -20,7 +20,10 @@ async def handle_export(event: AstrMessageEvent, deps: dict) -> dict:
         filename = result.data.filename
         file_path = temp_dir / filename
         file_path.write_text(result.data.content)
-        return {"chain": [File(name=filename, file=str(file_path))], "plain": result.message}
+        return {
+            "chain": [File(name=filename, file=str(file_path))],
+            "plain": result.message,
+        }
     return {"plain": result.message}
 
 

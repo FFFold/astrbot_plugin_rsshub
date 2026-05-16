@@ -6,8 +6,6 @@ senders 只管发送，排序逻辑全部集中在 Formatter 中。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import unquote, urlparse
 from typing import TYPE_CHECKING
 

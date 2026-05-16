@@ -29,7 +29,6 @@ async def handle_sub(event: AstrMessageEvent, url: str, deps: dict) -> dict:
         )
         return {"plain": result.message}
 
-    from ..dto.result_dto import CommandResult
     results = []
     for single_url in valid_urls:
         r = await deps["subscribe_cmd"].execute(
@@ -89,7 +88,7 @@ async def handle_sub_list(event: AstrMessageEvent, deps: dict) -> dict:
     active_count = sum(1 for sub in visible if sub.state == 1)
     inactive_count = total_count - active_count
     lines = [
-        f"您的订阅列表（当前会话）:",
+        "您的订阅列表（当前会话）:",
         f"共 {total_count} 个订阅 | 启用: {active_count} | 禁用: {inactive_count}",
     ]
     for i, sub in enumerate(visible, 1):
@@ -110,7 +109,9 @@ async def handle_refresh(event: AstrMessageEvent, feed_id: int, deps: dict) -> d
     return {"plain": f"Feed {feed_id} 刷新完成"}
 
 
-async def handle_sub_state(event: AstrMessageEvent, sub_id_str: str, deps: dict) -> dict:
+async def handle_sub_state(
+    event: AstrMessageEvent, sub_id_str: str, deps: dict
+) -> dict:
     """订阅状态管理"""
     if not sub_id_str:
         return {"plain": "用法: /sub_state <订阅ID> on/off\n示例: /sub_state 123 on"}
@@ -130,8 +131,12 @@ async def handle_sub_state(event: AstrMessageEvent, sub_id_str: str, deps: dict)
     elif state_str in ("off", "false", "no", "n", "0", "关闭"):
         enable = False
     else:
-        return {"plain": "不支持的状态值，请使用: on/off, true/false, yes/no, y/n, 1/0, 开启/关闭"}
+        return {
+            "plain": "不支持的状态值，请使用: on/off, true/false, yes/no, y/n, 1/0, 开启/关闭"
+        }
 
     user_id = event.get_sender_id()
-    result = await deps["sub_state_cmd"].execute(sub_id=sub_id, user_id=user_id, enable=enable)
+    result = await deps["sub_state_cmd"].execute(
+        sub_id=sub_id, user_id=user_id, enable=enable
+    )
     return {"plain": result.message}

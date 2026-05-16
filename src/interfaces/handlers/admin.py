@@ -21,4 +21,6 @@ async def handle_admin_panel(event: AstrMessageEvent, action: str, deps: dict) -
     elif action == "restart":
         return {"plain": "请通过重启 AstrBot 来重启调度器"}
     else:
-        return {"plain": "RSSHub 管理命令:\n  /rsshub_admin stats - 查看状态\n  /rsshub_admin restart - 重启调度器"}
+        return {
+            "plain": "RSSHub 管理命令:\n  /rsshub_admin stats - 查看状态\n  /rsshub_admin restart - 重启调度器"
+        }

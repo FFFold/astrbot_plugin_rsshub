@@ -85,7 +85,9 @@ class GetSubscriptionsQuery:
                     user_id=sub.user_id,
                     feed_id=sub.feed_id,
                     title=sub.title,
-                    feed_title=feeds[sub.feed_id].title if sub.feed_id in feeds else None,
+                    feed_title=feeds[sub.feed_id].title
+                    if sub.feed_id in feeds
+                    else None,
                     feed_link=feeds[sub.feed_id].link if sub.feed_id in feeds else None,
                     tags=sub.tags,
                     target_session=sub.target_session,

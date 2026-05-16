@@ -199,10 +199,7 @@ class BatchActivateCommand:
             sub
             for sub in subscriptions
             if sub.state == 0
-            and (
-                sub.target_session == current_session
-                or not sub.target_session
-            )
+            and (sub.target_session == current_session or not sub.target_session)
         ]
 
         if not subs:

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from ...domain.repositories.user_repository import UserRepository
 from ..dto.result_dto import CommandResult
-from ..dto.user_dto import UserDTO
 
 
 class GetUserSettingsCommand:
