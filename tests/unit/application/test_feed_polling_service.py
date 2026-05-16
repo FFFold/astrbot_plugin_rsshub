@@ -427,16 +427,16 @@ def test_tracking_query_params_stripped_for_hash_and_dispatch_link():
     )
 
     assert (
-        service._strip_tracking_params(entry.link)
-        == "https://example.com/post?foo=bar"
+        service._strip_tracking_params(entry.link) == "https://example.com/post?foo=bar"
     )
     assert service._resolve_entry_link(entry) == "https://example.com/post?foo=bar"
     assert service._resolve_entry_link(entry_with_other_tracking) == (
         "https://example.com/post?foo=bar"
     )
-    assert service._hash_entry(entry)[0] == service._hash_entry(
-        entry_with_other_tracking
-    )[0]
+    assert (
+        service._hash_entry(entry)[0]
+        == service._hash_entry(entry_with_other_tracking)[0]
+    )
 
 
 def test_build_conditional_headers_from_feed_etag_and_last_modified():
