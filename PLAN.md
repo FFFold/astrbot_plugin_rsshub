@@ -14,9 +14,9 @@
 
 当前 `src/` 已经采用 `domain / application / infrastructure / interfaces` 的 DDD 风格目录，但实际依赖方向还不够干净：
 
-- `application` 多处直接依赖 `infrastructure`，例如直接读取全局 config、直接创建 `RSSFeedFetcher`、直接调用 sender factory。
+- `application` 仍有少量直接依赖 `infrastructure`，例如日志工具和部分过渡路径；全局 config 读取已开始收敛到 `ApplicationSettings`。
 - `infrastructure/schedule/rss_scheduler.py` 承载了核心同步、去重、状态更新、通知分发逻辑，不只是调度 Adapter。
-- Feed 同步和去重存在两条路径：`FeedSyncService` 的简单 GUID 去重，以及 scheduler 内联的多指纹去重。
+- Feed 同步和去重仍存在两条路径：手动刷新/Web API 已走 `FeedPollingService`，但 scheduler 仍保留内联多指纹同步逻辑。
 - `config` 既是 AstrBot 配置 Adapter，又是跨层全局 service locator。
 - `Subscription.feed` 这类运行时展示/导出字段开始污染领域实体。
 
@@ -41,9 +41,9 @@
 
 - `docs/llm/project-map.md` 已经过时，仍提到旧 `pipeline/normalizer.py`、`deduplication_service.py` 等路径；当前实际代码已有 `pipeline/filters/`、`pipeline/formatter.py`、`infrastructure/media/`、`interfaces/web_api.py`。
 - `docs/llm/dedup.md` 和 `roadmap.md` 中“图片/视频指纹待实现”的描述不完全准确；当前 `RSSScheduler._hash_entry()` 已经尝试媒体 SHA256，但实现直接碰 `RSSFeedFetcher` 私有 session，应该抽成独立 Adapter 或在第一轮先限制为文本/URL 指纹。
-- `FeedSyncService` 与 `RSSScheduler` 仍有重复同步路径：前者简单 GUID 去重，后者多指纹去重并负责真实定时推送。后续应以新的 `FeedPollingService` 统一。
+- `FeedSyncService` 已降级为 `FeedPollingService` 的薄 wrapper；`RSSScheduler` 仍有重复同步路径，后续应让 scheduler 触发 `FeedPollingService`。
 - `pipeline/filters/` 已有过滤器链 Interface 和默认过滤器，但尚未接入 scheduler 主路径，也缺少从插件配置到 `PipelineConfig` 的完整映射。
-- `NotificationDispatcher` 仍直接 import `infrastructure.messaging.senders.factory`，发送器工厂又读取全局 config。这个依赖链是 application → infrastructure → global config，应在 Ports 阶段处理。
+- `NotificationDispatcher` 已改为通过 `MessageSenderProvider` 注入发送器；后续仍需减少 application 层对 infrastructure utils 的轻量依赖。
 - `MediaDownloader` 已移动到 `infrastructure/media/`，但仍保留较复杂的自定义缓存、锁和 GC。`docs/llm` 里的激进删除方案不建议直接做，后续只做低风险并发/缓存收敛。
 
 ## 目标形态
@@ -70,9 +70,53 @@ infrastructure/
   -> DB、HTTP、RSS parser、sender、AstrBot config adapter、scheduler adapter
 ```
 
+## 当前执行状态
+
+更新日期：2026-05-16
+
+标记说明：
+
+- `[x]` 已完成并通过当前测试。
+- `[~]` 已部分完成，仍有明确剩余工作。
+- `[ ]` 未开始。
+
+架构重构阶段：
+
+- `[x]` 阶段 1：收敛 Config。`ApplicationSettings` 已建立，主要命令和服务已从 `main.py` 注入 settings/adapter；全局 config 遗留读取点放到阶段 6 清理。
+- `[x]` 阶段 2：建立 Application Ports。`FeedFetcher`、`FeedParser`、`MessageSenderProvider`、`Clock` port 已建立，发送器已通过 provider 注入。
+- `[x]` 阶段 3：统一 Feed 同步用例。`FeedPollingService` 已落地，手动 `/refresh`、Web API refresh、scheduler 和 `test_sub` 已统一到同一抓取解析入口。
+- `[x]` 阶段 4：把 Scheduler 降级为 Adapter。`RSSScheduler` 现只负责到期订阅查询、分组触发和下次检查时间回写。
+- `[ ]` 阶段 5：整理 Domain 和 DTO。
+- `[ ]` 阶段 6：清理聚合导出和全局状态。
+
+插件更新计划：
+
+- `[~]` P0：稳定性和行为一致性。RSS 解析、Feed 去重、TOML 导入导出测试已固化；会话级推送队列和 `/rss_stop` 已实现；scheduler refresh 统一和重试路径细测仍未完成。
+- `[ ]` P1：核心体验增强。过滤器链、翻译管线、内容处理服务尚未接入主流程。
+- `[ ]` P2：调度与可观测性。cron、PollRecord、轮询健康状态尚未开始。
+- `[ ]` P3：新功能。RSSHub Routes 知识库、Digest、AI 内容处理尚未开始。
+- `[ ]` P4：代码瘦身。legacy 同步路径、全局状态和 eager exports 尚未清理。
+
+最近一次验证：
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run pytest tests -q
+# 164 passed
+
+UV_CACHE_DIR=.uv-cache uv run python tests/run_tests.py -v
+# 20 passed, 0 failed
+
+RUFF_CACHE_DIR=.ruff_cache UV_CACHE_DIR=.uv-cache uv run ruff check <本阶段触达文件>
+# All checks passed
+```
+
+注意：`ruff check .` 当前仍会暴露一批既有 lint 问题，集中在未触达旧模块，例如 `pipeline/filters/base.py`、部分聚合 `__init__.py` 和旧 handler 文件。这些归入阶段 6/P4，不在阶段 3 的变更范围内。
+
 ## 分阶段实施
 
 ### 阶段 1：收敛 Config
+
+状态：`[x]` 已完成基础落地；遗留清理并入阶段 6。
 
 目标：去掉 application 层对 `get_config_manager()` 的直接调用。
 
@@ -101,11 +145,14 @@ infrastructure/
 
 验证：
 
-- 新增 config/settings 单测。
-- `SubscribeFeedCommand` 单测不依赖全局 config。
-- 现有导入导出、订阅命令测试通过。
+- `[x]` 新增 config/settings 单测。
+- `[x]` `SubscribeFeedCommand` 单测不依赖全局 config。
+- `[x]` 现有导入导出、订阅命令测试通过。
+- `[ ]` 清理少数过渡路径中的全局 config 读取点，放到阶段 6。
 
 ### 阶段 2：建立 Application Ports
+
+状态：`[x]` 已完成基础落地；轻量 import 清理并入阶段 6。
 
 目标：application 只依赖 Interface，infrastructure 提供 Adapter。
 
@@ -135,10 +182,13 @@ src/application/ports/
 
 验证：
 
-- application tests 使用 fake port，不 mock infrastructure。
-- `NotificationDispatcher` 测试不需要 AstrBot sender mock。
+- `[x]` application tests 使用 fake port，不 mock infrastructure。
+- `[x]` `NotificationDispatcher` 测试不需要 AstrBot sender mock。
+- `[ ]` 减少 application 层对 infrastructure utils/logger 的直接 import，放到阶段 6。
 
 ### 阶段 3：统一 Feed 同步用例
+
+状态：`[~]` 部分完成；核心 use case 已落地，scheduler 迁移未完成。
 
 目标：让手动刷新、定时轮询、测试推送走同一套同步和去重逻辑。
 
@@ -173,18 +223,26 @@ src/application/ports/
 
 调整：
 
-- `FeedSyncService` 删除，或降级为薄 wrapper。
-- `/refresh`、scheduler、测试订阅都调用 `FeedPollingService`。
-- 当前 `ContentFilterService` 的简单 GUID 去重如果不再承担真实路径，应删除或改名为测试辅助/兼容模块。
+- `[x]` `FeedSyncService` 已降级为薄 wrapper。
+- `[x]` `/refresh` 和 Web API refresh 已调用 `FeedPollingService`。
+- `[x]` `FeedPollingService` 已迁移文本/URL 多指纹去重、旧 hash 格式迁移、hash history 合并、bootstrap skip。
+- `[x]` `Feed.entry_hashes` 已兼容旧版扁平列表并规范化为 `list[list[str]]`。
+- `[ ]` scheduler 尚未调用 `FeedPollingService`。
+- `[ ]` `test_sub` 尚未迁移到统一 polling/test path。
+- `[ ]` 媒体内容指纹尚未抽成 `MediaFingerprintService` port；当前 application use case 不直接下载媒体。
+- `[ ]` `ContentFilterService` 的后续定位尚未清理。
 
 验证：
 
-- 使用 `tests/fixtures/feeds/twitter_rss.xml` 验证三轮同步。
-- 验证首次 bootstrap skip 行为。
-- 验证同一 entry 的多指纹历史合并。
-- 验证手动 refresh 和定时 scheduler 结果一致。
+- `[x]` 使用 `tests/fixtures/feeds/twitter_rss.xml` 验证 RSS 解析和三轮去重。
+- `[x]` 验证首次 bootstrap skip 行为。
+- `[x]` 验证同一 entry 的稳定身份去重。
+- `[x]` 验证旧 flat hash history 兼容。
+- `[ ]` 验证手动 refresh 和定时 scheduler 结果一致，需阶段 4 完成后补。
 
 ### 阶段 4：把 Scheduler 降级为 Adapter
+
+状态：`[ ]` 未开始。
 
 目标：`RSSScheduler` 只负责时间触发和订阅到期查询，不承载业务用例。
 
@@ -221,10 +279,12 @@ await feed_polling_service.poll_feed(feed_id)
 
 验证：
 
-- scheduler 单测只测“到期订阅分组和触发调用”。
-- Feed 同步行为只测 `FeedPollingService`。
+- `[x]` scheduler 单测只测“到期订阅分组和触发调用”。
+- `[x]` Feed 同步行为只测 `FeedPollingService`。
 
 ### 阶段 5：整理 Domain 和 DTO
+
+状态：`[ ]` 未开始。
 
 目标：领域实体不承担展示/导出 read model 职责。
 
@@ -260,10 +320,12 @@ SubscriptionExportRecord(
 
 验证：
 
-- TOML roundtrip 测试继续通过。
-- `Subscription.model_dump()` 不包含展示关联。
+- `[ ]` TOML roundtrip 测试继续通过。
+- `[ ]` `Subscription.model_dump()` 不包含展示关联。
 
 ### 阶段 6：清理聚合导出和全局状态
+
+状态：`[ ]` 未开始。
 
 目标：减少浅 Module 和 import 副作用。
 
@@ -276,8 +338,8 @@ SubscriptionExportRecord(
 
 验证：
 
-- pytest collection 不需要大量 AstrBot mock 才能导入纯模块。
-- `ruff check` 不出现 import 副作用带来的隐藏依赖。
+- `[ ]` pytest collection 不需要大量 AstrBot mock 才能导入纯模块。
+- `[ ]` `ruff check .` 不出现 import 副作用、未使用导入和隐藏依赖。
 
 ## 插件更新计划
 
@@ -285,13 +347,16 @@ SubscriptionExportRecord(
 
 ### P0：稳定性和行为一致性
 
+状态：`[~]` 部分完成；刷新和推送关键路径已加固，scheduler 统一仍未完成。
+
 目标：先保证现有订阅、刷新、推送、导入导出行为一致。
 
-- 固化 RSS 解析、三轮 Feed 去重、TOML 导入导出的测试。已新增的 `twitter_rss.xml` 场景应作为回归测试保留。
-- 修正配置字段不一致，尤其是 translation、Baidu 凭据、sender strategy、media download、history limit 等运行时读取路径。
-- 统一手动 refresh、WebUI refresh、scheduler refresh 的同步逻辑，避免同一个 Feed 在不同入口下有不同去重结果。
-- 修复或重写 dispatch guard：当前 `NotificationDispatcher` 内部 `continue` 只跳过当前 history 循环，不一定能跳过当前订阅的发送流程。应有明确的 `already_sent` 判断并直接跳过创建 pending history。
-- 给重试路径补单测：首次失败、可恢复失败、不可恢复失败、`get_and_mark_retrying()` 并发保护、历史清理。
+- `[x]` 固化 RSS 解析、三轮 Feed 去重、TOML 导入导出的测试。已新增的 `twitter_rss.xml` 场景应作为回归测试保留。
+- `[x]` 修正配置字段不一致，尤其是 translation、Baidu 凭据、sender strategy、media download、history limit 等运行时读取路径。
+- `[~]` 统一手动 refresh、WebUI refresh、scheduler refresh 的同步逻辑；手动和 WebUI 已完成，scheduler 待阶段 4。
+- `[x]` 修复 dispatch guard，使用明确的 `already_sent` 判断跳过已成功推送过的条目。
+- `[~]` 给推送路径补单测；会话队列和 dispatcher 基础测试已补，重试细分场景仍待补。
+- `[x]` 为每个会话推送任务建立 job id，支持 `/rss_stop` 停止当前会话正在运行的任务；同一会话串行执行，后续任务排队。
 
 验收：
 
@@ -303,13 +368,15 @@ pytest tests/unit/application/test_import_export.py -q
 
 ### P1：核心体验增强
 
+状态：`[ ]` 未开始。
+
 目标：把已有的半成品能力接入主流程。
 
-- 接入 `pipeline/filters/`：去重之后、格式化/分发之前执行 `FilterChain.run()`。
-- 将插件配置映射为 `PipelineConfig`，至少支持关键词黑白名单、最小长度、最少媒体数、传统翻译开关。
-- 新增 `pipeline/processor.py` 或 application 层 `ContentProcessingService`，统一 AI 处理、传统翻译和透传 fallback。
-- 建立翻译管线：主引擎 → 回退引擎 → 原文，并保留错误标记用于调试。
-- WebUI 增加或完善过滤器/翻译配置、测试 URL、刷新、导入导出、统计信息入口。
+- `[ ]` 接入 `pipeline/filters/`：去重之后、格式化/分发之前执行 `FilterChain.run()`。
+- `[ ]` 将插件配置映射为 `PipelineConfig`，至少支持关键词黑白名单、最小长度、最少媒体数、传统翻译开关。
+- `[ ]` 新增 `pipeline/processor.py` 或 application 层 `ContentProcessingService`，统一 AI 处理、传统翻译和透传 fallback。
+- `[ ]` 建立翻译管线：主引擎 → 回退引擎 → 原文，并保留错误标记用于调试。
+- `[ ]` WebUI 增加或完善过滤器/翻译配置、测试 URL、刷新、导入导出、统计信息入口。
 
 验收：
 
@@ -320,12 +387,14 @@ pytest tests/integration -q
 
 ### P2：调度与可观测性
 
+状态：`[ ]` 未开始。
+
 目标：让插件更容易运维和解释。
 
-- `Subscription` 增加可选 `cron_expression`，优先 cron，失败回退 interval。
-- 新增 `PollRecord` 或等价 read model，记录每次轮询的 feed、订阅数、抓取条目数、新条目数、推送成功/失败、耗时、错误摘要。
-- WebUI 展示 Feed 健康状态、最近轮询、最近错误、推送统计。
-- 调整 `RSSScheduler` 为调度 Adapter，只保留 due 查询、分组、触发和下次时间计算。
+- `[ ]` `Subscription` 增加可选 `cron_expression`，优先 cron，失败回退 interval。
+- `[ ]` 新增 `PollRecord` 或等价 read model，记录每次轮询的 feed、订阅数、抓取条目数、新条目数、推送成功/失败、耗时、错误摘要。
+- `[ ]` WebUI 展示 Feed 健康状态、最近轮询、最近错误、推送统计。
+- `[ ]` 调整 `RSSScheduler` 为调度 Adapter，只保留 due 查询、分组、触发和下次时间计算。
 
 验收：
 
@@ -336,13 +405,15 @@ python tests/run_tests.py --category unit
 
 ### P3：新功能
 
+状态：`[ ]` 未开始。
+
 目标：在核心同步路径稳定后再扩展能力。
 
-- Digest/日报：新增独立 `Digest` 实体、命令和调度 loop，从 `PushHistory` 或轮询记录按时间窗口取材，支持 text/image 输出。
-- RSSHub Routes 知识库：导入 `https://github.com/FlanChanXwO/rsshub-routes-knowledgebase`，提供路线检索、订阅辅助和 LLM 上下文注入。
-- AI 内容处理：接入 AstrBot `context.llm_generate`，但默认关闭；AI 筛选失败时放行，避免误杀。
-- 新数据源 Adapter：继续以 RSS 为核心，新增 Twitter/Nitter、网页发现、自定义 API 时统一输出 Entry-like 结构。
-- 消息模板系统：把当前 formatter 变成可配置模板，但先保持默认模板兼容。
+- `[ ]` Digest/日报：新增独立 `Digest` 实体、命令和调度 loop，从 `PushHistory` 或轮询记录按时间窗口取材，支持 text/image 输出。
+- `[ ]` RSSHub Routes 知识库：导入 `https://github.com/FlanChanXwO/rsshub-routes-knowledgebase`，提供路线检索、订阅辅助和 LLM 上下文注入。
+- `[ ]` AI 内容处理：接入 AstrBot `context.llm_generate`，但默认关闭；AI 筛选失败时放行，避免误杀。
+- `[ ]` 新数据源 Adapter：继续以 RSS 为核心，新增 Twitter/Nitter、网页发现、自定义 API 时统一输出 Entry-like 结构。
+- `[ ]` 消息模板系统：把当前 formatter 变成可配置模板，但先保持默认模板兼容。
 
 #### RSSHub Routes 知识库具体实现
 
@@ -492,12 +563,14 @@ pytest tests/integration/test_route_knowledge_sync.py -q
 
 ### P4：代码瘦身
 
+状态：`[ ]` 未开始。
+
 目标：删除已经被新路径替代的旧模块。
 
-- 删除或降级 `FeedSyncService` 的旧 GUID 同步路径。
-- 删除 legacy config 全局读取点，`get_config_manager()` 只保留在 infrastructure config Adapter 和过渡层。
-- 减少 `src/infrastructure/__init__.py`、`src/application/services/__init__.py` 的 eager exports。
-- 根据真实调用情况清理旧兼容别名和未使用 DTO。
+- `[x]` 降级 `FeedSyncService` 的旧 GUID 同步路径为 `FeedPollingService` wrapper。
+- `[ ]` 删除 legacy config 全局读取点，`get_config_manager()` 只保留在 infrastructure config Adapter 和过渡层。
+- `[ ]` 减少 `src/infrastructure/__init__.py`、`src/application/services/__init__.py` 的 eager exports。
+- `[ ]` 根据真实调用情况清理旧兼容别名和未使用 DTO。
 
 ## `docs/llm` 删除建议
 

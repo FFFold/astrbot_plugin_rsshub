@@ -7,6 +7,7 @@ for these protocols at composition time.
 from .clock import Clock, SystemClock
 from .feed_fetcher import FeedFetcher, FeedFetcherFactory
 from .feed_parser import FeedParser
+from .media_fingerprint import MediaFingerprintService
 from .message_sender import (
     MessageContext,
     MessageSender,
@@ -21,6 +22,7 @@ __all__ = [
     "FeedFetcherFactory",
     "FeedParser",
     "MessageContext",
+    "MediaFingerprintService",
     "MessageSender",
     "MessageSenderProvider",
     "SendRequest",

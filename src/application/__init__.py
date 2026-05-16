@@ -17,7 +17,12 @@ from .queries import (
     SearchFeedsResult,
     SubscriptionsResult,
 )
-from .services import FeedSyncService, NotificationDispatcher
+from .services import (
+    FeedPollingResult,
+    FeedPollingService,
+    FeedSyncService,
+    NotificationDispatcher,
+)
 
 __all__ = [
     # Commands
@@ -41,6 +46,8 @@ __all__ = [
     "ItemDTO",
     "SubscriptionDTO",
     # Services
+    "FeedPollingResult",
+    "FeedPollingService",
     "FeedSyncService",
     "NotificationDispatcher",
 ]

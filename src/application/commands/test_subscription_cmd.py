@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -13,6 +14,7 @@ from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
+from ..services.feed_polling_service import FeedPollingService, FeedReadResult
 
 
 @dataclass
@@ -35,13 +37,15 @@ class TestSubscriptionCommand:
         self,
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository,
-        fetcher: FeedFetcher,
-        parser: FeedParser,
+        fetcher: FeedFetcher | None = None,
+        parser: FeedParser | None = None,
+        polling_service: FeedPollingService | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
         self._fetcher = fetcher
         self._parser = parser
+        self._polling_service = polling_service
 
     async def execute(
         self,
@@ -81,36 +85,13 @@ class TestSubscriptionCommand:
                 message=f"Feed 不存在 (ID: {subscription.feed_id})",
             )
 
-        # 3. 抓取 Feed
-        try:
-            web_feed = await self._fetcher.fetch(feed.link)
-        except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"抓取失败: {e}",
-            )
+        # 3. 抓取并解析 Feed
+        read_result = await self._fetch_entries(feed.link)
+        if not read_result.success:
+            return CommandResult(success=False, message=read_result.message)
 
-        if web_feed.error:
-            return CommandResult(
-                success=False,
-                message=f"抓取失败: {web_feed.error}",
-            )
-
-        # 4. 解析 Feed
-        try:
-            entries, parse_error = self._parser.parse(web_feed.content)
-        except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"解析失败: {e}",
-            )
-
-        if parse_error:
-            return CommandResult(
-                success=False,
-                message=f"解析失败: {parse_error}",
-            )
-
+        web_feed = read_result.web_feed
+        entries = read_result.entries
         if not entries:
             return CommandResult(
                 success=False,
@@ -118,11 +99,15 @@ class TestSubscriptionCommand:
             )
 
         # 5. 构建结果
+        feed_meta = self._feed_meta(web_feed)
         feed_dto = FeedDTO(
             id=feed.id,
             link=feed.link,
-            title=feed.title or web_feed.rss_d.feed.get("title", "未知"),
-            description=feed.description or web_feed.rss_d.feed.get("description", ""),
+            title=feed.title or feed_meta.get("title", "未知"),
+            state=feed.state,
+            etag=feed.etag,
+            last_modified=feed.last_modified,
+            created_at=feed.created_at,
             updated_at=feed.updated_at,
         )
 
@@ -185,36 +170,13 @@ class TestSubscriptionCommand:
         Returns:
             CommandResult: 命令执行结果
         """
-        # 1. 抓取 Feed
-        try:
-            web_feed = await self._fetcher.fetch(url)
-        except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"抓取失败: {e}",
-            )
+        # 1. 抓取并解析 Feed
+        read_result = await self._fetch_entries(url)
+        if not read_result.success:
+            return CommandResult(success=False, message=read_result.message)
 
-        if web_feed.error:
-            return CommandResult(
-                success=False,
-                message=f"抓取失败: {web_feed.error}",
-            )
-
-        # 2. 解析 Feed
-        try:
-            entries, parse_error = self._parser.parse(web_feed.content)
-        except Exception as e:
-            return CommandResult(
-                success=False,
-                message=f"解析失败: {e}",
-            )
-
-        if parse_error:
-            return CommandResult(
-                success=False,
-                message=f"解析失败: {parse_error}",
-            )
-
+        web_feed = read_result.web_feed
+        entries = read_result.entries
         if not entries:
             return CommandResult(
                 success=False,
@@ -222,12 +184,14 @@ class TestSubscriptionCommand:
             )
 
         # 3. 构建结果
+        feed_meta = self._feed_meta(web_feed)
+        now = datetime.now(timezone.utc)
         feed_dto = FeedDTO(
             id=0,  # 临时 ID
             link=url,
-            title=web_feed.rss_d.feed.get("title", "未知"),
-            description=web_feed.rss_d.feed.get("description", ""),
-            updated_at=None,
+            title=feed_meta.get("title", "未知"),
+            created_at=now,
+            updated_at=now,
         )
 
         # 提取示例条目
@@ -258,3 +222,63 @@ class TestSubscriptionCommand:
             message=f"测试成功! Feed 共有 {len(entries)} 个条目",
             data={"test_result": result},
         )
+
+    async def _fetch_entries(self, url: str) -> FeedReadResult:
+        if self._polling_service is not None:
+            return await self._polling_service.fetch_feed_entries(url, verbose=True)
+
+        if self._fetcher is None or self._parser is None:
+            raise RuntimeError("TestSubscriptionCommand requires feed read ports")
+
+        try:
+            web_feed = await self._fetcher.fetch(url)
+        except Exception as e:
+            return FeedReadResult(
+                success=False,
+                status="fetch_error",
+                message=f"抓取失败: {e}",
+                error=str(e),
+            )
+
+        if web_feed.error:
+            return FeedReadResult(
+                success=False,
+                status="fetch_error",
+                message=f"抓取失败: {web_feed.error}",
+                web_feed=web_feed,
+                error=str(web_feed.error),
+            )
+
+        try:
+            entries, parse_error = self._parser.parse(web_feed.content)
+        except Exception as e:
+            return FeedReadResult(
+                success=False,
+                status="parse_error",
+                message=f"解析失败: {e}",
+                web_feed=web_feed,
+                error=str(e),
+            )
+
+        if parse_error:
+            return FeedReadResult(
+                success=False,
+                status="parse_error",
+                message=f"解析失败: {parse_error}",
+                web_feed=web_feed,
+                error=parse_error,
+            )
+
+        return FeedReadResult(
+            success=True,
+            status="fetched",
+            message=f"抓取完成，发现 {len(entries)} 个条目",
+            entries=entries,
+            web_feed=web_feed,
+        )
+
+    @staticmethod
+    def _feed_meta(web_feed) -> dict:
+        rss_d = getattr(web_feed, "rss_d", None)
+        feed_meta = getattr(rss_d, "feed", {}) if rss_d else {}
+        return feed_meta if hasattr(feed_meta, "get") else {}

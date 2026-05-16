@@ -99,6 +99,7 @@ class TestCommandIntegration:
             "unsub_feed",
             "sub_list",
             "refresh_feed",
+            "stop_rss_job",
             "sub_state",
             "sub_set",
             "sub_set_user",

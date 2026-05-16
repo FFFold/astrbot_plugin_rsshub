@@ -9,6 +9,7 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..ports import FeedFetcherFactory
+from ..services.feed_polling_service import FeedPollingService
 from ..settings import FeedFetchSettings
 
 
@@ -25,11 +26,13 @@ class RefreshFeedCommand:
         subscription_repo: SubscriptionRepository | None = None,
         fetch_settings: FeedFetchSettings | None = None,
         fetcher_factory: FeedFetcherFactory | None = None,
+        polling_service: FeedPollingService | None = None,
     ):
         self._feed_repo = feed_repo
         self._subscription_repo = subscription_repo
         self._fetch_settings = fetch_settings or FeedFetchSettings()
         self._fetcher_factory = fetcher_factory
+        self._polling_service = polling_service
 
     async def execute(self, feed_id: int) -> CommandResult:
         """
@@ -41,6 +44,36 @@ class RefreshFeedCommand:
         Returns:
             CommandResult: 命令执行结果
         """
+        if self._polling_service is not None:
+            polling_result = await self._polling_service.poll_feed(feed_id)
+            if not polling_result.success:
+                return CommandResult(
+                    success=False,
+                    message=polling_result.message,
+                    data=polling_result,
+                )
+            if polling_result.feed is None:
+                return CommandResult(
+                    success=True,
+                    message=polling_result.message,
+                    data=polling_result,
+                )
+            feed = polling_result.feed
+            return CommandResult(
+                success=True,
+                message=polling_result.message,
+                data=FeedDTO(
+                    id=feed.id,
+                    link=feed.link,
+                    title=feed.title,
+                    state=feed.state,
+                    etag=feed.etag,
+                    last_modified=feed.last_modified,
+                    created_at=feed.created_at,
+                    updated_at=feed.updated_at,
+                ),
+            )
+
         feed = await self._feed_repo.get_by_id(feed_id)
         if not feed:
             return CommandResult(

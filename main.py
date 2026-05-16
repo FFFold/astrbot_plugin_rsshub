@@ -30,7 +30,12 @@ from .src.application.queries import (
     GetSubscriptionsQuery,
     SearchFeedsQuery,
 )
-from .src.application.services import FeedSyncService
+from .src.application.services import (
+    FeedPollingService,
+    FeedSyncService,
+    NotificationDispatcher,
+)
+from .src.application.services.session_push_queue import SessionPushQueue
 from .src.application.settings import ApplicationSettings
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
 from .src.infrastructure.config import (
@@ -42,7 +47,6 @@ from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.messaging import (
     InfrastructureMessageSenderProvider,
-    get_notification_service,
 )
 from .src.infrastructure.persistence import (
     get_database,
@@ -78,6 +82,7 @@ class _Deps(TypedDict):
     get_items_query: GetFeedItemsQuery
     search_feeds_query: SearchFeedsQuery
     sync_service: FeedSyncService
+    polling_service: FeedPollingService
     subscription_repo: SubscriptionRepository
 
 
@@ -93,6 +98,8 @@ class Main(Star):
         self._deps: _Deps = {}
         self._app_settings = ApplicationSettings()
         self._sender_provider = InfrastructureMessageSenderProvider()
+        self._push_job_queue = SessionPushQueue()
+        self._notification_dispatcher: NotificationDispatcher | None = None
 
     async def initialize(self):
         try:
@@ -110,6 +117,7 @@ class Main(Star):
         logger.info("正在停止 RSSHub 插件...")
         if self._scheduler:
             await self._scheduler.stop()
+        await self._push_job_queue.stop_all()
         db = get_database()
         if db:
             await db.close()
@@ -145,6 +153,24 @@ class Main(Star):
         feed_repo = get_feed_repository()
         sub_repo = get_subscription_repository()
         user_repo = get_user_repository()
+        push_history_repo = get_push_history_repository()
+        notification_dispatcher = NotificationDispatcher(
+            subscription_repo=sub_repo,
+            push_history_repo=push_history_repo,
+            sender_provider=self._sender_provider,
+            push_job_queue=self._push_job_queue,
+        )
+        self._notification_dispatcher = notification_dispatcher
+        polling_service = FeedPollingService(
+            feed_repo=feed_repo,
+            subscription_repo=sub_repo,
+            fetch_settings=self._app_settings.fetch,
+            rss_settings=self._app_settings.rss,
+            fetcher_factory=RSSFeedFetcher,
+            parser=RSSParser(),
+            notification_dispatcher=notification_dispatcher,
+            history_entry_limit=self._app_settings.scheduler.history_entry_limit,
+        )
 
         self._deps = _Deps(
             subscribe_cmd=SubscribeFeedCommand(
@@ -159,8 +185,10 @@ class Main(Star):
             sub_state_cmd=SubStateCommand(subscription_repo=sub_repo),
             refresh_cmd=RefreshFeedCommand(
                 feed_repo=feed_repo,
+                subscription_repo=sub_repo,
                 fetch_settings=self._app_settings.fetch,
                 fetcher_factory=RSSFeedFetcher,
+                polling_service=polling_service,
             ),
             update_sub_cmd=UpdateSubscriptionCommand(subscription_repo=sub_repo),
             list_query=GetFeedListQuery(
@@ -180,8 +208,7 @@ class Main(Star):
             test_sub_cmd=TestSubscriptionCommand(
                 subscription_repo=sub_repo,
                 feed_repo=feed_repo,
-                fetcher=RSSFeedFetcher(),
-                parser=RSSParser(),
+                polling_service=polling_service,
             ),
             get_subs_query=GetSubscriptionsQuery(subscription_repo=sub_repo),
             get_items_query=GetFeedItemsQuery(feed_repo=feed_repo),
@@ -190,32 +217,21 @@ class Main(Star):
                 feed_repo=feed_repo,
                 subscription_repo=sub_repo,
                 fetch_settings=self._app_settings.fetch,
+                rss_settings=self._app_settings.rss,
                 fetcher_factory=RSSFeedFetcher,
                 parser=RSSParser(),
+                polling_service=polling_service,
             ),
+            polling_service=polling_service,
             subscription_repo=sub_repo,
         )
 
     async def _init_scheduler(self):
-        config = get_config_manager()
-        sub_repo = get_subscription_repository()
-        push_history_repo = get_push_history_repository()
-
-        notification_svc = get_notification_service(
-            subscription_repo=sub_repo,
-            push_history_repo=push_history_repo,
-            sender_provider=self._sender_provider,
-        )
-
-        basic = config.basic_config if config else None
         self._scheduler = RSSScheduler(
-            notification_service=notification_svc,
-            hash_history_min=getattr(basic, "hash_history_min", 200),
-            hash_history_multiplier=getattr(basic, "hash_history_multiplier", 2),
-            hash_history_hard_limit=getattr(basic, "hash_history_hard_limit", 5000),
-            bootstrap_skip_history=getattr(basic, "bootstrap_skip_history", True),
-            history_entry_limit=getattr(basic, "history_entry_limit", 0),
-            sender_provider=self._sender_provider,
+            feed_polling_service=self._deps["polling_service"],
+            notification_dispatcher=self._notification_dispatcher,
+            default_interval=self._app_settings.scheduler.default_interval,
+            history_retention_days=self._app_settings.scheduler.history_retention_days,
         )
 
         await self._scheduler.start()
@@ -283,6 +299,12 @@ class Main(Star):
     @filter.command("refresh")
     async def refresh_feed(self, event: AstrMessageEvent, feed_id: int = 0):
         result = await _h.handle_refresh(event, feed_id, self._deps)
+        if result.get("plain"):
+            yield event.plain_result(result["plain"])
+
+    @filter.command("rss_stop", alias={"停止RSS", "停止推送"})
+    async def stop_rss_job(self, event: AstrMessageEvent):
+        result = _h.handle_rss_stop(event, self._push_job_queue)
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 

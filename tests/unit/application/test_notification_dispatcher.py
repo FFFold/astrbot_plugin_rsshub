@@ -7,6 +7,9 @@ from astrbot_plugin_rsshub.src.application.ports import SendResult
 from astrbot_plugin_rsshub.src.application.services.notification_dispatcher import (
     NotificationDispatcher,
 )
+from astrbot_plugin_rsshub.src.application.services.session_push_queue import (
+    SessionPushQueue,
+)
 from astrbot_plugin_rsshub.src.domain.entities.push_history import PushHistory
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
@@ -112,3 +115,96 @@ async def test_dispatch_guard_skips_already_successful_entry_guid():
     assert stats == {"success": 0, "failed": 0, "pending": 0}
     assert sender.requests == []
     history_repo.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_can_limit_to_selected_subscription_ids():
+    sender = FakeSender()
+    subs = [
+        Subscription(
+            id=1,
+            user_id="user-1",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        Subscription(
+            id=2,
+            user_id="user-2",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:2",
+        ),
+    ]
+
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = subs
+    history_repo = AsyncMock()
+    history_repo.get_by_sub.return_value = []
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        subscription_ids=[2],
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert len(sender.requests) == 1
+    assert sender.requests[0][0].session_id == "telegram:Group:2"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_uses_session_queue_for_same_session():
+    sender = FakeSender()
+    queue = SessionPushQueue()
+    subs = [
+        Subscription(
+            id=1,
+            user_id="user-1",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        Subscription(
+            id=2,
+            user_id="user-2",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+    ]
+
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = subs
+    history_repo = AsyncMock()
+    history_repo.get_by_sub.return_value = []
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        push_job_queue=queue,
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+    )
+
+    assert stats == {"success": 2, "failed": 0, "pending": 0}
+    assert len(sender.requests) == 2
+    assert queue.get_current_job("telegram:Group:1") is None
