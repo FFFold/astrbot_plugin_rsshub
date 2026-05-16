@@ -5,8 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
-
-from astrbot_plugin_rsshub.src.infrastructure.rss import RSSParser, EntryParsed
+from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed, RSSParser
 
 
 class TestEntryDeduplication:
@@ -132,7 +131,7 @@ class TestEntryDeduplication:
         # 相同内容应该生成相同哈希
         assert hash1 == hash2
 
-    def test_no_false_positive_deduplication(self):
+    def test_no_false_positive_deduplication(self, sample_rss_feed):
         """测试不误判不同条目为重复"""
         parser = RSSParser()
         entries, error = parser.parse(sample_rss_feed)

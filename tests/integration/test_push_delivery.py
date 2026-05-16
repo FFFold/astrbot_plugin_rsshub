@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-
 from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
 
 

@@ -1,101 +1,67 @@
-"""测试 HTML 清理器"""
+"""测试当前 HTML 解析服务."""
 
 from __future__ import annotations
 
-
-from astrbot_plugin_rsshub.src.infrastructure.utils import HTMLCleaner, clean_html
-
-
-class TestHTMLCleaner:
-    """测试 HTMLCleaner 类"""
-
-    def test_clean_removes_script_tags(self):
-        """测试清除 script 标签"""
-        html = '<p>Hello</p><script>alert("xss")</script><p>World</p>'
-        result = HTMLCleaner.clean(html)
-        assert "<script>" not in result
-        assert "alert" not in result
-        assert "Hello" in result
-        assert "World" in result
-
-    def test_clean_removes_style_tags(self):
-        """测试清除 style 标签"""
-        html = "<style>body{color:red}</style><p>Text</p>"
-        result = HTMLCleaner.clean(html)
-        assert "<style>" not in result
-        assert "Text" in result
-
-    def test_clean_allows_common_tags(self):
-        """测试保留常用标签"""
-        html = '<p>Paragraph</p><br/><b>Bold</b><i>Italic</i><a href="link">Link</a>'
-        result = HTMLCleaner.clean(html)
-        assert "<p>" in result
-        assert "<br/>" in result or "<br>" in result
-        assert "<b>" in result or "<strong>" in result
-        assert "<i>" in result or "<em>" in result
-
-    def test_clean_truncates_long_text(self):
-        """测试截断长文本"""
-        html = "A" * 1000
-        result = HTMLCleaner.clean(html, length_limit=100)
-        assert len(result) <= 110  # 允许一些额外空间用于截断标记
-        assert "..." in result
-
-    def test_clean_no_truncation_when_under_limit(self):
-        """测试短文本不截断"""
-        html = "Short text"
-        result = HTMLCleaner.clean(html, length_limit=100)
-        assert "Short text" in result
-        assert "..." not in result
-
-    def test_clean_empty_string(self):
-        """测试空字符串"""
-        result = HTMLCleaner.clean("")
-        assert result == ""
-
-    def test_clean_none(self):
-        """测试 None 输入"""
-        result = HTMLCleaner.clean(None)
-        assert result == ""
-
-    def test_strip_removes_all_tags(self):
-        """测试 strip 移除所有标签"""
-        html = "<p>Hello <b>World</b></p>"
-        result = HTMLCleaner.strip(html)
-        assert "<p>" not in result
-        assert "<b>" not in result
-        assert "Hello" in result
-        assert "World" in result
-
-    def test_strip_truncates_long_text(self):
-        """测试 strip 截断长文本"""
-        html = "A" * 1000
-        result = HTMLCleaner.strip(html, length_limit=50)
-        assert len(result) <= 60
-        assert "..." in result
-
-    def test_extract_text_from_links(self):
-        """测试从链接中提取文本"""
-        html = '<a href="http://example.com">Click here</a>'
-        result = HTMLCleaner.extract_text(html)
-        assert "Click here" in result
-        assert "<a" not in result
-
-    def test_extract_text_removes_tags(self):
-        """测试 extract_text 移除标签"""
-        html = "<p>Hello <b>World</b></p>"
-        result = HTMLCleaner.extract_text(html)
-        assert "Hello" in result
-        assert "World" in result
-        assert "<" not in result
+import pytest
+from astrbot_plugin_rsshub.src.application.services.html_parser import HTMLParser
+from astrbot_plugin_rsshub.src.domain.entities.content_types import (
+    ImageContent,
+    LinkContent,
+    TextContent,
+)
 
 
-class TestCleanHtmlFunction:
-    """测试 clean_html 便捷函数"""
+class TestHTMLParser:
+    """测试 HTMLParser 类."""
 
-    def test_clean_html_basic(self):
-        """测试基本清理"""
-        html = "<p>Hello</p><script>alert(1)</script>"
-        result = clean_html(html)
-        assert "<p>" in result
-        assert "<script>" not in result
+    @pytest.mark.asyncio
+    async def test_parse_removes_script_and_style_text(self):
+        html = (
+            '<p>Hello</p><script>alert("xss")</script><style>.x{}</style><p>World</p>'
+        )
+        parser = HTMLParser(html)
+
+        await parser.parse()
+        text = parser.get_plain_text()
+
+        assert "alert" not in text
+        assert ".x" not in text
+        assert "Hello" in text
+        assert "World" in text
+
+    @pytest.mark.asyncio
+    async def test_parse_text_and_basic_formatting(self):
+        html = "<p>Paragraph</p><b>Bold</b><i>Italic</i>"
+
+        result = await HTMLParser(html).parse()
+
+        texts = [
+            node.text
+            for node in result.html_tree.children
+            if isinstance(node, TextContent)
+        ]
+        assert any("Paragraph" in text for text in texts)
+        assert "**Bold**" in texts
+        assert "*Italic*" in texts
+
+    @pytest.mark.asyncio
+    async def test_parse_extracts_links(self):
+        html = '<a href="https://example.com">Click here</a>'
+
+        result = await HTMLParser(html).parse()
+
+        assert result.links == ["https://example.com"]
+        assert any(
+            isinstance(node, LinkContent) and node.text == "Click here"
+            for node in result.html_tree.children
+        )
+
+    @pytest.mark.asyncio
+    async def test_parse_resolves_relative_image_urls(self):
+        html = '<img src="/image.png" alt="Image">'
+
+        result = await HTMLParser(html, feed_link="https://example.com/feed").parse()
+
+        assert len(result.media) == 1
+        assert isinstance(result.media[0], ImageContent)
+        assert result.media[0].url == "https://example.com/image.png"

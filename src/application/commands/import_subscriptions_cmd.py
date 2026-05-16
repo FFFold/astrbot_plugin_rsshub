@@ -76,7 +76,7 @@ class ImportSubscriptionsCommand:
         Returns:
             CommandResult: 命令执行结果
         """
-        from ...infrastructure.utils.subscription_io import (
+        from ...application.services.subscription_serializer import (
             parse_subscriptions_toml,
         )
 

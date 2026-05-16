@@ -11,8 +11,18 @@ from .config import (
     RsshubPluginConfig,
     SenderStrategiesConfig,
     TranslationConfig,
-    WebUIConfig,
 )
+from .fetcher import (
+    Enclosure,
+    EntryParsed,
+    FeedDiscoverer,
+    FeedDiscoveryResult,
+    HttpFetcher,
+    RSSFeedFetcher,
+    RSSParser,
+    WebFeed,
+)
+from .media import MediaDownloader
 from .messaging import (
     BaseEvent,
     BaseMessageSender,
@@ -20,6 +30,8 @@ from .messaging import (
     DefaultMessageSender,
     EventBus,
     Extension,
+    InfrastructureMessageSenderAdapter,
+    InfrastructureMessageSenderProvider,
     MessageContext,
     NotificationServiceImpl,
     OneBotMessageSender,
@@ -28,7 +40,6 @@ from .messaging import (
     QQOfficialMessageSender,
     SendResult,
     TelegramMessageSender,
-    WechatMessageSender,
     get_bot_self_id,
     get_event_bus,
     get_notification_service,
@@ -56,16 +67,6 @@ from .persistence import (
     get_subscription_repository,
     get_user_repository,
 )
-from .fetcher import (
-    Enclosure,
-    EntryParsed,
-    FeedDiscoverer,
-    FeedDiscoveryResult,
-    HttpFetcher,
-    RSSFeedFetcher,
-    RSSParser,
-    WebFeed,
-)
 from .schedule import RSSScheduler, SchedulerStats
 from .utils import (
     AsyncTool,
@@ -74,9 +75,7 @@ from .utils import (
     ExpressionEvaluator,
     ExpressionParser,
     FFmpegTool,
-    HTMLCleaner,
     LockManager,
-    MediaDownloader,
     cacheevict,
     cacheput,
     caching,
@@ -85,7 +84,6 @@ from .utils import (
     locked,
     set_cache_backend,
 )
-from .web import RSSHubWebUI
 
 __all__ = [
     # Fetcher
@@ -110,7 +108,8 @@ __all__ = [
     "TelegramMessageSender",
     "OneBotMessageSender",
     "QQOfficialMessageSender",
-    "WechatMessageSender",
+    "InfrastructureMessageSenderAdapter",
+    "InfrastructureMessageSenderProvider",
     "get_sender_for_platform",
     "register_sender",
     "get_bot_self_id",
@@ -131,7 +130,6 @@ __all__ = [
     "BasicConfig",
     "GlobalConfig",
     "FFmpegConfig",
-    "WebUIConfig",
     "TranslationConfig",
     "SenderStrategiesConfig",
     "RsshubPluginConfig",
@@ -168,9 +166,6 @@ __all__ = [
     "cacheevict",
     "MediaDownloader",
     "FFmpegTool",
-    "HTMLCleaner",
     # API
     "RSSHubRadarAPI",
-    # Web
-    "RSSHubWebUI",
 ]

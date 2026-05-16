@@ -33,7 +33,7 @@ class GoogleTranslator(BaseTranslator):
         "it": "it",
     }
 
-    def __init__(self, session: "aiohttp.ClientSession | None" = None):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         super().__init__(session)
         self._base_url = "https://translate.googleapis.com/translate_a/single"
 

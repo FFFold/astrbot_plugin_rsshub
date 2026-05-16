@@ -7,18 +7,36 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
-from ...infrastructure.messaging.senders.factory import get_sender_for_platform
 from ...infrastructure.utils import get_logger
-
-if TYPE_CHECKING:
-    from ...infrastructure.messaging.senders.types import BaseMessageSender
+from ..ports import MessageContext, MessageSenderProvider, SendRequest
 
 logger = get_logger()
+
+# 不可恢复错误关键词（匹配时不计入重试，直接标记为 failed）
+UNRECOVERABLE_ERROR_PATTERNS: tuple[str, ...] = (
+    "no target session",
+    "target session is empty",
+    "invalid session",
+    "session not found",
+    "user banned",
+    "user is banned",
+    "permission denied",
+    "no permission",
+    "forbidden",
+    "not found",
+    "invalid target",
+)
+
+
+def is_unrecoverable_error(error: str) -> bool:
+    """判断错误是否为不可恢复类型（永久性失败，不应重试）"""
+    if not error:
+        return False
+    lower_error = error.lower()
+    return any(pattern in lower_error for pattern in UNRECOVERABLE_ERROR_PATTERNS)
 
 
 class NotificationDispatcher:
@@ -32,9 +50,11 @@ class NotificationDispatcher:
         self,
         subscription_repo: SubscriptionRepository,
         push_history_repo: PushHistoryRepository,
+        sender_provider: MessageSenderProvider,
     ):
         self._subscription_repo = subscription_repo
         self._push_history_repo = push_history_repo
+        self._sender_provider = sender_provider
 
     async def dispatch_to_feed_subscribers(
         self,
@@ -81,6 +101,28 @@ class NotificationDispatcher:
         # 2. 为每个订阅创建推送历史记录并发送
         for sub in subscriptions:
             try:
+                # 发送前指纹保护（dispatch_guard）
+                # 检查是否已有相同 entry_guid 的成功推送记录
+                already_sent = False
+                if entry_guid:
+                    existing_history = await self._push_history_repo.get_by_sub(
+                        sub_id=sub.id,
+                        limit=1,
+                        status="success",
+                    )
+                    # 检查最近的成功推送中是否有相同的条目
+                    for history in existing_history:
+                        if history.entry_guid == entry_guid and history.is_success():
+                            logger.debug(
+                                "订阅 %s 已成功推送过条目 %s，跳过",
+                                sub.id,
+                                entry_guid,
+                            )
+                            already_sent = True
+                            break
+                    if already_sent:
+                        continue
+
                 # 创建推送历史记录
                 history = PushHistory(
                     sub_id=sub.id,
@@ -115,7 +157,8 @@ class NotificationDispatcher:
                     history.mark_success()
                     stats["success"] += 1
                 else:
-                    history.mark_failed(result.get("error", "Unknown error"))
+                    # 首次失败不增加重试计数
+                    history.record_first_failure(result.get("error", "Unknown error"))
                     if history.can_retry():
                         stats["pending"] += 1
                     else:
@@ -161,8 +204,7 @@ class NotificationDispatcher:
         """
         try:
             # 获取平台对应的发送器
-            sender_class = get_sender_for_platform(subscription.platform_name)
-            sender: BaseMessageSender = sender_class()
+            sender = self._sender_provider.get(subscription.platform_name)
 
             # 构建目标会话 ID
             target_session = subscription.target_session
@@ -175,19 +217,13 @@ class NotificationDispatcher:
             if media_urls:
                 media_items = [("image", url) for url in media_urls]
 
-            # 发送消息
-            # 注意：这里使用新的 sender 系统
-            from ...infrastructure.messaging.senders.types import MessageContext
-
-            context = MessageContext(
-                platform_name=subscription.platform_name or "",
-            )
-
             result = await sender.send_to_user(
-                session_id=target_session,
-                message=content,
-                media=media_items if media_items else None,
-                context=context,
+                SendRequest(
+                    session_id=target_session,
+                    message=content,
+                    media=media_items if media_items else None,
+                ),
+                context=MessageContext(platform_name=subscription.platform_name or ""),
             )
 
             return {
@@ -207,11 +243,15 @@ class NotificationDispatcher:
             limit: 最大处理数量
 
         Returns:
-            统计信息字典 {success: x, failed: y}
+            统计信息字典 {success: x, failed: y, skipped: z}
         """
         stats = {"success": 0, "failed": 0, "skipped": 0}
 
-        pending = await self._push_history_repo.get_pending_for_retry(limit)
+        # 原子获取并标记为 retrying，防止多 worker 重复拉取同一批记录
+        pending = await self._push_history_repo.get_and_mark_retrying(limit)
+        if not pending:
+            return stats
+
         logger.info("处理 %s 个待重试推送", len(pending))
 
         for history in pending:
@@ -223,6 +263,8 @@ class NotificationDispatcher:
                         "订阅 %s 不存在或已禁用，跳过重试",
                         history.sub_id,
                     )
+                    history.mark_failed("Subscription not available")
+                    await self._push_history_repo.save(history)
                     stats["skipped"] += 1
                     continue
 
@@ -234,12 +276,24 @@ class NotificationDispatcher:
                     history=history,
                 )
 
-                # 更新状态
+                error_msg = result.get("error", "")
                 if result["ok"]:
                     history.mark_success()
                     stats["success"] += 1
+                elif is_unrecoverable_error(error_msg):
+                    # 不可恢复错误：直接标记为最终失败，不再重试
+                    history.record_first_failure(error_msg)
+                    # 覆盖 max_retries 为 0，防止 can_retry 仍返回 True
+                    history.max_retries = 0
+                    stats["failed"] += 1
+                    logger.warning(
+                        "订阅 %s 推送失败（不可恢复）: %s",
+                        history.sub_id,
+                        error_msg,
+                    )
                 else:
-                    history.mark_failed(result.get("error", "Retry failed"))
+                    # 可恢复错误：记录重试失败，增加计数
+                    history.record_retry_failure(error_msg)
                     stats["failed"] += 1
 
                 await self._push_history_repo.save(history)
@@ -264,3 +318,15 @@ class NotificationDispatcher:
             统计信息字典
         """
         return await self._push_history_repo.get_stats()
+
+    async def cleanup_old_records(self, days: int = 30) -> int:
+        """
+        清理指定天数前的历史记录
+
+        Args:
+            days: 保留天数
+
+        Returns:
+            删除的记录数量
+        """
+        return await self._push_history_repo.delete_old_records(days)

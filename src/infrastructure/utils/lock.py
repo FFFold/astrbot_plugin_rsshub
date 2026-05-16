@@ -101,7 +101,7 @@ def _infer_lock_type(expr: str) -> tuple[str, Callable[[Any], Any]]:
             return "custom", lambda x: lock_name
 
     if expr.startswith("#"):
-        if ".id" in expr.lower():
+        if ".id" in expr.lower() or "feed" in expr.lower():
             return "feed", lambda x: int(x) if isinstance(x, (int, str)) else x
         if "user" in expr.lower():
             return "user", lambda x: str(x)

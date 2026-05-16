@@ -2,87 +2,120 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
 
 
 class TestSubscribeFeedCommand:
     """测试订阅 Feed 命令"""
 
     @pytest.mark.asyncio
-    async def test_subscribe_new_feed(self, mock_event, mock_context):
+    async def test_subscribe_new_feed(self):
         """测试订阅新 Feed"""
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
         )
-
-        # Mock 依赖
-        feed_repo = MagicMock()
-        feed_repo.get_by_url.return_value = None  # Feed 不存在
-        feed_repo.create.return_value = MagicMock(
-            id=1, url="https://example.com/rss.xml"
-        )
-
-        sub_repo = MagicMock()
-        sub_repo.get_by_user_and_feed.return_value = None  # 订阅不存在
-        sub_repo.create.return_value = MagicMock(id=1)
+        from astrbot_plugin_rsshub.src.application.settings import FeedFetchSettings
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
         fetcher = AsyncMock()
         fetcher.fetch.return_value = MagicMock(
-            status=200,
-            content=b"<rss><channel><title>Test</title></channel></rss>",
             error=None,
+            rss_d=MagicMock(feed={"title": "Test Feed"}),
+        )
+        fetcher.close = AsyncMock()
+        fetcher_factory = MagicMock(return_value=fetcher)
+
+        feed_repo = MagicMock()
+        feed_repo.get_by_link = AsyncMock(return_value=None)
+        feed_repo.save = AsyncMock(
+            return_value=Feed(
+                id=1, link="https://example.com/rss.xml", title="Test Feed"
+            )
+        )
+        sub_repo = MagicMock()
+        sub_repo.get_by_user_and_feed = AsyncMock(return_value=None)
+        sub_repo.save = AsyncMock(
+            return_value=Subscription(
+                id=1,
+                user_id="user123",
+                feed_id=1,
+                target_session="test:Group:12345",
+                platform_name="telegram",
+            )
         )
 
-        parser = MagicMock()
-        parser.parse.return_value = (MagicMock(title="Test Feed"), None)
-
-        cmd = SubscribeFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetch_settings=FeedFetchSettings(timeout=12, proxy="http://proxy.local"),
+            fetcher_factory=fetcher_factory,
+        )
 
         result = await cmd.execute(
+            url="https://example.com/rss.xml",
             user_id="user123",
-            platform="telegram",
-            session_id="test:Group:12345",
-            feed_url="https://example.com/rss.xml",
+            target_session="test:Group:12345",
+            platform_name="telegram",
         )
 
         assert result.success is True
-        assert result.feed_id == 1
-        feed_repo.create.assert_called_once()
-        sub_repo.create.assert_called_once()
+        assert result.data.feed_id == 1
+        assert result.data.target_session == "test:Group:12345"
+        fetcher_factory.assert_called_once_with(
+            timeout=12,
+            proxy="http://proxy.local",
+        )
+        fetcher.fetch.assert_awaited_once_with("https://example.com/rss.xml")
+        fetcher.close.assert_awaited_once()
+        feed_repo.save.assert_awaited_once()
+        sub_repo.save.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_subscribe_existing_feed(self, mock_event, mock_context):
+    async def test_subscribe_existing_feed(self):
         """测试订阅已存在的 Feed"""
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
-        existing_feed = MagicMock(id=1, url="https://example.com/rss.xml")
-
-        feed_repo = MagicMock()
-        feed_repo.get_by_url.return_value = existing_feed
-
-        sub_repo = MagicMock()
-        sub_repo.get_by_user_and_feed.return_value = None
-        sub_repo.create.return_value = MagicMock(id=1)
+        existing_feed = Feed(id=1, link="https://example.com/rss.xml", title="Existing")
 
         fetcher = AsyncMock()
-        parser = MagicMock()
+        fetcher.fetch.return_value = MagicMock(
+            error=None,
+            rss_d=MagicMock(feed={"title": "Fetched Title"}),
+        )
+        fetcher.close = AsyncMock()
+        feed_repo = MagicMock()
+        feed_repo.get_by_link = AsyncMock(return_value=existing_feed)
+        feed_repo.save = AsyncMock()
+        sub_repo = MagicMock()
+        sub_repo.get_by_user_and_feed = AsyncMock(return_value=None)
+        sub_repo.save = AsyncMock(
+            return_value=Subscription(id=1, user_id="user123", feed_id=1)
+        )
 
-        cmd = SubscribeFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetcher_factory=MagicMock(return_value=fetcher),
+        )
 
         result = await cmd.execute(
+            url="https://example.com/rss.xml",
             user_id="user123",
-            platform="telegram",
-            session_id="test:Group:12345",
-            feed_url="https://example.com/rss.xml",
+            target_session="test:Group:12345",
+            platform_name="telegram",
         )
 
         assert result.success is True
-        # 不应该重新创建 Feed
-        feed_repo.create.assert_not_called()
-        sub_repo.create.assert_called_once()
+        feed_repo.save.assert_not_called()
+        sub_repo.save.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_subscribe_invalid_url(self):
@@ -93,24 +126,22 @@ class TestSubscribeFeedCommand:
 
         feed_repo = MagicMock()
         sub_repo = MagicMock()
-        fetcher = AsyncMock()
-        fetcher.fetch.return_value = MagicMock(
-            status=404,
-            error=MagicMock(message="Not found"),
-        )
-        parser = MagicMock()
+        fetcher_factory = MagicMock()
 
-        cmd = SubscribeFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetcher_factory=fetcher_factory,
+        )
 
         result = await cmd.execute(
+            url="not-a-url",
             user_id="user123",
-            platform="telegram",
-            session_id="test:Group:12345",
-            feed_url="https://invalid-url.com/rss.xml",
         )
 
         assert result.success is False
-        assert result.error is not None
+        assert "http" in result.message.lower()
+        fetcher_factory.assert_not_called()
 
 
 class TestUnsubscribeFeedCommand:
@@ -122,28 +153,35 @@ class TestUnsubscribeFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
             UnsubscribeFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
         sub_repo = MagicMock()
-        sub_repo.get_by_id.return_value = MagicMock(
+        subscription = Subscription(
             id=1,
             user_id="user123",
             feed_id=1,
         )
-        sub_repo.delete.return_value = True
+        sub_repo.get_by_id = AsyncMock(return_value=subscription)
+        sub_repo.delete = AsyncMock()
 
         feed_repo = MagicMock()
-        feed_repo.get_subscriber_count.return_value = 0  # 无其他订阅者
-        feed_repo.delete.return_value = True
+        feed_repo.get_by_id = AsyncMock(
+            return_value=Feed(
+                id=1, link="https://example.com/rss.xml", title="Test Feed"
+            )
+        )
 
         cmd = UnsubscribeFeedCommand(sub_repo, feed_repo)
 
         result = await cmd.execute(
-            subscription_id=1,
+            sub_id=1,
             user_id="user123",
         )
 
         assert result.success is True
-        sub_repo.delete.assert_called_once_with(1)
+        assert "Test Feed" in result.message
+        sub_repo.delete.assert_awaited_once_with(subscription)
 
     @pytest.mark.asyncio
     async def test_unsubscribe_not_found(self):
@@ -153,19 +191,19 @@ class TestUnsubscribeFeedCommand:
         )
 
         sub_repo = MagicMock()
-        sub_repo.get_by_id.return_value = None
+        sub_repo.get_by_id = AsyncMock(return_value=None)
 
         feed_repo = MagicMock()
 
         cmd = UnsubscribeFeedCommand(sub_repo, feed_repo)
 
         result = await cmd.execute(
-            subscription_id=999,
+            sub_id=999,
             user_id="user123",
         )
 
         assert result.success is False
-        assert "not found" in result.error.lower()
+        assert "不存在" in result.message
 
     @pytest.mark.asyncio
     async def test_unsubscribe_permission_denied(self):
@@ -173,12 +211,16 @@ class TestUnsubscribeFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import (
             UnsubscribeFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
         sub_repo = MagicMock()
-        sub_repo.get_by_id.return_value = MagicMock(
-            id=1,
-            user_id="other_user",  # 不同用户
-            feed_id=1,
+        sub_repo.get_by_id = AsyncMock(
+            return_value=Subscription(
+                id=1,
+                user_id="other_user",  # 不同用户
+                feed_id=1,
+                target_session="other:Group:1",
+            )
         )
 
         feed_repo = MagicMock()
@@ -186,12 +228,13 @@ class TestUnsubscribeFeedCommand:
         cmd = UnsubscribeFeedCommand(sub_repo, feed_repo)
 
         result = await cmd.execute(
-            subscription_id=1,
+            sub_id=1,
             user_id="user123",
+            current_session="test:Group:12345",
         )
 
         assert result.success is False
-        assert "permission" in result.error.lower()
+        assert "无权限" in result.message
 
 
 class TestRefreshFeedCommand:
@@ -203,42 +246,40 @@ class TestRefreshFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
             RefreshFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 
-        feed = MagicMock(
+        feed = Feed(
             id=1,
-            url="https://example.com/rss.xml",
+            link="https://example.com/rss.xml",
             etag="",
-            last_modified="",
         )
 
         feed_repo = MagicMock()
-        feed_repo.get_by_id.return_value = feed
+        feed_repo.get_by_id = AsyncMock(return_value=feed)
+        feed_repo.save = AsyncMock(return_value=feed)
 
         fetcher = AsyncMock()
         fetcher.fetch.return_value = MagicMock(
             status=200,
-            content=b"<rss>...</rss>",
             etag="new-etag",
-            last_modified="new-modified",
+            last_modified=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            rss_d=MagicMock(feed={"title": "Updated Feed"}, entries=sample_entries),
             error=None,
         )
+        fetcher.close = AsyncMock()
 
-        parser = MagicMock()
-        parser.parse.return_value = (sample_entries, None)
-
-        sub_repo = MagicMock()
-        sub_repo.get_by_feed.return_value = [
-            MagicMock(user_id="user1", notify=True),
-            MagicMock(user_id="user2", notify=True),
-        ]
-
-        cmd = RefreshFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = RefreshFeedCommand(
+            feed_repo,
+            fetcher_factory=MagicMock(return_value=fetcher),
+        )
 
         result = await cmd.execute(feed_id=1)
 
         assert result.success is True
-        assert len(result.new_entries) == len(sample_entries)
-        feed_repo.update.assert_called_once()
+        assert "发现 2 个条目" in result.message
+        assert result.data.title == "Updated Feed"
+        feed_repo.save.assert_awaited_once_with(feed)
+        fetcher.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_refresh_no_update(self):
@@ -246,30 +287,33 @@ class TestRefreshFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
             RefreshFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 
-        feed = MagicMock(
+        feed = Feed(
             id=1,
-            url="https://example.com/rss.xml",
+            link="https://example.com/rss.xml",
         )
 
         feed_repo = MagicMock()
-        feed_repo.get_by_id.return_value = feed
+        feed_repo.get_by_id = AsyncMock(return_value=feed)
 
         fetcher = AsyncMock()
         fetcher.fetch.return_value = MagicMock(
             status=304,  # Not Modified
             error=None,
         )
+        fetcher.close = AsyncMock()
 
-        parser = MagicMock()
-        sub_repo = MagicMock()
-
-        cmd = RefreshFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = RefreshFeedCommand(
+            feed_repo,
+            fetcher_factory=MagicMock(return_value=fetcher),
+        )
 
         result = await cmd.execute(feed_id=1)
 
         assert result.success is True
-        assert len(result.new_entries) == 0
+        assert "未修改" in result.message
+        fetcher.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_refresh_fetch_error(self):
@@ -277,24 +321,28 @@ class TestRefreshFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.refresh_feed_cmd import (
             RefreshFeedCommand,
         )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.exceptions import WebError
 
-        feed = MagicMock(id=1, url="https://example.com/rss.xml")
+        feed = Feed(id=1, link="https://example.com/rss.xml")
 
         feed_repo = MagicMock()
-        feed_repo.get_by_id.return_value = feed
+        feed_repo.get_by_id = AsyncMock(return_value=feed)
 
         fetcher = AsyncMock()
         fetcher.fetch.return_value = MagicMock(
             status=0,
-            error=MagicMock(message="Connection timeout"),
+            error=WebError(error_name="Connection timeout", url=feed.link),
         )
+        fetcher.close = AsyncMock()
 
-        parser = MagicMock()
-        sub_repo = MagicMock()
-
-        cmd = RefreshFeedCommand(feed_repo, sub_repo, fetcher, parser)
+        cmd = RefreshFeedCommand(
+            feed_repo,
+            fetcher_factory=MagicMock(return_value=fetcher),
+        )
 
         result = await cmd.execute(feed_id=1)
 
         assert result.success is False
-        assert result.error is not None
+        assert "Connection timeout" in result.message
+        fetcher.close.assert_awaited_once()

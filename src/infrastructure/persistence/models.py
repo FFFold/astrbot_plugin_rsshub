@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import JSON, Column
-from sqlmodel import Field, Relationship
+from sqlmodel import Field
 
 from .database import RSSHubBaseModel
 
@@ -100,8 +100,6 @@ class UserORM(RSSHubBaseModel, table=True):
         description="更新时间",
     )
 
-    subs: list["SubORM"] = Relationship(back_populates="user")
-
 
 class FeedORM(RSSHubBaseModel, table=True):
     """Feed ORM 模型，映射 rsshub_feed 表。"""
@@ -127,8 +125,6 @@ class FeedORM(RSSHubBaseModel, table=True):
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
         description="更新时间",
     )
-
-    subs: list["SubORM"] = Relationship(back_populates="feed")
 
 
 class SubORM(RSSHubBaseModel, table=True):
@@ -185,9 +181,6 @@ class SubORM(RSSHubBaseModel, table=True):
         sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
         description="更新时间",
     )
-
-    user: "UserORM" = Relationship(back_populates="subs")
-    feed: "FeedORM" = Relationship(back_populates="subs")
 
 
 class TranslationCacheORM(RSSHubBaseModel, table=True):

@@ -5,12 +5,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol
-
-if TYPE_CHECKING:
-    pass
+from typing import Protocol
 
 
 @dataclass
@@ -52,12 +50,25 @@ class ChannelInfo:
 
 @dataclass
 class MessageContext:
-    """消息发送上下文"""
+    """消息发送上下文（运行时元信息）"""
 
     channel: ChannelInfo = field(default_factory=ChannelInfo)
     platform_name: str = ""
     timeout_seconds: int = 30
     proxy: str = ""
+
+
+@dataclass
+class SendRequest:
+    """消息发送请求
+
+    封装 session_id / message / media 三要素，简化 send_to_user 调用。
+    """
+
+    session_id: str
+    message: str = ""
+    media: list[tuple[str, str]] | None = None
+    prepared_media: list[PreparedMedia] | None = None
 
 
 class BaseMessageSender(Protocol):
@@ -68,20 +79,14 @@ class BaseMessageSender(Protocol):
 
     async def send_to_user(
         self,
-        session_id: str,
-        message: str,
-        media: list[tuple[str, str]] | None = None,
-        prepared_media: list[PreparedMedia] | None = None,
+        request: SendRequest,
         context: MessageContext | None = None,
     ) -> SendResult:
         """发送消息给用户
 
         Args:
-            session_id: 会话 ID
-            message: 文本消息
-            media: 媒体文件列表 [(type, url), ...]
-            prepared_media: 预处理后的媒体列表
-            context: 发送上下文
+            request: 发送请求，包含 session_id / message / media / prepared_media
+            context: 发送上下文（可选）
 
         Returns:
             发送结果
@@ -92,7 +97,7 @@ class BaseMessageSender(Protocol):
         self,
         platform: str,
         group_id: str,
-        message: str,
+        message: str = "",
         media: list[tuple[str, str]] | None = None,
         context: MessageContext | None = None,
     ) -> SendResult:

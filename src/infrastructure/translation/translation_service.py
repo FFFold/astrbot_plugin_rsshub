@@ -65,13 +65,13 @@ class TranslationService:
     _instance: TranslationService | None = None
 
     def __new__(
-        cls, session: "aiohttp.ClientSession | None" = None
+        cls, session: aiohttp.ClientSession | None = None
     ) -> TranslationService:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, session: "aiohttp.ClientSession | None" = None):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         if hasattr(TranslationService, "_initialized"):
             if session is not None and session != self._session:
                 self._session = session

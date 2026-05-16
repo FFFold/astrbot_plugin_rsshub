@@ -11,10 +11,12 @@ class TestEventBus:
     @pytest.mark.asyncio
     async def test_basic_publish_subscribe(self):
         """测试基本事件发布/订阅"""
+        from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import (
+            EntryParsed,
+        )
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
             EventBus,
             FeedParseEvent,
-            EntryParsed,
         )
 
         bus = EventBus()
@@ -143,9 +145,9 @@ class TestExtension:
         """测试扩展事件处理器"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
             Extension,
-            on_event,
             FeedParseEvent,
             get_event_bus,
+            on_event,
             reset_event_bus,
         )
 
@@ -174,10 +176,10 @@ class TestExtension:
         """测试扩展处理多个事件"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
             Extension,
-            on_event,
             FeedParseEvent,
             MessageFormatEvent,
             get_event_bus,
+            on_event,
             reset_event_bus,
         )
 
@@ -214,7 +216,8 @@ class TestExtension:
 class TestPluginManager:
     """测试扩展管理器"""
 
-    def test_load_extension(self):
+    @pytest.mark.asyncio
+    async def test_load_extension(self):
         """测试加载扩展"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
             PluginManager,
@@ -231,15 +234,15 @@ class TestExtension(Extension):
     version = "1.0.0"
 """
 
-        import tempfile
         import os
+        import tempfile
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(ext_code)
             temp_path = f.name
 
         try:
-            ext = manager.load_extension("test_ext", temp_path)
+            ext = await manager.load_extension("test_ext", temp_path)
             assert ext is not None
             assert ext.name == "test_ext"
         finally:
@@ -248,8 +251,8 @@ class TestExtension(Extension):
     def test_enable_disable_extension(self):
         """测试启用/禁用扩展"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
-            PluginManager,
             Extension,
+            PluginManager,
         )
 
         manager = PluginManager()
@@ -271,8 +274,8 @@ class TestExtension(Extension):
     def test_get_extension(self):
         """测试获取扩展"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
-            PluginManager,
             Extension,
+            PluginManager,
         )
 
         manager = PluginManager()
@@ -292,8 +295,8 @@ class TestExtension(Extension):
     def test_list_extensions(self):
         """测试列出扩展"""
         from astrbot_plugin_rsshub.src.infrastructure.messaging import (
-            PluginManager,
             Extension,
+            PluginManager,
         )
 
         manager = PluginManager()

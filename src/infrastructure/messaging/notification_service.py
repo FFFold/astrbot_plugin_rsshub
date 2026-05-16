@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from ...application.ports import MessageContext, MessageSenderProvider, SendRequest
 from ...application.services.notification_dispatcher import NotificationDispatcher
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..utils import get_logger
+from .senders.provider import InfrastructureMessageSenderProvider
 
 if TYPE_CHECKING:
     from ...domain.entities.feed import Feed
@@ -31,16 +33,19 @@ class NotificationServiceImpl:
         self,
         subscription_repo: SubscriptionRepository,
         push_history_repo: PushHistoryRepository,
+        sender_provider: MessageSenderProvider | None = None,
     ):
+        self._sender_provider = sender_provider or InfrastructureMessageSenderProvider()
         self._dispatcher = NotificationDispatcher(
             subscription_repo=subscription_repo,
             push_history_repo=push_history_repo,
+            sender_provider=self._sender_provider,
         )
 
     async def notify_feed_update(
         self,
-        feed: "Feed",
-        subscriptions: list["Subscription"],
+        feed: Feed,
+        subscriptions: list[Subscription],
         entries: list[dict[str, Any]],
     ) -> bool:
         """通知订阅者 Feed 更新
@@ -101,8 +106,8 @@ class NotificationServiceImpl:
 
     async def notify_feed_error(
         self,
-        feed: "Feed",
-        subscriptions: list["Subscription"],
+        feed: Feed,
+        subscriptions: list[Subscription],
         error: str,
     ) -> None:
         """通知订阅者 Feed 错误
@@ -123,15 +128,14 @@ class NotificationServiceImpl:
         for sub in subscriptions:
             if not sub.target_session:
                 continue
-            from .senders.factory import get_sender_for_platform
-            from .senders.types import MessageContext
 
-            sender_class = get_sender_for_platform(sub.platform_name)
-            sender = sender_class()
+            sender = self._sender_provider.get(sub.platform_name)
             context = MessageContext(platform_name=sub.platform_name or "")
             await sender.send_to_user(
-                session_id=sub.target_session,
-                message=content,
+                SendRequest(
+                    session_id=sub.target_session,
+                    message=content,
+                ),
                 context=context,
             )
 
@@ -142,6 +146,7 @@ _notification_service_instance: NotificationServiceImpl | None = None
 def get_notification_service(
     subscription_repo: SubscriptionRepository | None = None,
     push_history_repo: PushHistoryRepository | None = None,
+    sender_provider: MessageSenderProvider | None = None,
 ) -> NotificationServiceImpl:
     """获取通知服务实例
 
@@ -161,6 +166,7 @@ def get_notification_service(
         _notification_service_instance = NotificationServiceImpl(
             subscription_repo=subscription_repo,
             push_history_repo=push_history_repo,
+            sender_provider=sender_provider,
         )
     return _notification_service_instance
 

@@ -5,12 +5,13 @@
 
 from .config_manager import (
     BasicConfig,
+    BaiduTranslateConfig,
     FFmpegConfig,
     GlobalConfig,
+    GoogleTranslateConfig,
     RsshubPluginConfig,
     SenderStrategiesConfig,
     TranslationConfig,
-    WebUIConfig,
     get_config,
     get_config_manager,
     set_config,
@@ -18,9 +19,10 @@ from .config_manager import (
 
 __all__ = [
     "BasicConfig",
+    "BaiduTranslateConfig",
     "GlobalConfig",
+    "GoogleTranslateConfig",
     "FFmpegConfig",
-    "WebUIConfig",
     "TranslationConfig",
     "SenderStrategiesConfig",
     "RsshubPluginConfig",

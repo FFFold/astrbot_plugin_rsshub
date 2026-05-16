@@ -20,9 +20,11 @@ from __future__ import annotations
 import importlib.util
 import inspect
 from abc import ABC
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
+from ..utils import get_logger
 from .event_bus import (
     BaseEvent,
     DeduplicationEvent,
@@ -407,10 +409,6 @@ def reset_plugin_manager() -> None:
     """重置扩展管理器（主要用于测试）"""
     global _plugin_manager
     _plugin_manager = None
-
-
-# 延迟导入避免循环依赖
-from ..utils import get_logger
 
 
 __all__ = [

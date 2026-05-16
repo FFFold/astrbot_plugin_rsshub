@@ -39,6 +39,9 @@ class ExpressionParser:
         r"|(?P<number>-?\d+)"
         r")\s*$"
     )
+    COMPARISON_PATTERN = re.compile(
+        r"^\s*(?P<left>.+?)\s*(?P<op>>=|<=|==|!=|>|<)\s*(?P<right>.+?)\s*$"
+    )
 
     @classmethod
     def parse(
@@ -66,6 +69,24 @@ class ExpressionParser:
         """
         if not expr:
             raise ValueError("Expression cannot be empty")
+
+        comparison = cls.COMPARISON_PATTERN.match(expr)
+        if comparison:
+            left = cls.parse(comparison.group("left"), args, kwargs, param_names)
+            right = cls.parse(comparison.group("right"), args, kwargs, param_names)
+            match comparison.group("op"):
+                case ">":
+                    return left > right
+                case "<":
+                    return left < right
+                case ">=":
+                    return left >= right
+                case "<=":
+                    return left <= right
+                case "==":
+                    return left == right
+                case "!=":
+                    return left != right
 
         match = cls.EXPR_PATTERN.match(expr)
         if not match:
@@ -186,7 +207,9 @@ class CompiledExpression:
 
     def __init__(self, expr: str):
         self._expr = expr
-        self._match = ExpressionParser.EXPR_PATTERN.match(expr)
+        self._match = ExpressionParser.EXPR_PATTERN.match(
+            expr
+        ) or ExpressionParser.COMPARISON_PATTERN.match(expr)
         if not self._match:
             raise ValueError(f"Invalid expression: {expr}")
 

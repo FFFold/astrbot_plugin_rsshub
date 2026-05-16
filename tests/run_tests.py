@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib
 import sys
 from pathlib import Path
 
-# 添加插件到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 添加 data/plugins/ 到路径，使 `from astrbot_plugin_rsshub.src.xxx` 可用
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 # =============================================================================
@@ -59,6 +60,8 @@ def print_test(name: str, status: str, message: str = "") -> None:
 
 def test_expression_parser():
     """测试表达式解析器."""
+    from types import SimpleNamespace
+
     from astrbot_plugin_rsshub.src.infrastructure.utils.expression_parser import (
         ExpressionParser,
     )
@@ -68,7 +71,7 @@ def test_expression_parser():
         ("#name", (), {"name": "test_value"}, ["name"], "test_value", "命名参数解析"),
         ("'hello world'", (), {}, None, "hello world", "字符串字面量"),
         ("42", (), {}, None, 42, "数字字面量"),
-        ("#0.id", ({"id": 123},), {}, None, 123, "嵌套属性解析"),
+        ("#0.id", (SimpleNamespace(id=123),), {}, None, 123, "嵌套属性解析"),
     ]
 
     passed = 0
@@ -106,8 +109,8 @@ def test_compiled_expression():
     )
 
     tests = [
-        ("#user_id", (), {"user_id": 456}, ["user_id"], 456),
-        ("#data.name", ({"name": "test"},), {}, None, "test"),
+        ("#user_id", (), {"user_id": 456}, None, 456),
+        ("#0.name", (type("Data", (), {"name": "test"})(),), {}, None, "test"),
     ]
 
     passed = 0
@@ -116,7 +119,7 @@ def test_compiled_expression():
     for expr, args, kwargs, params, expected in tests:
         try:
             compiled = CompiledExpression(expr)
-            result = compiled(args, kwargs, params)
+            result = compiled.evaluate(args, kwargs, params)
             if result == expected:
                 print_test(f"编译表达式 {expr}", "PASS")
                 passed += 1
@@ -173,6 +176,7 @@ def test_memory_cache():
         assert deleted is True, "删除应该返回 True"
         result = cache.get("test", "key2")
         assert result is None, "删除后应该返回 None"
+        cache.delete("test", "key1")
         print_test("删除缓存条目", "PASS")
         passed += 1
     except Exception as e:
@@ -204,8 +208,8 @@ def test_html_cleaner():
     # HTMLCleaner 是一个复杂的解析器类，需要 BeautifulSoup
     # 这里只做简单的存在性检查
     try:
-        from astrbot_plugin_rsshub.src.infrastructure.utils.html_cleaner import (
-            HTMLCleaner,
+        importlib.import_module(
+            "astrbot_plugin_rsshub.src.infrastructure.utils.html_cleaner"
         )
 
         print_test("HTMLCleaner 导入", "PASS")
@@ -316,10 +320,10 @@ def test_rss_parser_basic():
 
 async def test_event_bus():
     """测试事件总线."""
+    from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
     from astrbot_plugin_rsshub.src.infrastructure.messaging import (
         EventBus,
         FeedParseEvent,
-        EntryParsed,
     )
 
     passed = 0
@@ -380,9 +384,9 @@ async def test_extension_system():
     """测试扩展系统."""
     from astrbot_plugin_rsshub.src.infrastructure.messaging import (
         Extension,
-        on_event,
         FeedParseEvent,
         get_event_bus,
+        on_event,
         reset_event_bus,
     )
 

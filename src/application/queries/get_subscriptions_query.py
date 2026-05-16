@@ -56,23 +56,48 @@ class GetSubscriptionsQuery:
         Returns:
             SubscriptionsResult: 查询结果
         """
-        subscriptions = await self._subscription_repo.get_by_user(user_id)
+        # 需要从 persistence 层获取订阅并加载关联的 Feed
+        from ...infrastructure.persistence.database import get_database
+        from ...infrastructure.persistence.models import SubORM, FeedORM
+        from sqlmodel import select
 
-        sub_dtos = [
-            SubscriptionDTO(
-                id=sub.id,
-                user_id=sub.user_id,
-                feed_id=sub.feed_id,
-                title=sub.title,
-                tags=sub.tags,
-                target_session=sub.target_session,
-                platform_name=sub.platform_name,
-                state=sub.state,
-                created_at=sub.created_at,
-                updated_at=sub.updated_at,
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                select(SubORM)
+                .where(SubORM.user_id == user_id)
+                .order_by(SubORM.id.asc())
             )
-            for sub in subscriptions
-        ]
+            result = await session.execute(stmt)
+            sub_orms = list(result.scalars().all())
+
+            # 批量加载关联的 Feed
+            feed_ids = [sub.feed_id for sub in sub_orms]
+            feeds: dict[int, FeedORM] = {}
+            if feed_ids:
+                feed_stmt = select(FeedORM).where(FeedORM.id.in_(feed_ids))
+                feed_result = await session.execute(feed_stmt)
+                feeds = {f.id: f for f in feed_result.scalars().all()}
+
+            sub_dtos = [
+                SubscriptionDTO(
+                    id=sub.id,
+                    user_id=sub.user_id,
+                    feed_id=sub.feed_id,
+                    title=sub.title,
+                    feed_title=feeds[sub.feed_id].title
+                    if sub.feed_id in feeds
+                    else None,
+                    feed_link=feeds[sub.feed_id].link if sub.feed_id in feeds else None,
+                    tags=sub.tags,
+                    target_session=sub.target_session,
+                    platform_name=sub.platform_name,
+                    state=sub.state,
+                    created_at=sub.created_at,
+                    updated_at=sub.updated_at,
+                )
+                for sub in sub_orms
+            ]
 
         return SubscriptionsResult(
             subscriptions=sub_dtos,

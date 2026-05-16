@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-
 from astrbot_plugin_rsshub.src.infrastructure.utils import (
     LockManager,
     get_lock_manager,

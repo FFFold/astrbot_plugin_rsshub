@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from src.infrastructure.translation.language_detection import (
     calculate_target_language_ratio,
     detect_foreign_words,

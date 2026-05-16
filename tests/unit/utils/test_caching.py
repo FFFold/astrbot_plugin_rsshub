@@ -6,7 +6,6 @@ import asyncio
 import time
 
 import pytest
-
 from astrbot_plugin_rsshub.src.infrastructure.utils import (
     MemoryCache,
     cacheevict,
@@ -14,6 +13,11 @@ from astrbot_plugin_rsshub.src.infrastructure.utils import (
     caching,
     get_memory_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_test_cache():
+    get_memory_cache().clear("test_cache")
 
 
 class TestMemoryCache:

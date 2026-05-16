@@ -6,17 +6,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
-
-if TYPE_CHECKING:
-    from ...infrastructure.fetcher.rss import RSSFeedFetcher
-    from ...infrastructure.fetcher.rss.parser import RSSParser
+from ..ports import FeedFetcher, FeedParser
 
 
 @dataclass
@@ -39,8 +35,8 @@ class TestSubscriptionCommand:
         self,
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository,
-        fetcher: RSSFeedFetcher,
-        parser: RSSParser,
+        fetcher: FeedFetcher,
+        parser: FeedParser,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
