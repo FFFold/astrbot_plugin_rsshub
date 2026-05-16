@@ -192,7 +192,7 @@ src/application/ports/
 
 目标：让手动刷新、定时轮询、测试推送走同一套同步和去重逻辑。
 
-新增深 Module：
+新增 Module：
 
 - `src/application/services/feed_polling_service.py`
 

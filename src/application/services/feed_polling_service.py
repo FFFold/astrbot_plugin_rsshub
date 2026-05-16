@@ -19,7 +19,7 @@ from itertools import chain
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from ...domain.entities.feed import Feed
+from ...domain.entities.feed import Feed, normalize_entry_hashes
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...infrastructure.utils import get_logger
@@ -240,7 +240,7 @@ class FeedPollingService:
 
         entries = read_result.entries
         self._apply_feed_metadata(feed, web_feed)
-        old_groups = self._migrate_hashes(feed.entry_hashes or [])
+        old_groups = normalize_entry_hashes(feed.entry_hashes) or []
         new_groups, new_entries = self._calculate_update(
             old_groups,
             entries,
@@ -365,31 +365,6 @@ class FeedPollingService:
         last_modified = getattr(web_feed, "last_modified", None)
         if last_modified:
             feed.last_modified = last_modified
-
-    def _migrate_hashes(self, raw: list[Any]) -> list[list[str]]:
-        """Normalize legacy flat hash storage to grouped hash history."""
-        if not raw:
-            return []
-        if isinstance(raw[0], list):
-            return [
-                [str(value) for value in group if value]
-                for group in raw
-                if isinstance(group, list) and group
-            ]
-
-        groups: list[list[str]] = []
-        current: list[str] = []
-        for value in raw:
-            item = str(value or "")
-            if not item:
-                continue
-            if item.startswith("sid:") and current:
-                groups.append(current)
-                current = []
-            current.append(item)
-        if current:
-            groups.append(current)
-        return groups
 
     def _calculate_update(
         self,
@@ -553,6 +528,10 @@ class FeedPollingService:
         if feed_link and not link.startswith("http"):
             link = urljoin(feed_link, link)
 
+        return self._strip_tracking_params(link)
+
+    def _strip_tracking_params(self, link: str) -> str:
+        """Remove configured tracking parameters from an entry URL."""
         try:
             parsed = urlparse(link)
             if parsed.query:
@@ -619,11 +598,7 @@ class FeedPollingService:
 
         for entry in sorted_entries:
             title = str(self._entry_value(entry, "title") or "")
-            link = str(
-                self._entry_value(entry, "link")
-                or self._entry_value(entry, "guid")
-                or ""
-            )
+            link = self._resolve_entry_link(entry, feed.link)
             guid = self._entry_identity(entry)
             content = str(
                 self._entry_value(entry, "content")

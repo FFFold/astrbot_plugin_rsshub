@@ -12,6 +12,36 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, Field, field_validator
 
 
+def normalize_entry_hashes(value: Any) -> list[list[str]] | None:
+    """Accept legacy flat hash lists and normalize to grouped storage."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        return None
+    if not value:
+        return []
+    if isinstance(value[0], list):
+        return [
+            [str(item) for item in group if item]
+            for group in value
+            if isinstance(group, list) and group
+        ]
+
+    groups: list[list[str]] = []
+    current: list[str] = []
+    for raw in value:
+        item = str(raw or "")
+        if not item:
+            continue
+        if item.startswith("sid:") and current:
+            groups.append(current)
+            current = []
+        current.append(item)
+    if current:
+        groups.append(current)
+    return groups
+
+
 class Feed(BaseModel):
     """
     Feed 领域实体
@@ -45,33 +75,7 @@ class Feed(BaseModel):
     @field_validator("entry_hashes", mode="before")
     @classmethod
     def _normalize_entry_hashes(cls, value: Any) -> list[list[str]] | None:
-        """Accept legacy flat hash lists and normalize to grouped storage."""
-        if value is None:
-            return None
-        if not isinstance(value, list):
-            return None
-        if not value:
-            return []
-        if isinstance(value[0], list):
-            return [
-                [str(item) for item in group if item]
-                for group in value
-                if isinstance(group, list) and group
-            ]
-
-        groups: list[list[str]] = []
-        current: list[str] = []
-        for raw in value:
-            item = str(raw or "")
-            if not item:
-                continue
-            if item.startswith("sid:") and current:
-                groups.append(current)
-                current = []
-            current.append(item)
-        if current:
-            groups.append(current)
-        return groups
+        return normalize_entry_hashes(value)
 
     def _validate_link(self) -> None:
         """

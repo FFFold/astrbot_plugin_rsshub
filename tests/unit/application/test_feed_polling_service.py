@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from email.utils import format_datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -123,6 +124,63 @@ async def test_poll_feed_parse_error_is_reported():
     assert result.success is False
     assert result.status == "parse_error"
     assert "bad xml" in result.message
+    feed_repo.save.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_fetch_exception_is_reported():
+    feed = Feed(id=1, link="https://example.com/rss.xml")
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock()
+
+    fetcher = AsyncMock()
+    fetcher.fetch.side_effect = RuntimeError("network boom")
+    fetcher.close = AsyncMock()
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=MagicMock(),
+    )
+
+    result = await service.poll_feed(1)
+
+    assert result.success is False
+    assert result.status == "fetch_error"
+    assert "network boom" in result.message
+    assert result.error == "network boom"
+    feed_repo.save.assert_not_called()
+    fetcher.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_empty_content_is_reported_without_parsing():
+    feed = Feed(id=1, link="https://example.com/rss.xml")
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock()
+
+    fetcher = AsyncMock()
+    fetcher.fetch.return_value = _web_feed(status=200, content=None)
+    fetcher.close = AsyncMock()
+
+    parser = MagicMock()
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=parser,
+    )
+
+    result = await service.poll_feed(1)
+
+    assert result.success is False
+    assert result.status == "empty_content"
+    assert "RSS 内容为空" in result.message
+    parser.parse.assert_not_called()
     feed_repo.save.assert_not_called()
 
 
@@ -348,3 +406,53 @@ async def test_poll_feed_accepts_legacy_flat_hash_history():
     assert result.new_entries == 0
     assert feed.entry_hashes
     assert legacy_hash in feed.entry_hashes[0]
+
+
+def test_tracking_query_params_stripped_for_hash_and_dispatch_link():
+    entry = EntryParsed(
+        guid="",
+        title="Tracked entry",
+        link="https://example.com/post?utm_source=newsletter&foo=bar",
+    )
+    entry_with_other_tracking = EntryParsed(
+        guid="",
+        title="Tracked entry",
+        link="https://example.com/post?utm_source=other&foo=bar",
+    )
+
+    service = FeedPollingService(
+        feed_repo=MagicMock(),
+        subscription_repo=MagicMock(),
+        rss_settings=RSSSettings(tracking_query_params=("utm_source",)),
+    )
+
+    assert (
+        service._strip_tracking_params(entry.link)
+        == "https://example.com/post?foo=bar"
+    )
+    assert service._resolve_entry_link(entry) == "https://example.com/post?foo=bar"
+    assert service._resolve_entry_link(entry_with_other_tracking) == (
+        "https://example.com/post?foo=bar"
+    )
+    assert service._hash_entry(entry)[0] == service._hash_entry(
+        entry_with_other_tracking
+    )[0]
+
+
+def test_build_conditional_headers_from_feed_etag_and_last_modified():
+    last_modified = datetime(2015, 10, 21, 7, 28, tzinfo=timezone.utc)
+    feed = Feed(
+        id=1,
+        link="https://example.com/feed",
+        etag='"abcdef"',
+        last_modified=last_modified,
+    )
+    service = FeedPollingService(
+        feed_repo=MagicMock(),
+        subscription_repo=MagicMock(),
+    )
+
+    headers = service._build_conditional_headers(feed)
+
+    assert headers["If-None-Match"] == '"abcdef"'
+    assert headers["If-Modified-Since"] == format_datetime(last_modified)

@@ -158,3 +158,23 @@ async def test_scheduler_still_updates_next_check_after_polling_error(monkeypatc
     )
     assert subs[0].next_check_time is not None
     assert subs[0].next_check_time > before
+
+
+@pytest.mark.asyncio
+async def test_scheduler_does_not_poll_when_no_subscriptions_are_due(monkeypatch):
+    fake_db = _FakeDatabase([])
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.schedule.rss_scheduler.get_database",
+        lambda: fake_db,
+    )
+
+    polling_service = AsyncMock()
+
+    scheduler = RSSScheduler(
+        feed_polling_service=polling_service,
+        default_interval=10,
+    )
+
+    await scheduler.run_periodic_task()
+
+    polling_service.poll_feed_group.assert_not_awaited()

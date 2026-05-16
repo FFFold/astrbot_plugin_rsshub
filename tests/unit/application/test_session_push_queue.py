@@ -46,6 +46,7 @@ async def test_same_session_jobs_run_serially():
         "start:rss-000002",
         "end:rss-000002",
     ]
+    assert queue._states == {}
 
 
 @pytest.mark.asyncio
@@ -102,3 +103,40 @@ async def test_stop_current_cancels_running_job_and_releases_next_job():
     assert second_result.ok is True
     assert second_result.value == "next"
     assert next_ran.is_set()
+    assert queue._states == {}
+
+
+def test_stop_current_without_running_job_reports_noop():
+    queue = SessionPushQueue()
+
+    result = queue.stop_current("unknown-session")
+
+    assert result.stopped is False
+    assert result.session_id == "unknown-session"
+    assert "没有正在运行" in result.message
+    assert queue._states == {}
+
+
+@pytest.mark.asyncio
+async def test_stop_all_cancels_running_jobs_across_sessions():
+    queue = SessionPushQueue()
+    started: set[str] = set()
+    all_started = asyncio.Event()
+
+    async def long_running(job):
+        started.add(job.session_id)
+        if started == {"session-1", "session-2"}:
+            all_started.set()
+        await asyncio.sleep(60)
+        return "never"
+
+    first_task = asyncio.create_task(queue.enqueue("session-1", long_running))
+    second_task = asyncio.create_task(queue.enqueue("session-2", long_running))
+    await all_started.wait()
+
+    await queue.stop_all()
+    first_result, second_result = await asyncio.gather(first_task, second_task)
+
+    assert first_result.cancelled is True
+    assert second_result.cancelled is True
+    assert queue._states == {}
