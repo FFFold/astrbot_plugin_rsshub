@@ -69,8 +69,6 @@ class MessageFormatter:
 
         if prepared_media:
             for item in prepared_media:
-                if item.download_failed:
-                    continue
                 path = str(item.local_path) if item.local_path else item.original_url
                 match item.media_type:
                     case "image":
@@ -116,9 +114,9 @@ class MessageFormatter:
 
         if prepared_media:
             for item in prepared_media:
-                if item.download_failed or not item.local_path:
+                if not item.local_path and not item.original_url:
                     continue
-                path = str(item.local_path)
+                path = str(item.local_path) if item.local_path else item.original_url
                 match item.media_type:
                     case "image":
                         chain.append(Image(file=path))

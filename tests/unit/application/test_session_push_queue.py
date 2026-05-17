@@ -140,3 +140,77 @@ async def test_stop_all_cancels_running_jobs_across_sessions():
     assert first_result.cancelled is True
     assert second_result.cancelled is True
     assert queue._states == {}
+
+
+@pytest.mark.asyncio
+async def test_get_jobs_and_stop_by_job_id_for_queued_job():
+    queue = SessionPushQueue()
+    running_started = asyncio.Event()
+    release_running = asyncio.Event()
+
+    async def long_running(_job):
+        running_started.set()
+        await release_running.wait()
+        return "done"
+
+    async def queued_job(_job):
+        return "queued"
+
+    running_task = asyncio.create_task(
+        queue.enqueue(
+            "session-1", long_running, feed_id=1, feed_title="Feed A", sub_id=11
+        )
+    )
+    await running_started.wait()
+    queued_task = asyncio.create_task(
+        queue.enqueue(
+            "session-1", queued_job, feed_id=2, feed_title="Feed B", sub_id=22
+        )
+    )
+    await asyncio.sleep(0)
+
+    jobs = queue.get_jobs("session-1")
+    assert len(jobs) == 2
+    assert jobs[0].status == "running"
+    queued = [job for job in jobs if job.status == "queued"][0]
+    assert queued.feed_id == 2
+    assert queued.feed_title == "Feed B"
+
+    stop_result = queue.stop_by_job_id("session-1", queued.job_id)
+    assert stop_result.stopped is True
+    assert "排队任务" in stop_result.message
+
+    release_running.set()
+    running_result, queued_result = await asyncio.gather(running_task, queued_task)
+    assert running_result.ok is True
+    assert queued_result.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_stop_all_for_session_cancels_running_and_queued():
+    queue = SessionPushQueue()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def running(_job):
+        started.set()
+        await release.wait()
+        return "running"
+
+    async def queued(_job):
+        return "queued"
+
+    running_task = asyncio.create_task(queue.enqueue("session-1", running, feed_id=1))
+    await started.wait()
+    queued_task = asyncio.create_task(queue.enqueue("session-1", queued, feed_id=2))
+    await asyncio.sleep(0)
+
+    summary = queue.stop_all_for_session("session-1")
+    assert summary["stopped"] == 2
+    assert summary["running"] == 1
+    assert summary["queued"] == 1
+
+    release.set()
+    running_result, queued_result = await asyncio.gather(running_task, queued_task)
+    assert running_result.cancelled is True
+    assert queued_result.cancelled is True

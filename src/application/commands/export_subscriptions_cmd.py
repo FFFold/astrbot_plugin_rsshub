@@ -43,6 +43,8 @@ class ExportSubscriptionsCommand:
         self,
         user_id: str,
         is_admin: bool = False,
+        scope: str = "",
+        current_session: str = "",
     ) -> CommandResult:
         """执行导出命令
 
@@ -53,7 +55,16 @@ class ExportSubscriptionsCommand:
             CommandResult: 命令执行结果
         """
         try:
-            records = await self._export_query.execute(user_id)
+            if scope == "all" and not is_admin:
+                return CommandResult(
+                    success=False, message="导出所有订阅需要管理员权限"
+                )
+            records = await self._export_query.execute(
+                user_id,
+                scope=scope,
+                current_session=current_session,
+                is_admin=is_admin,
+            )
         except RuntimeError as e:
             return CommandResult(
                 success=False,

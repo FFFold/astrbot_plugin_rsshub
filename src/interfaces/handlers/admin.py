@@ -7,20 +7,31 @@ from astrbot.api.event import AstrMessageEvent
 
 async def handle_test_sub(event: AstrMessageEvent, sub_id: int, deps: dict) -> dict:
     """测试订阅推送"""
-    if sub_id <= 0:
-        return {"plain": "请提供订阅 ID\n用法: /test_sub <ID>"}
+    args = sub_id.strip() if isinstance(sub_id, str) else str(sub_id).strip()
+    if not args:
+        return {"plain": "请提供目标\n用法: /sub_test <ID|URL> [start] [end]"}
+
+    parts = [p.strip() for p in args.split() if p.strip()]
+    target = parts[0]
+
+    try:
+        start = int(parts[1]) if len(parts) >= 2 else 1
+        end = int(parts[2]) if len(parts) >= 3 else start
+    except ValueError:
+        return {"plain": "条目编号必须是数字，用法: /sub_test <ID|URL> [start] [end]"}
+
+    if start <= 0 or end <= 0:
+        return {"plain": "条目编号从 1 开始"}
+    if end < start:
+        return {"plain": "结束编号不能小于起始编号"}
+
     user_id = event.get_sender_id()
-    result = await deps["test_sub_cmd"].execute(sub_id=sub_id, user_id=user_id)
+    result = await deps["test_sub_cmd"].execute_target(
+        target=target,
+        user_id=user_id,
+        target_session=event.unified_msg_origin,
+        platform_name=event.get_platform_name(),
+        start=start,
+        end=end,
+    )
     return {"plain": result.message}
-
-
-async def handle_admin_panel(event: AstrMessageEvent, action: str, deps: dict) -> dict:
-    """RSSHub 管理面板"""
-    if action == "stats":
-        return {"plain": "RSSHub 插件运行中"}
-    elif action == "restart":
-        return {"plain": "请通过重启 AstrBot 来重启调度器"}
-    else:
-        return {
-            "plain": "RSSHub 管理命令:\n  /rsshub_admin stats - 查看状态\n  /rsshub_admin restart - 重启调度器"
-        }

@@ -49,6 +49,15 @@ def main_module(monkeypatch):
             return lambda fn: fn
 
         @staticmethod
+        def command_group(*_args, **_kwargs):
+            class _Group:
+                @staticmethod
+                def command(*_a, **_k):
+                    return lambda fn: fn
+
+            return lambda fn: _Group()
+
+        @staticmethod
         def permission_type(*_args, **_kwargs):
             return lambda fn: fn
 
@@ -71,26 +80,27 @@ def main_module(monkeypatch):
 
 
 class TestRSSHubPluginIntegration:
-    """Main 插件入口集成测试."""
+    """插件入口集成测试."""
 
     def test_plugin_initialization(self, main_module, mock_context, mock_config):
         """测试插件对象初始化."""
-        plugin = main_module.Main(mock_context, mock_config)
+        plugin = main_module.RSSHubPlugin(mock_context, mock_config)
 
         assert plugin._config == mock_config
         assert plugin._scheduler is None
         assert plugin._deps == {}
+        assert not hasattr(main_module, "Main")
 
 
 class TestCommandIntegration:
     """命令集成测试."""
 
     def test_command_registration(self, main_module):
-        """测试当前 Main 暴露的命令方法."""
+        """测试当前插件入口暴露的命令方法."""
         methods = [
             name
             for name, _ in inspect.getmembers(
-                main_module.Main, predicate=inspect.isfunction
+                main_module.RSSHubPlugin, predicate=inspect.isfunction
             )
         ]
 
@@ -98,22 +108,20 @@ class TestCommandIntegration:
             "sub_feed",
             "unsub_feed",
             "sub_list",
-            "refresh_feed",
             "stop_rss_job",
+            "sub_status",
             "sub_state",
-            "sub_set",
-            "sub_set_user",
-            "sub_get_user",
+            "sub_profile_set",
+            "sub_profile_get",
             "sub_set_session",
             "sub_get_session",
             "batch_activate",
             "batch_deactivate",
             "unsub_all",
-            "batch_unsub",
             "export_subs",
             "import_subs",
+            "rsshelp",
             "test_sub",
-            "admin_panel",
         ]
 
         for cmd in command_methods:

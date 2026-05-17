@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RSSHub 插件命令帮助</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #10243d;
+      --muted: #5e738f;
+      --accent: #0b76d1;
+      --line: #dce6f2;
+      --badge-bg: #e9f4ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f8fbff, var(--bg));
+      padding: 40px;
+    }
+    .wrap {
+      width: 1280px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(9, 34, 66, 0.08);
+    }
+    .header {
+      padding: 28px 32px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(120deg, #eef6ff, #ffffff);
+    }
+    .title {
+      margin: 0;
+      font-size: 36px;
+      line-height: 1.15;
+      font-weight: 700;
+    }
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+    .meta {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      padding: 24px;
+    }
+    .group {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px 18px;
+      background: #fcfeff;
+    }
+    .group h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .cmd {
+      border-top: 1px dashed var(--line);
+      padding-top: 10px;
+      margin-top: 10px;
+    }
+    .cmd:first-of-type {
+      border-top: none;
+      margin-top: 0;
+      padding-top: 0;
+    }
+    .name {
+      font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+      font-size: 16px;
+      color: var(--accent);
+      word-break: break-word;
+    }
+    .desc {
+      margin-top: 4px;
+      font-size: 14px;
+      color: var(--text);
+      white-space: pre-line;
+    }
+    .alias {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .badge {
+      font-size: 12px;
+      color: var(--accent);
+      background: var(--badge-bg);
+      border: 1px solid #c9e4ff;
+      border-radius: 999px;
+      padding: 2px 8px;
+      line-height: 1.4;
+    }
+    .footer {
+      border-top: 1px solid var(--line);
+      background: #f7fbff;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 12px 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="header">
+      <h1 class="title">RSSHub 命令帮助</h1>
+      <div class="subtitle">按当前 main.py 自动生成</div>
+      <div class="meta">生成时间：{{ generated_at }} · 命令总数：{{ total_commands }}</div>
+    </div>
+    <div class="grid">
+      {% for group in groups %}
+      <section class="group">
+        <h2>{{ group.title }}</h2>
+        {% for cmd in group.commands %}
+        <div class="cmd">
+          <div class="name">/{{ cmd.command }}</div>
+          <div class="desc">{{ cmd.summary }}</div>
+          {% if cmd.aliases %}
+          <div class="alias">
+            {% for a in cmd.aliases %}
+            <span class="badge">{{ a }}</span>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </section>
+      {% endfor %}
+    </div>
+    <div class="footer">提示：可用 /sub_test、/sub_status、/sub_stop 管理推送任务与测试推送</div>
+  </div>
+</body>
+</html>

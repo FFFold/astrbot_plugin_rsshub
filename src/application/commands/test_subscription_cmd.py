@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import SimpleNamespace
+from urllib.parse import urlparse
 
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -15,6 +17,8 @@ from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
 from ..services.feed_polling_service import FeedPollingService, FeedReadResult
+from ..services.html_parser import HTMLParser
+from ..services.notification_dispatcher import NotificationDispatcher
 
 
 @dataclass
@@ -40,12 +44,14 @@ class TestSubscriptionCommand:
         fetcher: FeedFetcher | None = None,
         parser: FeedParser | None = None,
         polling_service: FeedPollingService | None = None,
+        notification_dispatcher: NotificationDispatcher | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
         self._fetcher = fetcher
         self._parser = parser
         self._polling_service = polling_service
+        self._notification_dispatcher = notification_dispatcher
 
     async def execute(
         self,
@@ -154,6 +160,107 @@ class TestSubscriptionCommand:
                 "subscription": subscription_dto,
                 "test_result": result,
             },
+        )
+
+    async def execute_target(
+        self,
+        target: str,
+        user_id: str,
+        target_session: str,
+        platform_name: str,
+        start: int = 1,
+        end: int = 1,
+    ) -> CommandResult:
+        """按订阅 ID 或 URL 测试并真实推送到当前会话。"""
+        if start <= 0 or end <= 0 or end < start:
+            return CommandResult(success=False, message="条目范围无效，编号从 1 开始")
+
+        if not target_session:
+            return CommandResult(success=False, message="当前会话为空，无法推送")
+
+        feed_url = ""
+        feed_title = ""
+        if target.isdigit():
+            sub_result = await self.execute(sub_id=int(target), user_id=user_id)
+            if not sub_result.success:
+                return sub_result
+            subscription = sub_result.data["subscription"]
+            feed = await self._feed_repo.get_by_id(subscription.feed_id)
+            if not feed:
+                return CommandResult(success=False, message="订阅对应的 Feed 不存在")
+            feed_url = feed.link
+            feed_title = feed.title
+        else:
+            parsed = urlparse(target)
+            if parsed.scheme not in {"http", "https"}:
+                return CommandResult(
+                    success=False, message="目标必须是订阅 ID 或 http/https URL"
+                )
+            feed_url = target
+
+        read_result = await self._fetch_entries(feed_url)
+        if not read_result.success:
+            return CommandResult(success=False, message=read_result.message)
+
+        entries = read_result.entries
+        if not entries:
+            return CommandResult(success=False, message="Feed 中没有条目")
+        if end > len(entries):
+            return CommandResult(
+                success=False,
+                message=f"条目范围超出上限，当前仅有 {len(entries)} 条",
+            )
+
+        selected = entries[start - 1 : end]
+        if self._notification_dispatcher is None:
+            return CommandResult(success=False, message="推送服务未初始化")
+
+        fake_sub = SimpleNamespace(
+            id=0,
+            platform_name=platform_name,
+            target_session=target_session,
+        )
+
+        pushed = 0
+        for entry in selected:
+            title = entry.title or ""
+            summary = entry.summary or ""
+            parsed = await HTMLParser(summary, feed_link=feed_url).parse()
+            plain_summary = parsed.html_tree.get_plain().strip()
+            content = (
+                f"{title}\n\n{plain_summary}"
+                if plain_summary and plain_summary != title
+                else title
+            )
+            entry_link = getattr(entry, "link", "") or feed_url
+            feed_meta = self._feed_meta(read_result.web_feed)
+            feed_title = str(feed_meta.get("title", "") or "").strip() or feed_url
+            author = str(getattr(entry, "author", "") or "").strip()
+            via_suffix = f"via {entry_link} | {feed_title}"
+            if author:
+                via_suffix += f" (author: {author})"
+            content = f"{content}\n\n{via_suffix}"
+            media_urls = [m.url for m in parsed.media if getattr(m, "url", "")]
+            media_urls.extend(
+                str(enclosure.url)
+                for enclosure in (getattr(entry, "enclosures", None) or [])
+                if getattr(enclosure, "url", "")
+            )
+            media_urls = list(dict.fromkeys(media_urls))
+            send_result = await self._notification_dispatcher.send_to_session(
+                subscription=fake_sub,
+                content=content,
+                media_urls=media_urls,
+                job_description=f"sub_test target={target}",
+                channel_title=feed_title,
+                channel_link=feed_url,
+            )
+            if send_result.get("ok"):
+                pushed += 1
+
+        return CommandResult(
+            success=pushed > 0,
+            message=f"已触发测试推送: {pushed}/{len(selected)} 条成功（范围 {start}-{end}）",
         )
 
     async def execute_by_url(

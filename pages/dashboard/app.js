@@ -13,6 +13,20 @@ import {
   batchUnsubscribe,
   getStats,
   checkUpdates,
+  getExport,
+  getSettings,
+  setSettings,
+  getUsers,
+  getFeeds,
+  getPushHistory,
+  deletePushHistory,
+  cleanupPushHistory,
+  getTranslationCache,
+  deleteTranslationCache,
+  cleanupTranslationCache,
+  getUserDetails,
+  updateUser,
+  deleteUser,
 } from './js/api.js';
 import { initTheme } from './js/theme.js';
 
@@ -57,6 +71,54 @@ const store = PetiteVue.reactive({
   detailSub: {},
   detailItems: [],
 
+  // Tabs / Settings / Users / Feeds
+  activeTab: 'subs',
+  selectedUserId: null,
+  users: [],
+  usersLoading: false,
+  feeds: [],
+  feedsLoading: false,
+  settingsLoading: false,
+  settings: {
+    interval: 10,
+    notify: 1,
+    send_mode: 0,
+    link_preview: 0,
+    display_author: 0,
+    display_via: 0,
+    display_title: 0,
+    style: 0,
+  },
+
+  // Push History
+  pushHistory: [],
+  pushHistoryLoading: false,
+  pushHistoryFilter: { status: '', page: 1, pageSize: 20 },
+  pushHistoryTotal: 0,
+
+  // Translation Cache
+  translationCache: [],
+  translationCacheLoading: false,
+  translationCachePage: 1,
+  translationCachePageSize: 20,
+  translationCacheTotal: 0,
+
+  // User Edit Panel
+  userEditPanelVisible: false,
+  userEditForm: {
+    user_id: '',
+    state: 0,
+    interval: 10,
+    notify: true,
+    send_mode: 0,
+    link_preview: 0,
+    display_author: 0,
+    display_via: 0,
+    display_title: 0,
+    style: 0,
+    default_target_session: '',
+  },
+
   // Feedback
   toast: { show: false, message: '', type: 'success' },
   dialog: { show: false, title: '', message: '', okText: '确定', okClass: 'btn-danger', resolve: null },
@@ -67,7 +129,7 @@ const store = PetiteVue.reactive({
     this.loading = true;
     try {
       const [subResult, statsResult] = await Promise.all([
-        getSubscriptions(),
+        getSubscriptions(this.selectedUserId || undefined),
         getStats(),
       ]);
       this.subs = subResult.items;
@@ -77,6 +139,69 @@ const store = PetiteVue.reactive({
       this.showToast('加载失败: ' + err.message, 'error');
     } finally {
       this.loading = false;
+    }
+  },
+
+  async loadUsers() {
+    this.usersLoading = true;
+    try {
+      const result = await getUsers();
+      this.users = result.items || [];
+    } catch (err) {
+      this.showToast('加载用户失败: ' + err.message, 'error');
+    } finally {
+      this.usersLoading = false;
+    }
+  },
+
+  selectUser(userId) {
+    this.selectedUserId = userId;
+    this.activeTab = 'subs';
+    this.loadData();
+  },
+
+  async loadFeeds() {
+    this.feedsLoading = true;
+    try {
+      const result = await getFeeds();
+      this.feeds = result.items || [];
+    } catch (err) {
+      this.showToast('加载 Feed 失败: ' + err.message, 'error');
+    } finally {
+      this.feedsLoading = false;
+    }
+  },
+
+  async loadSettings() {
+    this.settingsLoading = true;
+    try {
+      const result = await getSettings('webadmin');
+      if (result.settings) {
+        this.settings = {
+          interval: result.settings.interval ?? 10,
+          notify: !!result.settings.notify,
+          send_mode: result.settings.send_mode ?? 0,
+          link_preview: result.settings.link_preview ?? 0,
+          display_author: result.settings.display_author ?? 0,
+          display_via: result.settings.display_via ?? 0,
+          display_title: result.settings.display_title ?? 0,
+          style: result.settings.style ?? 0,
+        };
+      }
+    } catch (err) {
+      this.showToast('加载设置失败: ' + err.message, 'error');
+    } finally {
+      this.settingsLoading = false;
+    }
+  },
+
+  async saveSettings() {
+    try {
+      const payload = { ...this.settings, notify: this.settings.notify ? 1 : 0 };
+      await setSettings('webadmin', payload);
+      this.showToast('设置已保存');
+    } catch (err) {
+      this.showToast('保存设置失败: ' + err.message, 'error');
     }
   },
 
@@ -181,6 +306,7 @@ const store = PetiteVue.reactive({
       if (this.addForm.tags) data.tags = this.addForm.tags.trim();
       if (this.addForm.target_session) data.target_session = this.addForm.target_session.trim();
       if (this.addForm.interval && this.addForm.interval > 0) data.interval = this.addForm.interval;
+      if (this.selectedUserId) data.user_id = this.selectedUserId;
 
       await subscribe(data);
       this.showToast('订阅成功');
@@ -321,6 +447,24 @@ const store = PetiteVue.reactive({
         resolve(result);
       };
     });
+  },
+
+  async handleExport() {
+    try {
+      const result = await getExport('webadmin');
+      const blob = new Blob([result.data.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.data.filename || 'subscriptions.toml';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      this.showToast(`已导出 ${result.data.count || 0} 个订阅`);
+    } catch (err) {
+      this.showToast('导出失败: ' + err.message, 'error');
+    }
   },
 
   // ─── Util ─────────────────────────────────────

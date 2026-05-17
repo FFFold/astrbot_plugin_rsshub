@@ -207,7 +207,7 @@
 - Google 翻译无需配置，开箱即用（免费但有频率限制）
 - 百度翻译需要申请 AppID 和密钥
 - 翻译功能可全局开启或按订阅单独控制
-- 按订阅控制：`/sub_set <订阅 ID> translate=1` 开启、`translate=0` 关闭
+- 按订阅控制：`/sub_profile set sub <订阅 ID> translate 1` 开启、`translate 0` 关闭
 
 ### WebUI 配置 (`webui`)
 
@@ -234,12 +234,13 @@
 | `/sub_state <ID> on/off`               | `/订阅状态` | 快速启停订阅推送 |
 | `/unsub <ID/URL...>`                   | `/取消订阅` | 取消订阅，支持批量（ID 或 URL） |
 | `/unsub_all [global]`                  | `/取消全部订阅` | 删除订阅；默认仅清除当前会话，`global` 清除所有会话（需管理员） |
-| `/sub_list [scope] [page] [page_size]` | `/订阅列表` | 查看当前用户订阅列表（管理员可用 `all` 查看所有会话） |
+| `/sub_list [page] [page_size]` | `/订阅列表` | 查看当前会话订阅列表（分页） |
 | `/sub_export [all]`                    | `/导出订阅` | 导出订阅到 TOML 文件，默认当前会话，`all`=所有订阅（管理员） |
 | `/sub_import [文件路径]`                   | `/导入订阅` | 从 TOML 文件导入订阅；也可直接上传 TOML 文件进行导入 |
 | `/activate_subs`                       | `/enable_subs`, `/启用全部订阅` | 启用当前会话所有订阅 |
 | `/deactivate_subs`                     | `/disable_subs`, `/禁用全部订阅` | 禁用当前会话所有订阅 |
-| `/rss_stop`                            | `/停止RSS`, `/停止推送` | 停止当前会话正在运行的 RSS 推送任务；同一会话的推送任务会自动排队串行执行 |
+| `/sub_status`                          | `/推送状态`, `/任务状态` | 查看当前会话推送任务（running + queued，含 job_id/feed 信息） |
+| `/sub_stop [job_id/feed_id/all]`       | `/停止RSS`, `/停止推送` | 停止推送任务：不带参数停止当前 running 任务；可按 job_id/feed_id 精确停止；`all` 停止当前会话全部任务 |
 
 **布尔值格式支持**：所有命令中的布尔值参数支持以下格式：`true`/`false`, `yes`/`no`, `y`/`n`, `1`/`0`, `on`/`off`, `enable`/`disable`
 
@@ -247,22 +248,22 @@
 
 | 命令 | 中文别名 | 说明 |
 |------|---------|------|
-| `/sub_set <订阅 ID> <选项> <值>` | `/设置订阅` | 设置订阅选项 |
-| `/sub_set_user [选项] [值]` | `/设置用户` | 设置用户默认选项（无参数显示帮助） |
-| `/sub_get_user [选项]` | `/获取用户` | 查看用户配置（无参数显示所有） |
-| `/sub_set_session [key] [value]` | `/设置会话` | 设置会话级默认项（无参数显示帮助） |
-| `/sub_get_session [key]` | `/获取会话` | 查看会话默认项（无参数显示所有） |
+| `/sub_profile set sub <订阅 ID> <选项> <值>` | `/订阅配置 设置 sub ...` | 设置订阅级选项 |
+| `/sub_profile set user <选项> <值>` | `/订阅配置 设置 user ...` | 设置用户默认选项 |
+| `/sub_profile get user [选项]` | `/订阅配置 获取 user ...` | 查看用户配置（无参数显示所有） |
+| `/sub_session set [key] [value]` | `/会话设置 设置` | 设置会话级默认项 |
+| `/sub_session get [key]` | `/会话设置 获取` | 查看会话默认项（无参数显示所有） |
 
 ### 配置继承架构
 
 v1.1.0 起引入三层配置继承体系：
 
-1. **订阅级配置** (`/sub_set`): 通过 `use_sub_config` 控制
-   - `true`: 使用 `/sub_set` 设置的独立配置
+1. **订阅级配置** (`/sub_profile set sub ...`): 通过 `use_sub_config` 控制
+   - `true`: 使用订阅级设置的独立配置
    - `false` (默认): 继承用户级配置
 
-2. **用户级配置** (`/sub_set_user`): 通过 `use_user_config` 控制
-   - `true`: 使用 `/sub_set_user` 设置的用户配置
+2. **用户级配置** (`/sub_profile set user ...`): 通过 `use_user_config` 控制
+   - `true`: 使用用户级设置的用户配置
    - `false` (默认): 继承全局配置
 
 3. **全局配置**: AstrBot JSON 配置（默认）
@@ -271,14 +272,14 @@ v1.1.0 起引入三层配置继承体系：
 **示例**：
 ```bash
 # 让订阅使用独立配置
-/sub_set 1 use_sub_config true
+/sub_profile set sub 1 use_sub_config true
 
 # 让用户使用独立配置
-/sub_set_user use_user_config true
+/sub_profile set user use_user_config true
 
 # 查看配置来源
-/sub_get_user          # 查看用户配置
-/sub_get_session       # 查看会话默认
+/sub_profile get user  # 查看用户配置
+/sub_session get       # 查看会话默认
 ```
 
 ### 管理命令
@@ -286,8 +287,9 @@ v1.1.0 起引入三层配置继承体系：
 | 命令 | 中文别名 | 说明 |
 |------|---------|------|
 | `/sub_test <目标> [起始] [结束]` | `/测试订阅` | 管理员测试推送。目标可以是订阅 ID 或 RSS URL；条目编号从 1 开始（1=最新） |
-| `/rsshelp` | `/RSS 帮助` | 查看帮助 |
-| `/rsshelp` | `/RSS 帮助` | 查看帮助 |
+| `/rsshelp` | `/RSS 帮助` | 查看帮助图片 |
+
+> `rsshelp` 图片由 `scripts/generate_rsshelp_image.py` 根据 `main.py` 命令注释自动生成（HTML 模板：`assets/help/rsshelp_template.html`）。
 
 **`/sub_test` 命令示例：**
 
@@ -302,7 +304,7 @@ v1.1.0 起引入三层配置继承体系：
 
 ### 订阅选项说明
 
-**订阅级选项（通过 `/sub_set` 设置）：**
+**订阅级选项（通过 `/sub_profile set sub ...` 设置）：**
 
 | 选项 | 类型 | 说明 |
 |------|------|------|

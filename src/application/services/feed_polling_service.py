@@ -25,6 +25,7 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ...infrastructure.utils import get_logger
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
 from ..settings import FeedFetchSettings, RSSSettings
+from .html_parser import HTMLParser
 from .notification_dispatcher import NotificationDispatcher
 
 logger = get_logger()
@@ -600,19 +601,30 @@ class FeedPollingService:
             title = str(self._entry_value(entry, "title") or "")
             link = self._resolve_entry_link(entry, feed.link)
             guid = self._entry_identity(entry)
+            author = str(self._entry_value(entry, "author") or "").strip()
             content = str(
                 self._entry_value(entry, "content")
                 or self._entry_value(entry, "summary")
                 or title
             )
-            if title and content != title:
-                content = f"{title}\n\n{content}"
+            parsed = await HTMLParser(content, feed_link=feed.link).parse()
+            plain_content = parsed.html_tree.get_plain().strip()
+            if title and plain_content and plain_content != title:
+                content = f"{title}\n\n{plain_content}"
+            else:
+                content = plain_content or title
+            via_suffix = f"via {link} | {feed.title or feed.link}"
+            if author:
+                via_suffix += f" (author: {author})"
+            content = f"{content}\n\n{via_suffix}"
 
-            media_urls = [
+            media_urls = [m.url for m in parsed.media if getattr(m, "url", "")]
+            media_urls.extend(
                 str(self._entry_value(enclosure, "url"))
                 for enclosure in (self._entry_value(entry, "enclosures", []) or [])
                 if self._entry_value(enclosure, "url")
-            ]
+            )
+            media_urls = list(dict.fromkeys(media_urls))
             if self._media_fingerprint_service is not None and media_urls:
                 try:
                     media_hashes = (

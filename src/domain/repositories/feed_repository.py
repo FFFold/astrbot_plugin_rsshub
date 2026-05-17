@@ -77,6 +77,15 @@ class FeedRepository(Protocol):
         """
         ...
 
+    async def get_all(self) -> list[Feed]:
+        """
+        获取所有Feed
+
+        Returns:
+            Feed对象列表
+        """
+        ...
+
     async def get_all_active(self) -> list[Feed]:
         """
         获取所有启用的Feed

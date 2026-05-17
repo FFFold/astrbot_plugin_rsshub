@@ -72,4 +72,5 @@ class GetUserSettingsCommand:
         return CommandResult(
             success=True,
             message="\n".join(lines),
+            data=settings_map,
         )

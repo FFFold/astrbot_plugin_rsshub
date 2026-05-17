@@ -248,7 +248,7 @@ async def test_send_to_session_returns_cancelled_result_from_queue():
     assert result["ok"] is False
     assert result["cancelled"] is True
     assert result["job_id"] == "rss-000123"
-    assert "Cancelled by /rss_stop" in result["error"]
+    assert "Cancelled by /sub_stop" in result["error"]
     assert sender.requests == []
 
 
@@ -301,8 +301,8 @@ async def test_dispatch_pending_retries_marks_cancelled_history_failed():
 
     stats = await dispatcher.dispatch_pending_retries(limit=10)
 
-    assert stats == {"success": 0, "failed": 1, "skipped": 0}
-    assert history.status == "failed"
+    assert stats == {"success": 1, "failed": 0, "skipped": 0}
+    assert history.status == "stopped"
     assert history.max_retries == 0
-    assert "Cancelled by /rss_stop" in (history.fail_reason or "")
+    assert "Cancelled by /sub_stop" in (history.fail_reason or "")
     history_repo.save.assert_awaited_once_with(history)

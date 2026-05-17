@@ -10,6 +10,8 @@ from typing import Protocol
 class MessageContext:
     """Runtime context for a message send."""
 
+    channel_title: str = ""
+    channel_link: str = ""
     platform_name: str = ""
     timeout_seconds: int = 30
     proxy: str = ""

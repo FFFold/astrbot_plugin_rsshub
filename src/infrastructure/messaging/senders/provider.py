@@ -13,6 +13,7 @@ from ...utils import get_logger
 from .factory import get_sender_for_platform
 from .types import MessageContext as InfraMessageContext
 from .types import SendRequest as InfraSendRequest
+from .types import ChannelInfo
 
 logger = get_logger()
 
@@ -29,6 +30,10 @@ class InfrastructureMessageSenderAdapter:
         context: MessageContext | None = None,
     ) -> SendResult:
         infra_context = InfraMessageContext(
+            channel=ChannelInfo(
+                title=context.channel_title if context else "",
+                link=context.channel_link if context else "",
+            ),
             platform_name=context.platform_name if context else "",
             timeout_seconds=context.timeout_seconds if context else 30,
             proxy=context.proxy if context else "",

@@ -65,12 +65,11 @@ class OneBotMessageSender(DefaultMessageSender):
 
             if effective_prepared:
                 for item in effective_prepared:
-                    if item.download_failed:
-                        failed_media_urls.append(item.original_url)
-                        continue
                     path = (
                         str(item.local_path) if item.local_path else item.original_url
                     )
+                    if item.download_failed:
+                        failed_media_urls.append(item.original_url)
                     match item.media_type:
                         case "image":
                             image_components.append(Image(file=path))
