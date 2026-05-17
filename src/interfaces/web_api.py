@@ -30,7 +30,12 @@ if TYPE_CHECKING:
     from ..application.queries.get_feed_items_query import GetFeedItemsQuery
     from ..application.services.feed_polling_service import FeedPollingService
     from ..domain.repositories.feed_repository import FeedRepository
+    from ..domain.repositories.push_history_repository import PushHistoryRepository
     from ..domain.repositories.subscription_repository import SubscriptionRepository
+    from ..domain.repositories.translation_cache_repository import (
+        TranslationCacheRepository,
+    )
+    from ..domain.repositories.user_repository import UserRepository
     from ..infrastructure.config.config_manager import RsshubPluginConfig
 
 PLUGIN_NAME = "astrbot_plugin_rsshub"
@@ -58,6 +63,9 @@ class WebApiHandler:
         polling_service: FeedPollingService,
         feed_repo: FeedRepository,
         sub_repo: SubscriptionRepository,
+        user_repo: UserRepository,
+        push_history_repo: PushHistoryRepository,
+        translation_cache_repo: TranslationCacheRepository,
         config: RsshubPluginConfig | None = None,
     ):
         self._sse_clients: list[asyncio.Queue] = []
@@ -77,6 +85,9 @@ class WebApiHandler:
         self._polling_service = polling_service
         self._feed_repo = feed_repo
         self._sub_repo = sub_repo
+        self._user_repo = user_repo
+        self._push_history_repo = push_history_repo
+        self._translation_cache_repo = translation_cache_repo
         self._config = config
 
     def register_all(self, context: Context) -> None:
@@ -87,6 +98,8 @@ class WebApiHandler:
             ("GET", "/events", self.handle_events, "SSE 事件推送"),
             ("GET", "/updates", self.handle_updates, "检查更新"),
             ("GET", "/subscriptions", self.handle_list_subscriptions, "列出所有订阅"),
+            ("GET", "/users", self.handle_users, "列出所有用户"),
+            ("GET", "/feeds", self.handle_feeds, "列出所有 Feed"),
             ("POST", "/subscribe", self.handle_subscribe, "订阅 RSS"),
             ("POST", "/unsubscribe", self.handle_unsubscribe, "取消订阅"),
             (
@@ -106,6 +119,15 @@ class WebApiHandler:
             ("POST", "/batch/unsubscribe", self.handle_batch_unsubscribe, "批量取消"),
             ("POST", "/export", self.handle_export, "导出订阅"),
             ("GET", "/stats", self.handle_stats, "插件统计"),
+            ("GET", "/push-history", self.handle_push_history, "推送历史"),
+            ("POST", "/push-history/delete", self.handle_delete_push_history, "删除推送历史"),
+            ("POST", "/push-history/cleanup", self.handle_cleanup_push_history, "清理推送历史"),
+            ("GET", "/translation-cache", self.handle_translation_cache, "翻译缓存"),
+            ("POST", "/translation-cache/delete", self.handle_delete_translation_cache, "删除翻译缓存"),
+            ("POST", "/translation-cache/cleanup", self.handle_cleanup_translation_cache, "清理翻译缓存"),
+            ("GET", "/users/detail", self.handle_user_details, "用户详情列表"),
+            ("POST", "/users/update", self.handle_update_user, "更新用户配置"),
+            ("POST", "/users/delete", self.handle_delete_user, "删除用户"),
         ]
 
         for method, endpoint, handler, desc in routes:
@@ -172,7 +194,11 @@ class WebApiHandler:
 
     async def handle_list_subscriptions(self):
         """列出所有订阅（含 Feed 信息）"""
-        subs = await self._sub_repo.get_all_active()
+        user_id = request.args.get("user_id")
+        if user_id:
+            subs = await self._sub_repo.get_by_user(user_id)
+        else:
+            subs = await self._sub_repo.get_all_active()
         feed_ids = {s.feed_id for s in subs if s.feed_id}
         feeds: dict[int, Any] = {}
         for fid in feed_ids:
@@ -214,6 +240,107 @@ class WebApiHandler:
                 }
             )
 
+        return jsonify({"ok": True, "items": items, "total": len(items)})
+
+    # ─── 用户列表 ─────────────────────────────────────────────
+
+    async def handle_users(self):
+        """列出所有用户及其订阅统计"""
+        subs = await self._sub_repo.get_all_active()
+        user_map: dict[str, dict] = {}
+        for s in subs:
+            uid = s.user_id or "unknown"
+            if uid not in user_map:
+                user_map[uid] = {"user_id": uid, "total": 0, "active": 0}
+            user_map[uid]["total"] += 1
+            if s.state == 1:
+                user_map[uid]["active"] += 1
+        return jsonify({"ok": True, "items": list(user_map.values()), "total": len(user_map)})
+
+    async def handle_user_details(self):
+        """列出所有用户详情（从 UserRepository）"""
+        users = await self._user_repo.get_all(limit=1000)
+        items = []
+        for u in users:
+            items.append(
+                {
+                    "user_id": u.id,
+                    "state": u.state,
+                    "interval": u.interval,
+                    "notify": u.notify,
+                    "send_mode": u.send_mode,
+                    "link_preview": u.link_preview,
+                    "display_author": u.display_author,
+                    "display_via": u.display_via,
+                    "display_title": u.display_title,
+                    "style": u.style,
+                    "default_target_session": u.default_target_session,
+                    "use_user_config": u.use_user_config,
+                    "created_at": u.created_at.isoformat() if u.created_at else None,
+                    "updated_at": u.updated_at.isoformat() if u.updated_at else None,
+                }
+            )
+        return jsonify({"ok": True, "items": items, "total": len(items)})
+
+    async def handle_update_user(self):
+        """更新用户配置"""
+        data = await request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "请求体为空"})
+
+        user_id = data.get("user_id", "")
+        settings = data.get("settings", {})
+        if not user_id:
+            return jsonify({"ok": False, "error": "user_id 不能为空"})
+
+        result = await self._set_user_settings_cmd.execute(
+            user_id=user_id, settings=settings
+        )
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify({"ok": result.success, "message": result.message})
+
+    async def handle_delete_user(self):
+        """删除用户"""
+        data = await request.get_json()
+        user_id = data.get("user_id", "") if data else ""
+        if not user_id:
+            return jsonify({"ok": False, "error": "user_id 不能为空"})
+
+        # 先删除用户的所有订阅
+        await self._sub_repo.delete_all_by_user(user_id)
+        # 再删除用户
+        ok = await self._user_repo.delete(user_id)
+        if ok:
+            self._bump_counter()
+            asyncio.create_task(self._broadcast({"event": "data_changed"}))
+            return jsonify({"ok": True, "message": f"用户 {user_id} 已删除"})
+        return jsonify({"ok": False, "error": "用户不存在或删除失败"})
+
+    # ─── Feed 列表 ────────────────────────────────────────────
+
+    async def handle_feeds(self):
+        """列出所有 Feed 源及其订阅统计"""
+        feeds = await self._feed_repo.get_all()
+        subs = await self._sub_repo.get_all_active()
+        sub_counts: dict[int, int] = {}
+        for s in subs:
+            if s.feed_id:
+                sub_counts[s.feed_id] = sub_counts.get(s.feed_id, 0) + 1
+
+        items = []
+        for f in feeds:
+            items.append(
+                {
+                    "id": f.id,
+                    "title": f.title or "",
+                    "link": f.link or "",
+                    "state": f.state,
+                    "last_modified": f.last_modified.isoformat() if f.last_modified else None,
+                    "updated_at": f.updated_at.isoformat() if f.updated_at else None,
+                    "subscription_count": sub_counts.get(f.id, 0),
+                }
+            )
         return jsonify({"ok": True, "items": items, "total": len(items)})
 
     # ─── 订阅管理 ─────────────────────────────────────────────
@@ -500,3 +627,120 @@ class WebApiHandler:
                 },
             }
         )
+
+    # ─── 推送历史 ─────────────────────────────────────────────
+
+    async def handle_push_history(self):
+        """获取推送历史列表"""
+        status = request.args.get("status")
+        page = request.args.get("page", 1, type=int)
+        page_size = request.args.get("page_size", 20, type=int)
+        offset = (page - 1) * page_size
+
+        items = await self._push_history_repo.get_all(
+            limit=page_size, offset=offset, status=status
+        )
+        stats = await self._push_history_repo.get_stats()
+
+        data = []
+        for h in items:
+            data.append(
+                {
+                    "id": h.id,
+                    "sub_id": h.sub_id,
+                    "user_id": h.user_id,
+                    "feed_id": h.feed_id,
+                    "entry_title": h.entry_title,
+                    "entry_link": h.entry_link,
+                    "feed_title": h.feed_title,
+                    "platform_name": h.platform_name,
+                    "target_session": h.target_session,
+                    "status": h.status,
+                    "retry_count": h.retry_count,
+                    "max_retries": h.max_retries,
+                    "fail_reason": h.fail_reason,
+                    "created_at": h.created_at.isoformat() if h.created_at else None,
+                    "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+                    "completed_at": h.completed_at.isoformat() if h.completed_at else None,
+                }
+            )
+
+        return jsonify(
+            {
+                "ok": True,
+                "items": data,
+                "total": stats.get("total", 0),
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+    async def handle_delete_push_history(self):
+        """删除推送历史"""
+        data = await request.get_json()
+        history_id = data.get("history_id", 0) if data else 0
+        if not history_id:
+            return jsonify({"ok": False, "error": "history_id 不能为空"})
+        ok = await self._push_history_repo.delete(int(history_id))
+        return jsonify({"ok": ok, "message": "已删除" if ok else "记录不存在"})
+
+    async def handle_cleanup_push_history(self):
+        """清理旧推送历史"""
+        data = await request.get_json()
+        days = data.get("days", 30) if data else 30
+        count = await self._push_history_repo.delete_old_records(int(days))
+        self._bump_counter()
+        return jsonify({"ok": True, "message": f"已清理 {count} 条记录"})
+
+    # ─── 翻译缓存 ─────────────────────────────────────────────
+
+    async def handle_translation_cache(self):
+        """获取翻译缓存列表"""
+        page = request.args.get("page", 1, type=int)
+        page_size = request.args.get("page_size", 20, type=int)
+        offset = (page - 1) * page_size
+
+        items = await self._translation_cache_repo.get_all(limit=page_size, offset=offset)
+        stats = await self._translation_cache_repo.get_stats()
+
+        data = []
+        for c in items:
+            data.append(
+                {
+                    "id": c.id,
+                    "hash": c.hash[:16] + "..." if c.hash and len(c.hash) > 16 else c.hash,
+                    "provider": c.provider,
+                    "target_lang": c.target_lang,
+                    "translated_text": c.translated_text[:100] + "..."
+                    if c.translated_text and len(c.translated_text) > 100
+                    else c.translated_text,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                }
+            )
+
+        return jsonify(
+            {
+                "ok": True,
+                "items": data,
+                "total": stats.get("total", 0),
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+    async def handle_delete_translation_cache(self):
+        """删除翻译缓存"""
+        data = await request.get_json()
+        cache_id = data.get("cache_id", 0) if data else 0
+        if not cache_id:
+            return jsonify({"ok": False, "error": "cache_id 不能为空"})
+        ok = await self._translation_cache_repo.delete(int(cache_id))
+        return jsonify({"ok": ok, "message": "已删除" if ok else "记录不存在"})
+
+    async def handle_cleanup_translation_cache(self):
+        """清理旧翻译缓存"""
+        data = await request.get_json()
+        days = data.get("days", 30) if data else 30
+        count = await self._translation_cache_repo.delete_old_records(int(days))
+        self._bump_counter()
+        return jsonify({"ok": True, "message": f"已清理 {count} 条记录"})

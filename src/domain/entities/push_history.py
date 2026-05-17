@@ -40,7 +40,7 @@ class PushHistory(BaseModel):
     )
 
     status: str | None = Field(
-        default=None, max_length=16, description="状态: pending/success/failed"
+        default=None, max_length=16, description="状态: pending/success/failed/stopped"
     )
     retry_count: int = Field(default=0, description="重试次数")
     max_retries: int = Field(default=3, description="最大重试次数")
@@ -93,6 +93,15 @@ class PushHistory(BaseModel):
     def mark_failed(self, reason: str | None = None) -> "PushHistory":
         """标记推送失败（保持向后兼容，调用 record_first_failure）"""
         return self.record_first_failure(reason)
+
+    def mark_stopped(self, reason: str | None = None) -> "PushHistory":
+        """标记推送被人工停止（不参与重试）。"""
+        self.status = "stopped"
+        self.completed_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        if reason:
+            self.fail_reason = reason
+        return self
 
     def is_pending(self) -> bool:
         """检查是否处于待推送状态"""

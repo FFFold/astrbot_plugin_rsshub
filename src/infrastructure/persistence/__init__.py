@@ -23,6 +23,10 @@ from .subscription_repository_impl import (
     SubscriptionRepositoryImpl,
     get_subscription_repository,
 )
+from .translation_cache_repository_impl import (
+    TranslationCacheRepositoryImpl,
+    get_translation_cache_repository,
+)
 from .user_repository_impl import UserRepositoryImpl, get_user_repository
 
 __all__ = [
@@ -48,4 +52,6 @@ __all__ = [
     "get_subscription_repository",
     "PushHistoryRepositoryImpl",
     "get_push_history_repository",
+    "TranslationCacheRepositoryImpl",
+    "get_translation_cache_repository",
 ]

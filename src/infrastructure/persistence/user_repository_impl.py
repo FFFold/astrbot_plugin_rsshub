@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from sqlmodel import select
+
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ..utils import get_logger
@@ -48,6 +50,15 @@ class UserRepositoryImpl:
             await session.refresh(orm)
             return self._to_entity(orm)
 
+    async def get_all(self, limit: int = 100, offset: int = 0) -> list[User]:
+        """获取所有用户"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(UserORM).offset(offset).limit(limit)
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
     async def update_defaults(self, user_id: str, **kwargs) -> User | None:
         """更新用户默认配置"""
         db = get_database()
@@ -62,6 +73,17 @@ class UserRepositoryImpl:
             await session.commit()
             await session.refresh(orm)
             return self._to_entity(orm)
+
+    async def delete(self, user_id: str) -> bool:
+        """删除用户"""
+        db = get_database()
+        async with db.get_session() as session:
+            orm = await session.get(UserORM, user_id)
+            if not orm:
+                return False
+            await session.delete(orm)
+            await session.commit()
+            return True
 
     @staticmethod
     def _to_entity(orm: UserORM) -> User:

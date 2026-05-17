@@ -25,12 +25,28 @@ class GetSubscriptionExportsQuery:
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
 
-    async def execute(self, user_id: str) -> list[SubscriptionExportRecord]:
+    async def execute(
+        self,
+        user_id: str,
+        *,
+        scope: str = "",
+        current_session: str = "",
+        is_admin: bool = False,
+    ) -> list[SubscriptionExportRecord]:
         """Load subscriptions and hydrate export-ready records."""
         if self._feed_repo is None:
             raise RuntimeError("Subscription export requires a feed repository")
 
-        subscriptions = await self._subscription_repo.get_by_user(user_id)
+        if scope == "all" and is_admin:
+            subscriptions = await self._subscription_repo.get_all_active()
+        else:
+            subscriptions = await self._subscription_repo.get_by_user(user_id)
+            if current_session:
+                subscriptions = [
+                    sub
+                    for sub in subscriptions
+                    if (sub.target_session or current_session) == current_session
+                ]
         if not subscriptions:
             return []
 

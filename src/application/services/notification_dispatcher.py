@@ -167,6 +167,10 @@ class NotificationDispatcher:
                     content=content,
                     media_urls=media_urls,
                     job_description=f"feed={feed_id}, sub={sub.id}",
+                    channel_title=feed_title,
+                    channel_link=feed_link,
+                    feed_id=feed_id,
+                    sub_id=sub.id,
                 )
 
                 # 4. 更新推送状态
@@ -174,9 +178,9 @@ class NotificationDispatcher:
                     history.mark_success()
                     stats["success"] += 1
                 elif result.get("cancelled"):
-                    history.mark_failed(result.get("error", "Cancelled by /rss_stop"))
+                    history.mark_stopped(result.get("error", "Stopped by /sub_stop"))
                     history.max_retries = 0
-                    stats["failed"] += 1
+                    stats["success"] += 1
                 else:
                     # 首次失败不增加重试计数
                     history.record_first_failure(result.get("error", "Unknown error"))
@@ -210,6 +214,10 @@ class NotificationDispatcher:
         content: str,
         media_urls: list[str] | None,
         job_description: str = "",
+        channel_title: str = "",
+        channel_link: str = "",
+        feed_id: int | None = None,
+        sub_id: int | None = None,
     ) -> dict[str, Any]:
         """
         发送通知到指定订阅
@@ -252,7 +260,9 @@ class NotificationDispatcher:
                         media=media_items if media_items else None,
                     ),
                     context=MessageContext(
-                        platform_name=subscription.platform_name or ""
+                        channel_title=channel_title,
+                        channel_link=channel_link,
+                        platform_name=subscription.platform_name or "",
                     ),
                 )
 
@@ -260,6 +270,9 @@ class NotificationDispatcher:
                 target_session,
                 _send,
                 description=job_description,
+                feed_id=feed_id,
+                feed_title=channel_title or "",
+                sub_id=sub_id,
             )
 
             if job_result.cancelled:
@@ -272,7 +285,7 @@ class NotificationDispatcher:
                 return {
                     "ok": False,
                     "cancelled": True,
-                    "error": f"Cancelled by /rss_stop (job_id={job_result.job_id})",
+                    "error": f"Cancelled by /sub_stop (job_id={job_result.job_id})",
                     "job_id": job_result.job_id,
                 }
 
@@ -339,6 +352,10 @@ class NotificationDispatcher:
                     content=history.content,
                     media_urls=None,  # 重试时不重新下载媒体
                     job_description=f"retry history={history.id}",
+                    channel_title=history.feed_title,
+                    channel_link=history.feed_link,
+                    feed_id=history.feed_id,
+                    sub_id=history.sub_id,
                 )
 
                 error_msg = result.get("error", "")
@@ -346,9 +363,9 @@ class NotificationDispatcher:
                     history.mark_success()
                     stats["success"] += 1
                 elif result.get("cancelled"):
-                    history.mark_failed(result.get("error", "Cancelled by /rss_stop"))
+                    history.mark_stopped(result.get("error", "Stopped by /sub_stop"))
                     history.max_retries = 0
-                    stats["failed"] += 1
+                    stats["success"] += 1
                 elif is_unrecoverable_error(error_msg):
                     # 不可恢复错误：直接标记为最终失败，不再重试
                     history.record_first_failure(error_msg)

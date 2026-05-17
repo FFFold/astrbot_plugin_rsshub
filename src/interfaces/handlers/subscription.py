@@ -52,26 +52,63 @@ async def handle_sub(event: AstrMessageEvent, url: str, deps: dict) -> dict:
         return {"plain": f"部分成功: {success_count} 个订阅成功, {failed_count} 个失败"}
 
 
-async def handle_unsub(event: AstrMessageEvent, sub_id: int, deps: dict) -> dict:
+async def handle_unsub(event: AstrMessageEvent, sub_id: str, deps: dict) -> dict:
     """取消订阅"""
-    if sub_id <= 0:
-        return {"plain": "请提供订阅 ID\n用法: /unsub <ID>"}
+    args = sub_id.strip() if isinstance(sub_id, str) else str(sub_id).strip()
+    if not args:
+        return {"plain": "请提供订阅 ID 或 URL\n用法: /unsub <ID/URL...>"}
+
+    parts = [p.strip() for p in args.split() if p.strip()]
+    if not parts:
+        return {"plain": "请提供订阅 ID 或 URL\n用法: /unsub <ID/URL...>"}
 
     user_id = event.get_sender_id()
     current_session = event.unified_msg_origin
     is_admin = event.is_admin()
-    result = await deps["unsubscribe_cmd"].execute(
-        sub_id=sub_id,
-        user_id=user_id,
-        current_session=current_session,
-        is_admin=is_admin,
-    )
-    return {"plain": result.message}
+    results: list[str] = []
+    for token in parts:
+        if token.startswith(("http://", "https://")):
+            result = await deps["unsubscribe_cmd"].execute_by_url(
+                url=token,
+                user_id=user_id,
+                current_session=current_session,
+                is_admin=is_admin,
+            )
+        else:
+            try:
+                sub_id_int = int(token)
+            except ValueError:
+                results.append(f"参数无效: {token}（需为订阅 ID 或 URL）")
+                continue
+            result = await deps["unsubscribe_cmd"].execute(
+                sub_id=sub_id_int,
+                user_id=user_id,
+                current_session=current_session,
+                is_admin=is_admin,
+            )
+        results.append(result.message)
+
+    return {"plain": "\n".join(results)}
 
 
-async def handle_sub_list(event: AstrMessageEvent, deps: dict) -> dict:
+async def handle_sub_list(event: AstrMessageEvent, args: str, deps: dict) -> dict:
     """查看订阅列表"""
     user_id = event.get_sender_id()
+    arg_parts = [p.strip() for p in (args or "").split() if p.strip()]
+
+    page = 1
+    page_size = 5
+    if arg_parts:
+        try:
+            page = max(1, int(arg_parts[0]))
+        except ValueError:
+            return {"plain": "分页参数无效。用法: /sub_list [page] [page_size]"}
+    if len(arg_parts) >= 2:
+        try:
+            page_size = max(1, min(int(arg_parts[1]), 100))
+        except ValueError:
+            return {"plain": "分页参数无效。用法: /sub_list [page] [page_size]"}
+
     result = await deps["get_subs_query"].execute(user_id=user_id)
     if not result.subscriptions:
         return {"plain": "暂无订阅\n使用 /sub <url> 添加订阅"}
@@ -87,13 +124,19 @@ async def handle_sub_list(event: AstrMessageEvent, deps: dict) -> dict:
         return {"plain": "当前会话没有订阅\n使用 /sub <url> 添加订阅"}
 
     total_count = len(visible)
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    page_subs = visible[start : start + page_size]
+
     active_count = sum(1 for sub in visible if sub.state == 1)
     inactive_count = total_count - active_count
     lines = [
         "您的订阅列表（当前会话）:",
         f"共 {total_count} 个订阅 | 启用: {active_count} | 禁用: {inactive_count}",
+        f"页码: {page}/{total_pages}  每页: {page_size}",
     ]
-    for i, sub in enumerate(visible, 1):
+    for i, sub in enumerate(page_subs, start + 1):
         state_icon = "✓" if sub.state == 1 else "✗"
         feed_title = sub.feed_title or f"Feed #{sub.feed_id}"
         custom_title = f" ({sub.title})" if sub.title else ""
@@ -111,16 +154,59 @@ async def handle_refresh(event: AstrMessageEvent, feed_id: int, deps: dict) -> d
     return {"plain": result.message}
 
 
-def handle_rss_stop(event: AstrMessageEvent, queue: SessionPushQueue) -> dict:
-    """停止当前会话正在运行的 RSS 推送任务"""
+def handle_rss_stop(event: AstrMessageEvent, queue: SessionPushQueue, args: str) -> dict:
+    """停止当前会话 RSS 推送任务（运行中/排队中）。"""
     current_session = event.unified_msg_origin
-    result = queue.stop_current(current_session)
-    if result.stopped:
-        queued = (
-            f"，队列中还有 {result.queued_count} 个任务" if result.queued_count else ""
-        )
-        return {"plain": f"{result.message}{queued}"}
+    target = (args or "").strip()
+
+    if not target:
+        result = queue.stop_current(current_session)
+        if result.stopped:
+            queued = (
+                f"，队列中还有 {result.queued_count} 个任务"
+                if result.queued_count
+                else ""
+            )
+            return {"plain": f"{result.message}{queued}"}
+        return {"plain": result.message}
+
+    if target.lower() == "all":
+        stopped = queue.stop_all_for_session(current_session)
+        if stopped["stopped"] <= 0:
+            return {"plain": "当前会话没有可停止的任务"}
+        return {
+            "plain": (
+                "已请求停止当前会话任务: "
+                f"总计 {stopped['stopped']} 个 "
+                f"(running={stopped['running']}, queued={stopped['queued']})"
+            )
+        }
+
+    if target.isdigit():
+        result = queue.stop_by_feed_id(current_session, int(target))
+    else:
+        result = queue.stop_by_job_id(current_session, target)
     return {"plain": result.message}
+
+
+def handle_sub_status(event: AstrMessageEvent, queue: SessionPushQueue) -> dict:
+    """查看当前会话推送任务状态（运行中与排队中）。"""
+    current_session = event.unified_msg_origin
+    jobs = queue.get_jobs(current_session)
+    if not jobs:
+        return {"plain": "当前会话没有推送任务"}
+
+    lines = [f"当前会话任务数: {len(jobs)}"]
+    for idx, job in enumerate(jobs, start=1):
+        feed_label = (
+            f"{job.feed_title or '(未知Feed)'}"
+            f" | feed_id={job.feed_id if job.feed_id is not None else '未知'}"
+        )
+        lines.append(
+            f"{idx}. {job.status} | job_id={job.job_id} | {feed_label}"
+        )
+    lines.append("可用: /sub_stop <job_id|feed_id|all>")
+    return {"plain": "\n".join(lines)}
 
 
 async def handle_sub_state(

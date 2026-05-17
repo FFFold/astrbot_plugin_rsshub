@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...domain.repositories.user_repository import UserRepository
 from ..dto.result_dto import CommandResult
 
@@ -37,15 +39,17 @@ class SetUserSettingsCommand:
     async def execute(
         self,
         user_id: str,
-        key: str,
-        value: str,
+        key: str | None = None,
+        value: str | None = None,
+        settings: dict[str, Any] | None = None,
     ) -> CommandResult:
         """执行设置用户设置命令
 
         Args:
             user_id: 用户 ID
-            key: 设置项名称
-            value: 设置值
+            key: 单个设置项名称（与 settings 二选一）
+            value: 单个设置值（与 settings 二选一）
+            settings: 批量设置字典（优先）
 
         Returns:
             CommandResult: 命令执行结果
@@ -53,54 +57,63 @@ class SetUserSettingsCommand:
         # 获取或创建用户
         user = await self._user_repo.get_by_id(user_id)
         if not user:
-            # 创建新用户
             from ...domain.entities.user import User
 
             user = User(id=user_id)
 
-        option_key = key.strip().lower()
-        parsed_value: int | str
+        changes = []
 
-        # 解析值
-        if option_key in {"title", "tags", "translate_target_lang"}:
-            parsed_value = str(value).strip()
-        else:
-            try:
-                parsed_value = int(value)
-            except ValueError:
-                return CommandResult(
-                    success=False,
-                    message=f"选项 {option_key} 需要数字值",
-                )
+        def _set_one(option_key: str, raw_value: Any) -> CommandResult | None:
+            option_key = option_key.strip().lower()
+            parsed_value: int | str
 
-            # 验证范围
-            if option_key in VALID_SETTINGS:
-                min_val, max_val = VALID_SETTINGS[option_key]
-                if not min_val <= parsed_value <= max_val:
+            if option_key in {"title", "tags", "translate_target_lang"}:
+                parsed_value = str(raw_value).strip()
+            else:
+                try:
+                    parsed_value = int(raw_value)
+                except (ValueError, TypeError):
                     return CommandResult(
                         success=False,
-                        message=f"{option_key} 的值 {parsed_value} 超出范围 [{min_val}, {max_val}]",
+                        message=f"选项 {option_key} 需要数字值",
                     )
 
-        # 获取旧值用于显示
-        old_value = getattr(user, option_key, None)
+                if option_key in VALID_SETTINGS:
+                    min_val, max_val = VALID_SETTINGS[option_key]
+                    if not min_val <= parsed_value <= max_val:
+                        return CommandResult(
+                            success=False,
+                            message=f"{option_key} 的值 {parsed_value} 超出范围 [{min_val}, {max_val}]",
+                        )
 
-        # 应用设置
-        setattr(user, option_key, parsed_value)
+            old_value = getattr(user, option_key, None)
+            setattr(user, option_key, parsed_value)
 
-        # 保存用户
+            def fmt(val):
+                if val is None:
+                    return "未设置"
+                if isinstance(val, bool) or val in (0, 1, -100, -1, -2):
+                    val_map = {0: "禁用", 1: "启用", -100: "继承", -1: "禁用", -2: "不显示"}
+                    return val_map.get(val, str(val))
+                return str(val)
+
+            changes.append(f"{option_key}: {fmt(old_value)} → {fmt(parsed_value)}")
+            return None
+
+        if settings:
+            for k, v in settings.items():
+                err = _set_one(k, v)
+                if err:
+                    return err
+        elif key is not None and value is not None:
+            err = _set_one(key, value)
+            if err:
+                return err
+        else:
+            return CommandResult(success=False, message="请提供 key/value 或 settings 字典")
+
         await self._user_repo.save(user)
-
-        # 格式化显示值
-        def fmt(val):
-            if val is None:
-                return "未设置"
-            if isinstance(val, bool) or val in (0, 1, -100, -1, -2):
-                val_map = {0: "禁用", 1: "启用", -100: "继承", -1: "禁用", -2: "不显示"}
-                return val_map.get(val, str(val))
-            return str(val)
-
         return CommandResult(
             success=True,
-            message=f"用户配置已更新:\n{option_key}: {fmt(old_value)} → {fmt(parsed_value)}",
+            message="用户配置已更新:\n" + "\n".join(changes),
         )

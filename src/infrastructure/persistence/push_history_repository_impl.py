@@ -141,6 +141,48 @@ class PushHistoryRepositoryImpl:
             await session.commit()
             return result.rowcount or 0
 
+    async def get_all(
+        self, limit: int = 100, offset: int = 0, status: str | None = None
+    ) -> list[PushHistory]:
+        """获取所有推送历史"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(PushHistoryORM).order_by(desc(PushHistoryORM.created_at))
+            if status:
+                stmt = stmt.where(PushHistoryORM.status == status)
+            stmt = stmt.offset(offset).limit(limit)
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
+    async def get_by_user(
+        self, user_id: str, limit: int = 100, offset: int = 0
+    ) -> list[PushHistory]:
+        """获取用户的推送历史"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                select(PushHistoryORM)
+                .where(PushHistoryORM.user_id == user_id)
+                .order_by(desc(PushHistoryORM.created_at))
+                .offset(offset)
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
+    async def delete(self, history_id: int) -> bool:
+        """删除推送历史"""
+        db = get_database()
+        async with db.get_session() as session:
+            orm = await session.get(PushHistoryORM, history_id)
+            if not orm:
+                return False
+            await session.delete(orm)
+            await session.commit()
+            return True
+
     async def get_stats(self) -> dict[str, int]:
         """获取推送统计信息"""
         db = get_database()
@@ -149,7 +191,7 @@ class PushHistoryRepositoryImpl:
             total = (await session.execute(total_stmt)).scalar_one() or 0
 
             status_counts = {}
-            for status in ["pending", "success", "failed"]:
+            for status in ["pending", "success", "failed", "stopped"]:
                 stmt = (
                     select(func.count())
                     .select_from(PushHistoryORM)

@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./css/responsive.css" />
   <link rel="stylesheet" href="./css/dark-theme.css" />
   <style>
-    .stats-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .stats-row { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
     .stat-card { flex: 1; min-width: 140px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; text-align: center; }
     .stat-card-value { font-size: 28px; font-weight: 700; color: #3c96ca; }
     .stat-card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
@@ -33,19 +33,20 @@
     .col-feed { width: auto; }
     .col-user { width: 110px; }
     .col-interval { width: 90px; }
-    .col-session { width: auto; }
-    .col-actions { width: 120px; text-align: right; }
-    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .col-session { width: auto; min-width: 140px; }
+    .col-actions { width: 120px; text-align: right; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
     .status-dot.active { background: #16a34a; }
     .status-dot.inactive { background: #ef4444; }
-    .status-text { vertical-align: middle; font-size: 13px; }
+    .col-status { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .status-text { font-size: 13px; }
     .feed-title { font-weight: 600; color: #1b1c1d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .feed-url { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
     .btn-action { padding: 4px 8px !important; height: auto !important; font-size: 12px !important; text-transform: none !important; letter-spacing: 0 !important; min-width: auto !important; color: #3c96ca !important; }
     .btn-action:hover { background: rgba(60,150,202,0.08) !important; }
-    .panel-section { margin-bottom: 24px; }
-    .panel-section h4 { font-size: 14px; color: #64748b; margin-bottom: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+    .panel-section { margin-bottom: 20px; }
+    .panel-section h4 { font-size: 14px; color: #64748b; margin-bottom: 12px; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
     .setting-row:last-child { border-bottom: none; }
     .setting-label { font-size: 14px; color: #374151; }
     .setting-value { font-size: 14px; color: #64748b; }
@@ -54,8 +55,8 @@
     .batch-toolbar.visible { transform: translateY(0); }
     .batch-toolbar .count { font-size: 14px; color: #64748b; margin-right: 16px; }
     .detail-row { display: flex; margin-bottom: 8px; }
-    .detail-label { flex: 0 0 100px; font-size: 13px; color: #94a3b8; }
-    .detail-value { flex: 1; font-size: 13px; color: #374151; word-break: break-all; }
+    .detail-label { flex: 0 0 auto; min-width: 80px; font-size: 13px; color: #94a3b8; }
+    .detail-value { flex: 1; min-width: 0; font-size: 13px; color: #374151; word-break: break-all; }
     .entry-item { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: #f8fafc; }
     .entry-item:last-child { margin-bottom: 0; }
     .entry-title { font-weight: 600; font-size: 14px; color: #1b1c1d; margin-bottom: 4px; }
@@ -64,10 +65,10 @@
     @media (max-width: 768px) {
       .sub-table, .sub-table thead, .sub-table tbody, .sub-table tr, .sub-table th, .sub-table td { display: block; }
       .sub-table thead { display: none; }
-      .sub-table td { padding: 10px 16px; border: none; position: relative; }
-      .sub-table td:before { content: attr(data-label); font-weight: 600; color: #64748b; display: inline-block; width: 80px; font-size: 12px; }
+      .sub-table td { padding: 12px 16px; border: none; position: relative; }
+      .sub-table td:before { content: attr(data-label); font-weight: 600; color: #64748b; display: block; margin-bottom: 4px; width: auto; font-size: 12px; }
       .sub-table tr { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; padding: 8px 0; }
-      .col-actions { text-align: left; }
+      .col-actions { justify-content: flex-start; }
     }
     [data-theme="dark"] .stat-card { background: var(--card-bg); border-color: var(--border-color); }
     [data-theme="dark"] .stat-card-value { color: var(--primary-color); }
@@ -87,6 +88,18 @@
     [data-theme="dark"] .sub-table tbody tr.selected { background: rgba(60,150,202,0.12); }
     [data-theme="dark"] .feed-title { color: var(--text-primary); }
     [data-theme="dark"] .feed-url { color: var(--text-tertiary); }
+    .tab-nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; }
+    .tab-btn { padding: 10px 16px; font-size: 14px; font-weight: 500; color: #64748b; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+    .tab-btn.active { color: #3c96ca; border-bottom-color: #3c96ca; }
+    .tab-btn:hover { color: #3c96ca; }
+    .settings-form { max-width: 640px; }
+    .settings-form .panel-section { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+    .settings-form .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+    [data-theme="dark"] .tab-nav { border-color: var(--border-color); }
+    [data-theme="dark"] .tab-btn { color: var(--text-secondary); }
+    [data-theme="dark"] .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+    [data-theme="dark"] .tab-btn:hover { color: var(--primary-color); }
+    [data-theme="dark"] .settings-form .panel-section { background: var(--card-bg); border-color: var(--border-color); }
     [data-theme="dark"] .empty-state { background: var(--bg-secondary); border-color: var(--border-color); color: var(--text-secondary); }
     [data-theme="dark"] .empty-state-icon path { fill: var(--text-tertiary); }
   </style>
@@ -101,14 +114,27 @@
     <div class="stat-card"><div class="stat-card-value">{{ stats.unique_users }}</div><div class="stat-card-label">用户数</div></div>
   </div>
 
+  <!-- Tab Nav -->
+  <div class="tab-nav">
+    <button class="tab-btn" :class="{ active: activeTab === 'subs' }" @click="activeTab = 'subs'">订阅列表</button>
+    <button class="tab-btn" :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'; loadUsers()">用户</button>
+    <button class="tab-btn" :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'; loadFeeds()">Feed 源</button>
+    <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'; loadSettings()">用户设置</button>
+  </div>
+
   <!-- Action Bar -->
-  <div class="action-bar">
+  <div class="action-bar" v-if="activeTab === 'subs'">
     <input class="search-input" type="text" v-model="searchQuery" placeholder="搜索订阅标题 / Feed 链接..." @input="filterSubs()" />
     <button class="btn btn-primary" @click="openAddPanel()"><span class="icon">+</span> 添加订阅</button>
     <button class="btn" :class="editMode ? 'btn-primary' : 'btn-secondary'" @click="toggleEditMode()">
       {{ editMode ? '完成编辑' : '批量操作' }}
     </button>
+    <button class="btn btn-secondary" @click="handleExport()">导出</button>
     <button class="btn btn-icon" @click="loadData()" title="刷新">⟳</button>
+  </div>
+  <div v-if="activeTab === 'subs' && selectedUserId" style="margin-bottom:12px;font-size:13px;color:#64748b;">
+    筛选用户: <strong>{{ selectedUserId }}</strong>
+    <button class="btn btn-text btn-action" @click="selectedUserId = null; loadData()">清除筛选</button>
   </div>
 
   <!-- Batch Toolbar -->
@@ -120,7 +146,7 @@
   </div>
 
     <!-- Subscription Table -->
-    <section class="table-section">
+    <section class="table-section" v-if="activeTab === 'subs'">
       <div class="section-header">
         <h2>订阅列表</h2>
         <span style="font-size:13px;color:#94a3b8;">共 {{ filteredSubs.length }} 个</span>
@@ -174,6 +200,125 @@
         </tbody>
       </table>
     </section>
+
+  <!-- Users -->
+  <div v-if="activeTab === 'users'" class="table-section">
+    <div class="section-header"><h2>用户列表</h2><span style="font-size:13px;color:#94a3b8;">共 {{ users.length }} 个</span></div>
+    <div v-if="usersLoading" class="empty-state"><p>加载中...</p></div>
+    <div v-else-if="users.length === 0" class="empty-state"><p>暂无用户数据</p></div>
+    <table class="sub-table" v-else>
+      <thead><tr><th class="col-user">用户 ID</th><th class="col-interval">订阅数</th><th class="col-status">活跃数</th><th class="col-actions">操作</th></tr></thead>
+      <tbody>
+        <tr v-for="u in users" :key="u.user_id">
+          <td class="col-user" data-label="用户">{{ u.user_id }}</td>
+          <td class="col-interval" data-label="订阅数">{{ u.total }}</td>
+          <td class="col-status" data-label="活跃数"><span class="status-dot active"></span> {{ u.active }}</td>
+          <td class="col-actions" data-label="操作">
+            <button class="btn btn-text btn-action" @click="selectUser(u.user_id)">查看订阅</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Feeds -->
+  <div v-if="activeTab === 'feeds'" class="table-section">
+    <div class="section-header"><h2>Feed 源</h2><span style="font-size:13px;color:#94a3b8;">共 {{ feeds.length }} 个</span></div>
+    <div v-if="feedsLoading" class="empty-state"><p>加载中...</p></div>
+    <div v-else-if="feeds.length === 0" class="empty-state"><p>暂无 Feed 源</p></div>
+    <table class="sub-table" v-else>
+      <thead><tr><th class="col-feed">Feed</th><th class="col-interval">订阅数</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr></thead>
+      <tbody>
+        <tr v-for="f in feeds" :key="f.id">
+          <td class="col-feed" data-label="Feed">
+            <div class="feed-title">{{ f.title || '未知' }}</div>
+            <div class="feed-url" :title="f.link">{{ f.link || '' }}</div>
+          </td>
+          <td class="col-interval" data-label="订阅数">{{ f.subscription_count }}</td>
+          <td class="col-status" data-label="状态"><span class="status-dot" :class="f.state === 1 ? 'active' : 'inactive'"></span> {{ f.state === 1 ? '启用' : '停用' }}</td>
+          <td class="col-actions" data-label="操作">
+            <button class="btn btn-text btn-action" @click="handleRefreshDetail(f.id)">刷新</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- User Settings -->
+  <div v-if="activeTab === 'settings'" class="settings-form">
+    <div v-if="settingsLoading" class="empty-state"><p>加载中...</p></div>
+    <div v-else>
+      <div class="panel-section">
+        <h4>推送设置</h4>
+        <div class="setting-row">
+          <span class="setting-label">推送间隔（分钟）</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="settings.interval" min="1" max="1440" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">通知</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="settings.notify" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">发送模式</span>
+          <select class="select-input" v-model.number="settings.send_mode">
+            <option :value="-1">仅链接</option>
+            <option :value="0">自动</option>
+            <option :value="2">直接消息</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>显示选项</h4>
+        <div class="setting-row">
+          <span class="setting-label">链接预览</span>
+          <select class="select-input" v-model.number="settings.link_preview">
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示作者</span>
+          <select class="select-input" v-model.number="settings.display_author">
+            <option :value="-1">禁用</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示来源</span>
+          <select class="select-input" v-model.number="settings.display_via">
+            <option :value="-2">完全禁用</option>
+            <option :value="-1">仅链接</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示标题</span>
+          <select class="select-input" v-model.number="settings.display_title">
+            <option :value="-1">禁用</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">样式</span>
+          <select class="select-input" v-model.number="settings.style">
+            <option :value="0">RSStT</option>
+            <option :value="1">flowerss</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" @click="saveSettings()">保存设置</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Panel Overlay -->
   <div class="panel-overlay" :class="{ visible: panelVisible }" @click="closePanel()"></div>

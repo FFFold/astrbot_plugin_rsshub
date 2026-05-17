@@ -1,20 +1,61 @@
-# Repository Guidelines
+# AGENTS.md — astrbot_plugin_rsshub
 
-## Project Structure & Module Organization
+Repository guide for agent work on this plugin.
 
-This repository is an AstrBot RSSHub plugin. `main.py` is the plugin entry point, `metadata.yaml` defines plugin metadata, and `requirements.txt` lists Python dependencies.
+## Project overview
 
-- `src/domain/`: entities, value objects, repository protocols, and pure business services.
-- `src/application/`: commands, queries, DTOs, and orchestration services.
-- `src/infrastructure/`: config, persistence, RSS fetching, messaging, scheduling, translation, media, and utilities.
-- `src/interfaces/`: chat command handlers and Web API adapters.
-- `pages/`: AstrBot plugin page frontend assets.
-- `tests/`: unit tests, integration tests, fixtures, and mocks.
-- `assets/`, `docs/`, `skills/`: images, project notes, and local workflow resources.
+- AstrBot RSSHub plugin with DDD layering.
+- Entry split is strict: `main.py` (decorators/lifecycle) and `bootstrap.py` (composition/startup).
+- Management features belong to Plugin Pages + Web API.
 
-## Build, Test, and Development Commands
+## Communication language
 
-Run these from the plugin directory unless noted:
+- 与用户沟通必须使用中文。
+
+## Structure
+
+- `src/domain/`: entities, value objects, repository protocols.
+- `src/application/`: commands, queries, DTOs, orchestration services.
+- `src/infrastructure/`: adapters for config/persistence/fetch/messaging/scheduling.
+- `src/interfaces/`: command handlers and `web_api.py`.
+- `pages/`: Plugin Pages frontend.
+- `tests/`: unit/integration suites and fixtures.
+
+## Command surface invariants
+
+Keep these command signatures full-argument (`GreedyStr` compatible):
+
+- `/sub`
+- `/unsub`
+- `/sub_list`
+- `/sub_export`
+- `/sub_import`
+- `/sub_test`
+
+Behavior invariants:
+
+- `/sub_test <ID|URL> [start] [end]` = real push (not preview).
+- `/unsub` supports ID/URL mixed batch semantics.
+- `/sub` supports multi-URL batch semantics.
+- `/sub_list` supports current-session pagination only (no `all` scope).
+- `/sub_export [all]` scope behavior with admin guard.
+- `/sub_import` supports TOML path and upload-waiting flow.
+- `/sub_status` lists running/queued jobs for current session.
+- `/sub_stop [job_id|feed_id|all]` supports precise/批量 stop; no arg stops current running job.
+- `/rsshelp` sends pre-generated help image (`assets/help/rsshelp.png`).
+
+## Push compatibility invariants
+
+- OneBot merged-forward node name: prefer feed title; fallback `RSSHub`.
+- Push tail formatting should include legacy `via <link> | <feed> (author: ...)` style.
+
+## Do-not-regress rules
+
+- Do not reintroduce `/rsshub_admin` or `handle_admin_panel`.
+- Do not add `Main` alias.
+- Do not move startup ownership out of `bootstrap.py`.
+
+## Dev and test commands
 
 ```bash
 python tests/run_tests.py -v
@@ -23,31 +64,35 @@ python tests/run_tests.py --category integration
 pytest tests/ -v
 ```
 
-When working from the AstrBot project root, format and lint this plugin with:
+From AstrBot root:
 
 ```bash
 uv run ruff format data/plugins/astrbot_plugin_rsshub
 uv run ruff check data/plugins/astrbot_plugin_rsshub
 ```
 
-Pre-commit runs YAML checks, whitespace cleanup, `ruff --fix`, and `ruff-format`.
+## Current progress snapshot
 
-## Coding Style & Naming Conventions
+Recently completed regression fixes include:
 
-Use Python 3.10+ conventions, 4-space indentation, and type hints for public functions. Keep `main.py` limited to lifecycle, registration, and dependency wiring. Put business rules in `src/domain/` or `src/application/`; put framework, storage, network, and platform details in `src/infrastructure/` or `src/interfaces/`.
+- Restored command signatures/semantics for `/sub_test`, `/sub`, `/unsub`, `/sub_list`, `/sub_export`, `/sub_import`.
+- Restored real push behavior and range routing for `/sub_test`.
+- Restored compatibility formatting (`via ...`) and OneBot merged-forward naming path.
+- Added regression tests for handlers/application behavior.
+- Command surface slimming:
+  - Removed chat command `/refresh`.
+  - Removed chat command `/batch_unsub` (use `/unsub` batch).
+  - Replaced `/sub_set` + `/sub_set_user` + `/sub_get_user` with command group `/sub_profile set|get`.
+  - Session config commands switched to command group: `/sub_session set|get`.
+- Push job control upgrades:
+  - Added `/sub_status` for runtime queue visibility.
+  - Upgraded `/sub_stop` to support no-arg/job_id/feed_id/all.
+  - Cancelled push history now persists `status=stopped` (non-retry).
+- Added `/rsshelp` image help command and generator pipeline:
+  - `scripts/generate_rsshelp_image.py`
+  - `assets/help/rsshelp_template.html`
+  - `assets/help/rsshelp.png` (committed pre-generated image)
 
-Use `snake_case` for files, functions, and variables; `PascalCase` for classes. Command/query classes should read like actions, for example `SubscribeFeedCommand` or `GetSubscriptionsQuery`.
+## Update policy
 
-## Testing Guidelines
-
-Tests use the custom runner in `tests/run_tests.py` and pytest-compatible files under `tests/unit/` and `tests/integration/`. Name test files `test_*.py`. Prefer focused unit tests for domain and application behavior. Use integration tests for database, scheduler, fetcher, Web API, and plugin wiring changes. Reuse fixtures from `tests/fixtures/` and mocks from `tests/mocks/`.
-
-## Commit & Pull Request Guidelines
-
-Follow the existing Conventional Commits style: `feat: ...`, `fix: ...`, or scoped forms like `feat(rss): ...`. Keep commits focused and describe user-visible behavior when relevant.
-
-Pull requests should include a concise summary, test commands run, linked issues if applicable, and screenshots or recordings for WebUI changes.
-
-## Agent-Specific Instructions
-
-Treat current code, tests, README, and `CONTRIBUTE.md` as the source of truth when details conflict. Before editing, inspect the relevant modules and preserve existing user changes in the working tree. Keep edits scoped to the requested task, and update tests or documentation when behavior, commands, configuration, or WebUI surfaces change.
+When architecture, command surface, push formatting, config paths, or test/lint workflow changes, update both `CLAUDE.md` and `AGENTS.md` in the same change.

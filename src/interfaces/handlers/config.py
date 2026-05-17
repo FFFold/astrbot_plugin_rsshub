@@ -67,6 +67,70 @@ async def handle_sub_get_user(event: AstrMessageEvent, key: str, deps: dict) -> 
     return {"plain": result.message}
 
 
+async def handle_sub_profile_set(event: AstrMessageEvent, args: str, deps: dict) -> dict:
+    """统一配置写入入口。
+
+    用法:
+    - /sub_profile set sub <sub_id> <option> <value>
+    - /sub_profile set user <key> <value>
+    """
+    parts = [p.strip() for p in (args or "").split() if p.strip()]
+    if not parts:
+        return {
+            "plain": (
+                "用法:\n"
+                "/sub_profile set sub <sub_id> <option> <value>\n"
+                "/sub_profile set user <key> <value>"
+            )
+        }
+
+    scope = parts[0].lower()
+    if scope in {"sub", "subscription"}:
+        if len(parts) < 4:
+            return {
+                "plain": "用法: /sub_profile set sub <sub_id> <option> <value>"
+            }
+        try:
+            sub_id = int(parts[1])
+        except ValueError:
+            return {"plain": "订阅 ID 必须是数字"}
+        option = parts[2]
+        value = " ".join(parts[3:])
+        return await handle_sub_set(event, sub_id, option, value, deps)
+
+    if scope in {"user"}:
+        if len(parts) < 3:
+            return {"plain": "用法: /sub_profile set user <key> <value>"}
+        key = parts[1]
+        value = " ".join(parts[2:])
+        return await handle_sub_set_user(event, key, value, deps)
+
+    return {"plain": f"未知配置域: {scope}（支持: sub/user）"}
+
+
+async def handle_sub_profile_get(event: AstrMessageEvent, args: str, deps: dict) -> dict:
+    """统一配置查询入口。
+
+    用法:
+    - /sub_profile get user [key]
+    """
+    parts = [p.strip() for p in (args or "").split() if p.strip()]
+    if not parts:
+        return await handle_sub_get_user(event, "", deps)
+
+    scope = parts[0].lower()
+    if scope in {"user"}:
+        key = parts[1] if len(parts) >= 2 else ""
+        return await handle_sub_get_user(event, key, deps)
+
+    if scope in {"sub", "subscription"}:
+        return {
+            "plain": "当前暂不支持订阅级 get，请使用 /sub_list 查看订阅，再用 /sub_profile set sub ... 修改。"
+        }
+
+    return {"plain": f"未知配置域: {scope}（支持: user）"}
+
+
 async def handle_sub_set_session(
     event: AstrMessageEvent, key: str, value: str, deps: dict, ctx
 ) -> dict:

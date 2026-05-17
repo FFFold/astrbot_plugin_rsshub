@@ -229,7 +229,7 @@ class PushHistoryORM(RSSHubBaseModel, table=True):
     )
 
     status: str | None = Field(
-        default=None, max_length=16, description="状态: pending/success/failed"
+        default=None, max_length=16, description="状态: pending/success/failed/stopped"
     )
     retry_count: int = Field(default=0, description="重试次数")
     max_retries: int = Field(default=3, description="最大重试次数")

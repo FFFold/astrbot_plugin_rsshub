@@ -70,11 +70,37 @@ class FeedRepositoryImpl:
         """保存Feed"""
         db = get_database()
         async with db.get_session() as session:
-            orm = self._to_orm(feed)
-            session.add(orm)
+            orm: FeedORM | None = None
+
+            # Update existing row when ID already exists; avoid duplicate PK insert.
+            if feed.id is not None:
+                orm = await session.get(FeedORM, feed.id)
+                if orm is not None:
+                    orm.state = feed.state
+                    orm.link = feed.link
+                    orm.title = feed.title
+                    orm.entry_hashes = feed.entry_hashes
+                    orm.etag = feed.etag
+                    orm.last_modified = feed.last_modified
+                    orm.created_at = feed.created_at
+                    orm.updated_at = feed.updated_at
+
+            if orm is None:
+                orm = self._to_orm(feed)
+                session.add(orm)
+
             await session.commit()
             await session.refresh(orm)
             return self._to_entity(orm)
+
+    async def get_all(self) -> list[Feed]:
+        """获取所有Feed"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(FeedORM)
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
 
     async def get_all_active(self) -> list[Feed]:
         """获取所有启用的Feed"""

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from astrbot.api.event import AstrMessageEvent
+
+_ONEBOT_PLATFORMS = {"aiocqhttp", "onebot", "onebot11", "onebotv11"}
+_INLINE_EXPORT_LIMIT = 5000
 
 
 async def handle_batch_activate(
@@ -84,14 +89,21 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
     result: dict = {}
 
     if export_result.success and export_result.data and export_result.data.content:
-        temp_dir = Path("/tmp")
-        temp_dir.mkdir(exist_ok=True)
+        temp_dir = _get_export_dir()
         filename = export_result.data.filename
         file_path = temp_dir / filename
-        file_path.write_text(export_result.data.content)
-        from astrbot.api.message_components import File
+        file_path.write_text(export_result.data.content, encoding="utf-8")
+        platform = _get_platform_name(event)
+        if platform in _ONEBOT_PLATFORMS and not _has_callback_file_service():
+            result["plain"] = _build_inline_export_message(
+                f"已取消{scope_desc}订阅前已生成备份，共导出 {export_result.data.count} 条",
+                export_result.data.content,
+                file_path,
+            )
+        else:
+            from astrbot.api.message_components import File
 
-        result["chain"] = [File(name=filename, file=str(file_path))]
+            result["chain"] = [File(name=filename, file=str(file_path.resolve()))]
 
     # 删除订阅
     deleted_count = 0
@@ -111,3 +123,48 @@ async def handle_batch_unsub(event: AstrMessageEvent, sub_ids: str, deps: dict) 
     user_id = event.get_sender_id()
     result = await deps["batch_unsub_cmd"].execute(sub_ids=ids, user_id=user_id)
     return {"plain": result.message}
+
+
+def _get_export_dir() -> Path:
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
+
+        export_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
+    except Exception:
+        export_dir = Path("/tmp") / "astrbot_plugin_rsshub_exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return export_dir
+
+
+def _get_platform_name(event: AstrMessageEvent) -> str:
+    try:
+        return str(event.get_platform_name() or "").strip().lower()
+    except Exception:
+        return ""
+
+
+def _build_inline_export_message(message: str, content: str, file_path: Path) -> str:
+    tip = (
+        "检测到 OneBot 平台且未配置 callback_api_base，"
+        "已回退为内联 TOML。若需直接发送文件，请在 AstrBot 配置 callback_api_base。"
+    )
+    if len(content) <= _INLINE_EXPORT_LIMIT:
+        return (
+            f"{message}\n{tip}\n\n```toml\n{content}\n```\n\n"
+            f"备份文件已保存到宿主机: {file_path.resolve()}"
+        )
+    snippet = content[:_INLINE_EXPORT_LIMIT]
+    return (
+        f"{message}\n{tip}\n\n备份内容较长，以下仅展示前 {_INLINE_EXPORT_LIMIT} 字符:\n"
+        f"```toml\n{snippet}\n```\n\n完整备份文件已保存到宿主机: {file_path.resolve()}"
+    )
+
+
+def _has_callback_file_service() -> bool:
+    try:
+        from astrbot.core import astrbot_config
+
+        callback_api_base = str(astrbot_config.get("callback_api_base", "")).strip()
+        return bool(callback_api_base)
+    except Exception:
+        return False
