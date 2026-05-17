@@ -6,6 +6,10 @@ import pytest
 from astrbot_plugin_rsshub.src.application.commands.export_subscriptions_cmd import (
     ExportSubscriptionsCommand,
 )
+from astrbot_plugin_rsshub.src.application.dto.subscription_export_record import (
+    SubscriptionExportRecord,
+    build_subscription_export_record,
+)
 from astrbot_plugin_rsshub.src.application.services.subscription_serializer import (
     parse_subscriptions_toml,
     serialize_subscriptions_to_toml,
@@ -14,29 +18,32 @@ from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 
 
-def make_subscription(
+def make_export_record(
     *,
     feed_id: int = 1,
     link: str = "https://example.com/feed.xml",
     feed_title: str = "Example Feed",
     **fields: object,
-) -> Subscription:
-    """Create a Subscription with its runtime Feed relation attached."""
+) -> SubscriptionExportRecord:
+    """Create an export read model from a Subscription and Feed metadata."""
     data = {
         "user_id": "user-001",
         "feed_id": feed_id,
         **fields,
     }
     subscription = Subscription(**data)
-    subscription.feed = Feed(id=feed_id, link=link, title=feed_title)
-    return subscription
+    return build_subscription_export_record(
+        subscription,
+        link=link,
+        feed_title=feed_title,
+    )
 
 
 class TestTOMLRoundtrip:
     """Verify export and parse are stable for subscription settings."""
 
     def test_roundtrip_single_subscription(self) -> None:
-        subscription = make_subscription(
+        record = make_export_record(
             title="Timeline",
             tags="twitter,art",
             notify=1,
@@ -45,7 +52,7 @@ class TestTOMLRoundtrip:
 
         content = serialize_subscriptions_to_toml(
             user_id="user-001",
-            subscriptions=[subscription],
+            records=[record],
         )
         payload = parse_subscriptions_toml(content)
 
@@ -61,18 +68,18 @@ class TestTOMLRoundtrip:
 
     def test_roundtrip_multiple_subscriptions(self) -> None:
         subscriptions = [
-            make_subscription(
+            make_export_record(
                 feed_id=1,
                 link="https://example.com/feed-1.xml",
                 feed_title="Feed 1",
             ),
-            make_subscription(
+            make_export_record(
                 feed_id=2,
                 link="https://example.com/feed-2.xml",
                 feed_title="Feed 2",
                 title="Second",
             ),
-            make_subscription(
+            make_export_record(
                 feed_id=3,
                 link="https://example.com/feed-3.xml",
                 feed_title="Feed 3",
@@ -82,7 +89,7 @@ class TestTOMLRoundtrip:
 
         content = serialize_subscriptions_to_toml(
             user_id="user-001",
-            subscriptions=subscriptions,
+            records=subscriptions,
         )
         payload = parse_subscriptions_toml(content)
 
@@ -99,7 +106,7 @@ class TestTOMLRoundtrip:
         ]
 
     def test_roundtrip_preserves_options(self) -> None:
-        subscription = make_subscription(
+        record = make_export_record(
             title="Configured",
             tags="alerts,news",
             platform_name="telegram",
@@ -120,7 +127,7 @@ class TestTOMLRoundtrip:
 
         content = serialize_subscriptions_to_toml(
             user_id="user-001",
-            subscriptions=[subscription],
+            records=[record],
         )
         payload = parse_subscriptions_toml(content)
 
@@ -203,7 +210,7 @@ class TestTOMLParsing:
 
 
 class TestExportCommand:
-    """Verify the export command hydrates Feed data before serializing."""
+    """Verify the export command uses Feed data without mutating subscriptions."""
 
     @pytest.mark.asyncio
     async def test_export_hydrates_feed_for_subscription(self) -> None:
@@ -216,13 +223,19 @@ class TestExportCommand:
                 return [subscription]
 
         class FeedRepo:
-            async def get_by_id(self, feed_id: int) -> Feed | None:
-                assert feed_id == 1
-                return feed
+            calls: list[list[int]]
 
+            def __init__(self) -> None:
+                self.calls = []
+
+            async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+                self.calls.append(feed_ids)
+                return [feed]
+
+        feed_repo = FeedRepo()
         command = ExportSubscriptionsCommand(
             subscription_repo=SubscriptionRepo(),
-            feed_repo=FeedRepo(),
+            feed_repo=feed_repo,
         )
 
         result = await command.execute("user-001")
@@ -234,3 +247,80 @@ class TestExportCommand:
         assert payload.records[0].link == "https://example.com/feed.xml"
         assert payload.records[0].feed_title == "Hydrated Feed"
         assert payload.records[0].options["title"] == "Hydrated"
+        assert "feed" not in subscription.model_dump()
+        assert not hasattr(subscription, "feed")
+        assert feed_repo.calls == [[1]]
+
+    @pytest.mark.asyncio
+    async def test_export_uses_bulk_feed_lookup_for_multiple_subscriptions(
+        self,
+    ) -> None:
+        subscriptions = [
+            Subscription(user_id="user-001", feed_id=1, title="First"),
+            Subscription(user_id="user-001", feed_id=2, title="Second"),
+            Subscription(user_id="user-001", feed_id=1, title="Duplicate feed"),
+        ]
+        feeds = {
+            1: Feed(id=1, link="https://example.com/feed-1.xml", title="Feed 1"),
+            2: Feed(id=2, link="https://example.com/feed-2.xml", title="Feed 2"),
+        }
+
+        class SubscriptionRepo:
+            async def get_by_user(self, user_id: str) -> list[Subscription]:
+                assert user_id == "user-001"
+                return subscriptions
+
+        class FeedRepo:
+            calls: list[list[int]]
+
+            def __init__(self) -> None:
+                self.calls = []
+
+            async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+                self.calls.append(feed_ids)
+                return [feeds[feed_id] for feed_id in feed_ids]
+
+            async def get_by_id(self, feed_id: int) -> Feed | None:
+                raise AssertionError("export should use bulk feed lookup")
+
+        feed_repo = FeedRepo()
+        command = ExportSubscriptionsCommand(
+            subscription_repo=SubscriptionRepo(),
+            feed_repo=feed_repo,
+        )
+
+        result = await command.execute("user-001")
+        payload = parse_subscriptions_toml(result.data.content)
+
+        assert result.success is True
+        assert payload.errors == []
+        assert [record.link for record in payload.records] == [
+            "https://example.com/feed-1.xml",
+            "https://example.com/feed-2.xml",
+            "https://example.com/feed-1.xml",
+        ]
+        assert feed_repo.calls == [[1, 2]]
+
+    @pytest.mark.asyncio
+    async def test_export_without_feed_repo_reports_explicit_error(self) -> None:
+        class SubscriptionRepo:
+            async def get_by_user(self, user_id: str) -> list[Subscription]:
+                assert user_id == "user-001"
+                return [Subscription(user_id="user-001", feed_id=1)]
+
+        command = ExportSubscriptionsCommand(
+            subscription_repo=SubscriptionRepo(),
+            feed_repo=None,
+        )
+
+        result = await command.execute("user-001")
+
+        assert result.success is False
+        assert "feed repository" in result.message
+
+
+def test_subscription_model_dump_does_not_include_feed_relation() -> None:
+    subscription = Subscription(user_id="user-001", feed_id=1)
+
+    assert "feed" not in subscription.model_dump()
+    assert not hasattr(subscription, "feed")

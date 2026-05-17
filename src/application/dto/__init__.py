@@ -7,12 +7,14 @@ from .feed_dto import FeedDTO
 from .item_dto import ItemDTO
 from .result_dto import CommandResult
 from .subscription_dto import SubscriptionDTO
+from .subscription_export_record import SubscriptionExportRecord
 from .web_feed_dto import WebFeed
 
 __all__ = [
     "CommandResult",
     "FeedDTO",
     "ItemDTO",
+    "SubscriptionExportRecord",
     "SubscriptionDTO",
     "WebFeed",
 ]

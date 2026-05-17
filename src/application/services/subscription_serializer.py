@@ -9,10 +9,12 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ...domain.entities.subscription import Subscription
+from ..dto.subscription_export_record import (
+    SUBSCRIPTION_EXPORT_INT_FIELDS,
+    SUBSCRIPTION_EXPORT_STRING_FIELDS,
+    SubscriptionExportRecord,
+)
 
 EXPORT_FORMAT = "astrbot-rsshub-subscriptions"
 EXPORT_VERSION = 1
@@ -20,28 +22,8 @@ EXPORT_VERSION = 1
 # 导出时排除的字段（这些是运行时计算的）
 EXPORT_EXCLUDED_FIELDS = {"id", "sid", "sub_id"}
 
-STRING_FIELDS = {
-    "title",
-    "tags",
-    "platform_name",
-    "feed_title",
-    "translate_target_lang",
-}
-
-INT_FIELDS = {
-    "notify",
-    "send_mode",
-    "length_limit",
-    "link_preview",
-    "display_author",
-    "display_via",
-    "display_title",
-    "display_entry_tags",
-    "style",
-    "display_media",
-    "interval",
-    "translate",
-}
+STRING_FIELDS = SUBSCRIPTION_EXPORT_STRING_FIELDS
+INT_FIELDS = SUBSCRIPTION_EXPORT_INT_FIELDS
 
 
 @dataclass
@@ -70,13 +52,13 @@ def _toml_string(value: str) -> str:
 def serialize_subscriptions_to_toml(
     *,
     user_id: str,
-    subscriptions: list[Subscription],
+    records: list[SubscriptionExportRecord],
 ) -> str:
     """将用户订阅序列化为 TOML 文本
 
     Args:
         user_id: 用户 ID
-        subscriptions: 订阅列表
+        records: 导出读模型列表
 
     Returns:
         TOML 格式的订阅配置文本
@@ -89,27 +71,25 @@ def serialize_subscriptions_to_toml(
         "",
     ]
 
-    for sub in subscriptions:
-        feed = getattr(sub, "feed", None)
-        if feed is None:
+    for record in records:
+        if not record.link:
             continue
-
         lines.append("[[subscriptions]]")
-        lines.append(f"link = {_toml_string(str(feed.link))}")
-        if feed.title:
-            lines.append(f"feed_title = {_toml_string(str(feed.title))}")
+        lines.append(f"link = {_toml_string(str(record.link))}")
+        if record.feed_title:
+            lines.append(f"feed_title = {_toml_string(str(record.feed_title))}")
 
         for key in sorted(STRING_FIELDS - {"feed_title"}):
             if key in EXPORT_EXCLUDED_FIELDS:
                 continue
-            value = getattr(sub, key, None)
+            value = record.options.get(key)
             if isinstance(value, str) and value.strip():
                 lines.append(f"{key} = {_toml_string(value)}")
 
         for key in sorted(INT_FIELDS):
             if key in EXPORT_EXCLUDED_FIELDS:
                 continue
-            value = getattr(sub, key, None)
+            value = record.options.get(key)
             if isinstance(value, bool):
                 continue
             if isinstance(value, int):

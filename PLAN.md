@@ -86,7 +86,7 @@ infrastructure/
 - `[x]` 阶段 2：建立 Application Ports。`FeedFetcher`、`FeedParser`、`MessageSenderProvider`、`Clock` port 已建立，发送器已通过 provider 注入。
 - `[x]` 阶段 3：统一 Feed 同步用例。`FeedPollingService` 已落地，手动 `/refresh`、Web API refresh、scheduler 和 `test_sub` 已统一到同一抓取解析入口。
 - `[x]` 阶段 4：把 Scheduler 降级为 Adapter。`RSSScheduler` 现只负责到期订阅查询、分组触发和下次检查时间回写。
-- `[ ]` 阶段 5：整理 Domain 和 DTO。
+- `[x]` 阶段 5：整理 Domain 和 DTO。`SubscriptionExportRecord` 和导出查询已落地，导出不再往 `Subscription` 挂运行时 `feed`。
 - `[ ]` 阶段 6：清理聚合导出和全局状态。
 
 插件更新计划：
@@ -242,7 +242,7 @@ src/application/ports/
 
 ### 阶段 4：把 Scheduler 降级为 Adapter
 
-状态：`[ ]` 未开始。
+状态：`[x]` 已完成。
 
 目标：`RSSScheduler` 只负责时间触发和订阅到期查询，不承载业务用例。
 
@@ -320,8 +320,8 @@ SubscriptionExportRecord(
 
 验证：
 
-- `[ ]` TOML roundtrip 测试继续通过。
-- `[ ]` `Subscription.model_dump()` 不包含展示关联。
+- `[x]` TOML roundtrip 测试继续通过。
+- `[x]` `Subscription.model_dump()` 不包含展示关联。
 
 ### 阶段 6：清理聚合导出和全局状态
 

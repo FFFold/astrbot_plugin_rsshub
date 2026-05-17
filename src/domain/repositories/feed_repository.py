@@ -28,6 +28,18 @@ class FeedRepository(Protocol):
         """
         ...
 
+    async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+        """
+        根据ID批量获取Feed
+
+        Args:
+            feed_ids: Feed唯一标识列表
+
+        Returns:
+            Feed对象列表
+        """
+        ...
+
     async def get_by_link(self, link: str) -> Feed | None:
         """
         根据链接获取Feed
