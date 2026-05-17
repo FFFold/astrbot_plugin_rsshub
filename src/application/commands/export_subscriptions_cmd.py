@@ -52,7 +52,13 @@ class ExportSubscriptionsCommand:
         Returns:
             CommandResult: 命令执行结果
         """
-        records = await self._export_query.execute(user_id)
+        try:
+            records = await self._export_query.execute(user_id)
+        except RuntimeError as e:
+            return CommandResult(
+                success=False,
+                message=f"导出失败: {e}",
+            )
 
         if not records:
             return CommandResult(

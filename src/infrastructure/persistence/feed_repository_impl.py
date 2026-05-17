@@ -27,6 +27,19 @@ class FeedRepositoryImpl:
             orm = await session.get(FeedORM, feed_id)
             return self._to_entity(orm) if orm else None
 
+    async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+        """根据ID批量获取Feed"""
+        ids = list(dict.fromkeys(feed_ids))
+        if not ids:
+            return []
+
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(FeedORM).where(FeedORM.id.in_(ids))
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
     async def get_by_link(self, link: str) -> Feed | None:
         """根据链接获取Feed"""
         db = get_database()

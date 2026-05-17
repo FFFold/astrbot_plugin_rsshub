@@ -223,13 +223,19 @@ class TestExportCommand:
                 return [subscription]
 
         class FeedRepo:
-            async def get_by_id(self, feed_id: int) -> Feed | None:
-                assert feed_id == 1
-                return feed
+            calls: list[list[int]]
 
+            def __init__(self) -> None:
+                self.calls = []
+
+            async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+                self.calls.append(feed_ids)
+                return [feed]
+
+        feed_repo = FeedRepo()
         command = ExportSubscriptionsCommand(
             subscription_repo=SubscriptionRepo(),
-            feed_repo=FeedRepo(),
+            feed_repo=feed_repo,
         )
 
         result = await command.execute("user-001")
@@ -243,6 +249,72 @@ class TestExportCommand:
         assert payload.records[0].options["title"] == "Hydrated"
         assert "feed" not in subscription.model_dump()
         assert not hasattr(subscription, "feed")
+        assert feed_repo.calls == [[1]]
+
+    @pytest.mark.asyncio
+    async def test_export_uses_bulk_feed_lookup_for_multiple_subscriptions(self) -> None:
+        subscriptions = [
+            Subscription(user_id="user-001", feed_id=1, title="First"),
+            Subscription(user_id="user-001", feed_id=2, title="Second"),
+            Subscription(user_id="user-001", feed_id=1, title="Duplicate feed"),
+        ]
+        feeds = {
+            1: Feed(id=1, link="https://example.com/feed-1.xml", title="Feed 1"),
+            2: Feed(id=2, link="https://example.com/feed-2.xml", title="Feed 2"),
+        }
+
+        class SubscriptionRepo:
+            async def get_by_user(self, user_id: str) -> list[Subscription]:
+                assert user_id == "user-001"
+                return subscriptions
+
+        class FeedRepo:
+            calls: list[list[int]]
+
+            def __init__(self) -> None:
+                self.calls = []
+
+            async def get_by_ids(self, feed_ids: list[int]) -> list[Feed]:
+                self.calls.append(feed_ids)
+                return [feeds[feed_id] for feed_id in feed_ids]
+
+            async def get_by_id(self, feed_id: int) -> Feed | None:
+                raise AssertionError("export should use bulk feed lookup")
+
+        feed_repo = FeedRepo()
+        command = ExportSubscriptionsCommand(
+            subscription_repo=SubscriptionRepo(),
+            feed_repo=feed_repo,
+        )
+
+        result = await command.execute("user-001")
+        payload = parse_subscriptions_toml(result.data.content)
+
+        assert result.success is True
+        assert payload.errors == []
+        assert [record.link for record in payload.records] == [
+            "https://example.com/feed-1.xml",
+            "https://example.com/feed-2.xml",
+            "https://example.com/feed-1.xml",
+        ]
+        assert feed_repo.calls == [[1, 2]]
+
+    @pytest.mark.asyncio
+    async def test_export_without_feed_repo_reports_explicit_error(self) -> None:
+        class SubscriptionRepo:
+            async def get_by_user(self, user_id: str) -> list[Subscription]:
+                assert user_id == "user-001"
+                return [Subscription(user_id="user-001", feed_id=1)]
+
+        command = ExportSubscriptionsCommand(
+            subscription_repo=SubscriptionRepo(),
+            feed_repo=None,
+        )
+
+        result = await command.execute("user-001")
+
+        assert result.success is False
+        assert "feed repository" in result.message
 
 
 def test_subscription_model_dump_does_not_include_feed_relation() -> None:

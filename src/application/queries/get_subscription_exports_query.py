@@ -27,13 +27,25 @@ class GetSubscriptionExportsQuery:
 
     async def execute(self, user_id: str) -> list[SubscriptionExportRecord]:
         """Load subscriptions and hydrate export-ready records."""
+        if self._feed_repo is None:
+            raise RuntimeError("Subscription export requires a feed repository")
+
         subscriptions = await self._subscription_repo.get_by_user(user_id)
-        if not subscriptions or self._feed_repo is None:
+        if not subscriptions:
             return []
+
+        feed_ids = list(
+            dict.fromkeys(subscription.feed_id for subscription in subscriptions)
+        )
+        feeds = {
+            feed.id: feed
+            for feed in await self._feed_repo.get_by_ids(feed_ids)
+            if feed.id is not None
+        }
 
         records: list[SubscriptionExportRecord] = []
         for subscription in subscriptions:
-            feed = await self._feed_repo.get_by_id(subscription.feed_id)
+            feed = feeds.get(subscription.feed_id)
             if feed is None:
                 continue
             records.append(
