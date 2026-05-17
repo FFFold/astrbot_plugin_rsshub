@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from ..constants import INHERIT_VALUE
-from .feed import Feed
 
 
 class Subscription(BaseModel):
@@ -57,12 +56,6 @@ class Subscription(BaseModel):
         default=False,
         description="是否使用订阅自身配置: true=使用Sub表, false=继承上层",
     )
-    feed: Feed | None = Field(
-        default=None,
-        exclude=True,
-        description="关联 Feed，仅用于导出和展示等运行时读模型",
-    )
-
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
     )

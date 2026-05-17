@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.result_dto import CommandResult
+from ..queries.get_subscription_exports_query import GetSubscriptionExportsQuery
+from ..services.subscription_serializer import serialize_subscriptions_to_toml
 
 
 @dataclass
@@ -32,8 +34,10 @@ class ExportSubscriptionsCommand:
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository | None = None,
     ):
-        self._subscription_repo = subscription_repo
-        self._feed_repo = feed_repo
+        self._export_query = GetSubscriptionExportsQuery(
+            subscription_repo=subscription_repo,
+            feed_repo=feed_repo,
+        )
 
     async def execute(
         self,
@@ -48,30 +52,18 @@ class ExportSubscriptionsCommand:
         Returns:
             CommandResult: 命令执行结果
         """
-        subscriptions = await self._subscription_repo.get_by_user(user_id)
+        records = await self._export_query.execute(user_id)
 
-        if not subscriptions:
+        if not records:
             return CommandResult(
                 success=False,
                 message="您当前没有可导出的订阅",
             )
 
-        if self._feed_repo is not None:
-            for subscription in subscriptions:
-                if getattr(subscription, "feed", None) is not None:
-                    continue
-                feed = await self._feed_repo.get_by_id(subscription.feed_id)
-                if feed is not None:
-                    subscription.feed = feed
-
         try:
-            from ...application.services.subscription_serializer import (
-                serialize_subscriptions_to_toml,
-            )
-
             content = serialize_subscriptions_to_toml(
                 user_id=user_id,
-                subscriptions=subscriptions,
+                records=records,
             )
 
             from datetime import datetime
@@ -82,12 +74,12 @@ class ExportSubscriptionsCommand:
             result = ExportResult(
                 content=content,
                 filename=filename,
-                count=len(subscriptions),
+                count=len(records),
             )
 
             return CommandResult(
                 success=True,
-                message=f"成功导出 {len(subscriptions)} 个订阅",
+                message=f"成功导出 {len(records)} 个订阅",
                 data=result,
             )
 
