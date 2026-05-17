@@ -20,7 +20,6 @@ from .queries import (
 from .services import (
     FeedPollingResult,
     FeedPollingService,
-    FeedSyncService,
     NotificationDispatcher,
 )
 
@@ -48,6 +47,5 @@ __all__ = [
     # Services
     "FeedPollingResult",
     "FeedPollingService",
-    "FeedSyncService",
     "NotificationDispatcher",
 ]

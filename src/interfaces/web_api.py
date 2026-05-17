@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from ..application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
     from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
     from ..application.queries.get_feed_items_query import GetFeedItemsQuery
-    from ..application.services import FeedSyncService
+    from ..application.services.feed_polling_service import FeedPollingService
     from ..domain.repositories.feed_repository import FeedRepository
     from ..domain.repositories.subscription_repository import SubscriptionRepository
     from ..infrastructure.config.config_manager import RsshubPluginConfig
@@ -55,7 +55,7 @@ class WebApiHandler:
         set_user_settings_cmd: SetUserSettingsCommand,
         test_sub_cmd: TestSubscriptionCommand,
         get_items_query: GetFeedItemsQuery,
-        sync_service: FeedSyncService,
+        polling_service: FeedPollingService,
         feed_repo: FeedRepository,
         sub_repo: SubscriptionRepository,
         config: RsshubPluginConfig | None = None,
@@ -74,7 +74,7 @@ class WebApiHandler:
         self._set_user_settings_cmd = set_user_settings_cmd
         self._test_sub_cmd = test_sub_cmd
         self._get_items_query = get_items_query
-        self._sync_service = sync_service
+        self._polling_service = polling_service
         self._feed_repo = feed_repo
         self._sub_repo = sub_repo
         self._config = config
@@ -336,7 +336,7 @@ class WebApiHandler:
             return jsonify({"ok": False, "error": "feed_id 不能为空"})
 
         try:
-            result = await self._sync_service.sync_feed(int(feed_id))
+            result = await self._polling_service.poll_feed(int(feed_id))
             self._bump_counter()
             asyncio.create_task(self._broadcast({"event": "data_changed"}))
             return jsonify(

@@ -41,7 +41,7 @@
 
 - `docs/llm/project-map.md` 已经过时，仍提到旧 `pipeline/normalizer.py`、`deduplication_service.py` 等路径；当前实际代码已有 `pipeline/filters/`、`pipeline/formatter.py`、`infrastructure/media/`、`interfaces/web_api.py`。
 - `docs/llm/dedup.md` 和 `roadmap.md` 中“图片/视频指纹待实现”的描述不完全准确；当前 `RSSScheduler._hash_entry()` 已经尝试媒体 SHA256，但实现直接碰 `RSSFeedFetcher` 私有 session，应该抽成独立 Adapter 或在第一轮先限制为文本/URL 指纹。
-- `FeedSyncService` 已降级为 `FeedPollingService` 的薄 wrapper；`RSSScheduler` 仍有重复同步路径，后续应让 scheduler 触发 `FeedPollingService`。
+- `FeedSyncService` 旧 wrapper 已删除；手动刷新、WebUI refresh 和 scheduler 均直接使用 `FeedPollingService`。
 - `pipeline/filters/` 已有过滤器链 Interface 和默认过滤器，但尚未接入 scheduler 主路径，也缺少从插件配置到 `PipelineConfig` 的完整映射。
 - `NotificationDispatcher` 已改为通过 `MessageSenderProvider` 注入发送器；后续仍需减少 application 层对 infrastructure utils 的轻量依赖。
 - `MediaDownloader` 已移动到 `infrastructure/media/`，但仍保留较复杂的自定义缓存、锁和 GC。`docs/llm` 里的激进删除方案不建议直接做，后续只做低风险并发/缓存收敛。
@@ -87,7 +87,7 @@ infrastructure/
 - `[x]` 阶段 3：统一 Feed 同步用例。`FeedPollingService` 已落地，手动 `/refresh`、Web API refresh、scheduler 和 `test_sub` 已统一到同一抓取解析入口。
 - `[x]` 阶段 4：把 Scheduler 降级为 Adapter。`RSSScheduler` 现只负责到期订阅查询、分组触发和下次检查时间回写。
 - `[x]` 阶段 5：整理 Domain 和 DTO。`SubscriptionExportRecord` 和导出查询已落地，导出不再往 `Subscription` 挂运行时 `feed`。
-- `[ ]` 阶段 6：清理聚合导出和全局状态。
+- `[x]` 阶段 6：清理聚合导出和全局状态。聚合导出已改为懒加载兼容层，主调用方改从具体模块导入。
 
 插件更新计划：
 
@@ -95,22 +95,26 @@ infrastructure/
 - `[ ]` P1：核心体验增强。过滤器链、翻译管线、内容处理服务尚未接入主流程。
 - `[ ]` P2：调度与可观测性。cron、PollRecord、轮询健康状态尚未开始。
 - `[ ]` P3：新功能。RSSHub Routes 知识库、Digest、AI 内容处理尚未开始。
-- `[ ]` P4：代码瘦身。legacy 同步路径、全局状态和 eager exports 尚未清理。
+- `[~]` P4：代码瘦身。legacy 同步 wrapper、全局 config 标记和 eager exports 已清理；旧兼容别名/未用 DTO 仍需后续按真实调用继续收敛。
 
 最近一次验证：
 
 ```bash
-UV_CACHE_DIR=.uv-cache uv run pytest tests -q
-# 164 passed
-
-UV_CACHE_DIR=.uv-cache uv run python tests/run_tests.py -v
+python tests/run_tests.py -v
 # 20 passed, 0 failed
 
-RUFF_CACHE_DIR=.ruff_cache UV_CACHE_DIR=.uv-cache uv run ruff check <本阶段触达文件>
-# All checks passed
-```
+UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run pytest --collect-only -q
+# 182 tests collected
 
-注意：`ruff check .` 当前仍会暴露一批既有 lint 问题，集中在未触达旧模块，例如 `pipeline/filters/base.py`、部分聚合 `__init__.py` 和旧 handler 文件。这些归入阶段 6/P4，不在阶段 3 的变更范围内。
+UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run ruff check .
+# All checks passed
+
+UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run ruff format --check .
+# 131 files already formatted
+
+UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run pytest -p no:cacheprovider tests/unit/application tests/unit/infrastructure/test_rss_scheduler.py tests/integration/test_plugin_integration.py -q
+# 58 passed, 182 warnings
+```
 
 ## 分阶段实施
 
@@ -223,7 +227,7 @@ src/application/ports/
 
 调整：
 
-- `[x]` `FeedSyncService` 已降级为薄 wrapper。
+- `[x]` `FeedSyncService` 旧 wrapper 已删除。
 - `[x]` `/refresh` 和 Web API refresh 已调用 `FeedPollingService`。
 - `[x]` `FeedPollingService` 已迁移文本/URL 多指纹去重、旧 hash 格式迁移、hash history 合并、bootstrap skip。
 - `[x]` `Feed.entry_hashes` 已兼容旧版扁平列表并规范化为 `list[list[str]]`。
@@ -284,7 +288,7 @@ await feed_polling_service.poll_feed(feed_id)
 
 ### 阶段 5：整理 Domain 和 DTO
 
-状态：`[ ]` 未开始。
+状态：`[x]` 已完成。
 
 目标：领域实体不承担展示/导出 read model 职责。
 
@@ -325,7 +329,7 @@ SubscriptionExportRecord(
 
 ### 阶段 6：清理聚合导出和全局状态
 
-状态：`[ ]` 未开始。
+状态：`[x]` 已完成。
 
 目标：减少浅 Module 和 import 副作用。
 
@@ -338,8 +342,8 @@ SubscriptionExportRecord(
 
 验证：
 
-- `[ ]` pytest collection 不需要大量 AstrBot mock 才能导入纯模块。
-- `[ ]` `ruff check .` 不出现 import 副作用、未使用导入和隐藏依赖。
+- `[x]` pytest collection 不需要大量 AstrBot mock 才能导入纯模块。
+- `[x]` `ruff check .` 不出现 import 副作用、未使用导入和隐藏依赖。
 
 ## 插件更新计划
 
@@ -563,13 +567,13 @@ pytest tests/integration/test_route_knowledge_sync.py -q
 
 ### P4：代码瘦身
 
-状态：`[ ]` 未开始。
+状态：`[~]` 已部分完成。
 
 目标：删除已经被新路径替代的旧模块。
 
-- `[x]` 降级 `FeedSyncService` 的旧 GUID 同步路径为 `FeedPollingService` wrapper。
-- `[ ]` 删除 legacy config 全局读取点，`get_config_manager()` 只保留在 infrastructure config Adapter 和过渡层。
-- `[ ]` 减少 `src/infrastructure/__init__.py`、`src/application/services/__init__.py` 的 eager exports。
+- `[x]` 删除 `FeedSyncService` 旧 wrapper，调用方已直接使用 `FeedPollingService`。
+- `[x]` 删除 legacy config 全局读取点，`get_config_manager()` 只保留在 infrastructure config Adapter 和过渡层。
+- `[x]` 减少 `src/infrastructure/__init__.py`、`src/application/services/__init__.py` 的 eager exports。
 - `[ ]` 根据真实调用情况清理旧兼容别名和未使用 DTO。
 
 ## `docs/llm` 删除建议

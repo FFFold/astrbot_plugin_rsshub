@@ -527,16 +527,20 @@ _config: RsshubPluginConfig | None = None
 
 
 def get_config() -> RsshubPluginConfig | None:
-    """获取插件配置（兼容旧调用方）"""
+    """获取插件配置（legacy 兼容入口）。
+
+    优先通过 `set_config()` 在启动阶段注入配置；只有过渡路径和少量
+    legacy 调用方才应直接读取这里的全局状态。
+    """
     return _config
 
 
 def get_config_manager() -> RsshubPluginConfig | None:
-    """获取插件配置管理器"""
+    """获取插件配置管理器（旧名称，保留兼容）。"""
     return _config
 
 
 def set_config(config: RsshubPluginConfig) -> None:
-    """设置插件配置"""
+    """设置插件配置（启动阶段注入）。"""
     global _config
     _config = config
