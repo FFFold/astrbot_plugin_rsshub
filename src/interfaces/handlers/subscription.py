@@ -107,7 +107,7 @@ async def handle_refresh(event: AstrMessageEvent, feed_id: int, deps: dict) -> d
     """刷新订阅"""
     if feed_id <= 0:
         return {"plain": "请提供 Feed ID\n用法: /refresh <feed_id>"}
-    result = await deps["sync_service"].sync_feed(feed_id)
+    result = await deps["polling_service"].poll_feed(feed_id)
     return {"plain": result.message}
 
 

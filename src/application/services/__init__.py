@@ -1,40 +1,41 @@
-"""应用服务包"""
+"""应用服务包的兼容导出层。
 
-from .feed_polling_service import FeedPollingResult, FeedPollingService, FeedReadResult
-from .feed_sync_service import FeedSyncService
-from .html_parser import HTMLCleaner, HTMLParser, clean_html, parse_html
-from .notification_dispatcher import NotificationDispatcher
-from .session_push_queue import (
-    PushJob,
-    PushJobResult,
-    SessionPushQueue,
-    StopPushJobResult,
-)
-from .subscription_serializer import (
-    ImportSubscriptionRecord,
-    SubscriptionImportPayload,
-    parse_subscriptions_toml,
-    serialize_subscriptions_to_toml,
-)
+优先从具体模块导入，避免包导入时拉起整片实现。
+"""
 
-__all__ = [
-    "FeedSyncService",
-    "FeedPollingService",
-    "FeedPollingResult",
-    "FeedReadResult",
-    "NotificationDispatcher",
-    "SessionPushQueue",
-    "PushJob",
-    "PushJobResult",
-    "StopPushJobResult",
-    # HTML Parser
-    "HTMLParser",
-    "HTMLCleaner",
-    "parse_html",
-    "clean_html",
-    # Subscription Serializer
-    "serialize_subscriptions_to_toml",
-    "parse_subscriptions_toml",
-    "SubscriptionImportPayload",
-    "ImportSubscriptionRecord",
-]
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORT_MAP = {
+    "FeedPollingService": "feed_polling_service",
+    "FeedPollingResult": "feed_polling_service",
+    "FeedReadResult": "feed_polling_service",
+    "NotificationDispatcher": "notification_dispatcher",
+    "SessionPushQueue": "session_push_queue",
+    "PushJob": "session_push_queue",
+    "PushJobResult": "session_push_queue",
+    "StopPushJobResult": "session_push_queue",
+    "HTMLParser": "html_parser",
+    "HTMLCleaner": "html_parser",
+    "parse_html": "html_parser",
+    "clean_html": "html_parser",
+    "serialize_subscriptions_to_toml": "subscription_serializer",
+    "parse_subscriptions_toml": "subscription_serializer",
+    "SubscriptionImportPayload": "subscription_serializer",
+    "ImportSubscriptionRecord": "subscription_serializer",
+}
+
+__all__ = sorted(_EXPORT_MAP)
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_MAP.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module = import_module(f".{module_name}", __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value

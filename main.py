@@ -30,11 +30,8 @@ from .src.application.queries import (
     GetSubscriptionsQuery,
     SearchFeedsQuery,
 )
-from .src.application.services import (
-    FeedPollingService,
-    FeedSyncService,
-    NotificationDispatcher,
-)
+from .src.application.services.feed_polling_service import FeedPollingService
+from .src.application.services.notification_dispatcher import NotificationDispatcher
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.application.settings import ApplicationSettings
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
@@ -81,7 +78,6 @@ class _Deps(TypedDict):
     get_subs_query: GetSubscriptionsQuery
     get_items_query: GetFeedItemsQuery
     search_feeds_query: SearchFeedsQuery
-    sync_service: FeedSyncService
     polling_service: FeedPollingService
     subscription_repo: SubscriptionRepository
 
@@ -213,15 +209,6 @@ class Main(Star):
             get_subs_query=GetSubscriptionsQuery(subscription_repo=sub_repo),
             get_items_query=GetFeedItemsQuery(feed_repo=feed_repo),
             search_feeds_query=SearchFeedsQuery(feed_repo=feed_repo),
-            sync_service=FeedSyncService(
-                feed_repo=feed_repo,
-                subscription_repo=sub_repo,
-                fetch_settings=self._app_settings.fetch,
-                rss_settings=self._app_settings.rss,
-                fetcher_factory=RSSFeedFetcher,
-                parser=RSSParser(),
-                polling_service=polling_service,
-            ),
             polling_service=polling_service,
             subscription_repo=sub_repo,
         )
@@ -266,7 +253,7 @@ class Main(Star):
             set_user_settings_cmd=self._deps["set_user_settings_cmd"],
             test_sub_cmd=self._deps["test_sub_cmd"],
             get_items_query=self._deps["get_items_query"],
-            sync_service=self._deps["sync_service"],
+            polling_service=self._deps["polling_service"],
             feed_repo=feed_repo,
             sub_repo=sub_repo,
             config=config,
