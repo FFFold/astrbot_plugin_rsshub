@@ -4,6 +4,7 @@
 请优先引用 ``from ...infrastructure.fetcher import ...``。
 """
 
+from ...application.dto import WebFeed
 from ..fetcher.rss import (
     Enclosure,
     EntryParsed,
@@ -12,7 +13,6 @@ from ..fetcher.rss import (
     RSSFeedFetcher,
     RSSParser,
 )
-from ...application.dto import WebFeed
 
 __all__ = [
     "WebFeed",

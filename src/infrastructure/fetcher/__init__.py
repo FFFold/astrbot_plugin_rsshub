@@ -3,28 +3,29 @@
 提供通用 HTTP 抓取和 RSS 数据源处理能力。
 """
 
-from ...application.dto import WebFeed
+from ...application.dto import WebFeed as WebFeed
 from .http import HttpFetcher
 from .rss import (
-    Enclosure,
-    EntryParsed,
-    FeedDiscoverer,
-    FeedDiscoveryResult,
-    RSSFeedFetcher,
-    RSSParser,
+    Enclosure as Enclosure,
 )
-
-# 向后兼容：保持旧路径引用有效
-from ..fetcher.rss import (
-    Enclosure as _EnclosureAlias,
-    EntryParsed as _EntryParsedAlias,
-    FeedDiscoverer as _FeedDiscovererAlias,
-    FeedDiscoveryResult as _FeedDiscoveryResultAlias,
-    RSSFeedFetcher as _RSSFeedFetcherAlias,
-    RSSParser as _RSSParserAlias,
+from .rss import (
+    EntryParsed as EntryParsed,
+)
+from .rss import (
+    FeedDiscoverer as FeedDiscoverer,
+)
+from .rss import (
+    FeedDiscoveryResult as FeedDiscoveryResult,
+)
+from .rss import (
+    RSSFeedFetcher as RSSFeedFetcher,
+)
+from .rss import (
+    RSSParser as RSSParser,
 )
 
 __all__ = [
+    "WebFeed",
     "HttpFetcher",
     "RSSFeedFetcher",
     "RSSParser",

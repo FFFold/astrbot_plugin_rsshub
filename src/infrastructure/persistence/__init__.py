@@ -7,8 +7,8 @@ from .database import DatabaseManager, RSSHubBaseModel, get_database
 from .feed_repository_impl import FeedRepositoryImpl, get_feed_repository
 from .models import (
     EFFECTIVE_OPTION_KEYS,
-    FeedORM,
     INHERIT_VALUE,
+    FeedORM,
     MigrationRecordORM,
     PushHistoryORM,
     SubORM,

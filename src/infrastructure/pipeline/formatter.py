@@ -6,8 +6,8 @@ senders 只管发送，排序逻辑全部集中在 Formatter 中。
 
 from __future__ import annotations
 
-from urllib.parse import unquote, urlparse
 from typing import TYPE_CHECKING
+from urllib.parse import unquote, urlparse
 
 if TYPE_CHECKING:
     from ..messaging.senders.types import PreparedMedia
@@ -22,7 +22,7 @@ class MessageFormatter:
 
     def build_chain(
         self,
-        prepared_media: list["PreparedMedia"] | None,
+        prepared_media: list[PreparedMedia] | None,
         text: str,
         failed_urls: list[str],
         platform: str = "",
@@ -57,7 +57,7 @@ class MessageFormatter:
 
     def _build_default_chain(
         self,
-        prepared_media: list["PreparedMedia"] | None,
+        prepared_media: list[PreparedMedia] | None,
         text: str,
         failed_urls: list[str],
     ) -> list:
@@ -103,7 +103,7 @@ class MessageFormatter:
 
     def _build_telegram_chain(
         self,
-        prepared_media: list["PreparedMedia"] | None,
+        prepared_media: list[PreparedMedia] | None,
         text: str,
         failed_urls: list[str],
     ) -> list:
