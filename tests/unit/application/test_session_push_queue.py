@@ -157,11 +157,15 @@ async def test_get_jobs_and_stop_by_job_id_for_queued_job():
         return "queued"
 
     running_task = asyncio.create_task(
-        queue.enqueue("session-1", long_running, feed_id=1, feed_title="Feed A", sub_id=11)
+        queue.enqueue(
+            "session-1", long_running, feed_id=1, feed_title="Feed A", sub_id=11
+        )
     )
     await running_started.wait()
     queued_task = asyncio.create_task(
-        queue.enqueue("session-1", queued_job, feed_id=2, feed_title="Feed B", sub_id=22)
+        queue.enqueue(
+            "session-1", queued_job, feed_id=2, feed_title="Feed B", sub_id=22
+        )
     )
     await asyncio.sleep(0)
 

@@ -86,7 +86,9 @@ def _get_export_dir() -> Path:
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
-        export_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
+        export_dir = (
+            Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
+        )
     except Exception:
         export_dir = Path("/tmp") / "astrbot_plugin_rsshub_exports"
     export_dir.mkdir(parents=True, exist_ok=True)

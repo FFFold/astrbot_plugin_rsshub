@@ -93,7 +93,13 @@ class SetUserSettingsCommand:
                 if val is None:
                     return "未设置"
                 if isinstance(val, bool) or val in (0, 1, -100, -1, -2):
-                    val_map = {0: "禁用", 1: "启用", -100: "继承", -1: "禁用", -2: "不显示"}
+                    val_map = {
+                        0: "禁用",
+                        1: "启用",
+                        -100: "继承",
+                        -1: "禁用",
+                        -2: "不显示",
+                    }
                     return val_map.get(val, str(val))
                 return str(val)
 
@@ -110,7 +116,9 @@ class SetUserSettingsCommand:
             if err:
                 return err
         else:
-            return CommandResult(success=False, message="请提供 key/value 或 settings 字典")
+            return CommandResult(
+                success=False, message="请提供 key/value 或 settings 字典"
+            )
 
         await self._user_repo.save(user)
         return CommandResult(

@@ -154,7 +154,9 @@ async def handle_refresh(event: AstrMessageEvent, feed_id: int, deps: dict) -> d
     return {"plain": result.message}
 
 
-def handle_rss_stop(event: AstrMessageEvent, queue: SessionPushQueue, args: str) -> dict:
+def handle_rss_stop(
+    event: AstrMessageEvent, queue: SessionPushQueue, args: str
+) -> dict:
     """停止当前会话 RSS 推送任务（运行中/排队中）。"""
     current_session = event.unified_msg_origin
     target = (args or "").strip()
@@ -202,9 +204,7 @@ def handle_sub_status(event: AstrMessageEvent, queue: SessionPushQueue) -> dict:
             f"{job.feed_title or '(未知Feed)'}"
             f" | feed_id={job.feed_id if job.feed_id is not None else '未知'}"
         )
-        lines.append(
-            f"{idx}. {job.status} | job_id={job.job_id} | {feed_label}"
-        )
+        lines.append(f"{idx}. {job.status} | job_id={job.job_id} | {feed_label}")
     lines.append("可用: /sub_stop <job_id|feed_id|all>")
     return {"plain": "\n".join(lines)}
 

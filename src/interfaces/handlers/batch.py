@@ -83,7 +83,6 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         return {"plain": f"当前{scope_desc}没有订阅"}
 
     # 导出备份
-    from pathlib import Path
 
     export_result = await deps["export_cmd"].execute(user_id=user_id, is_admin=is_admin)
     result: dict = {}
@@ -129,7 +128,9 @@ def _get_export_dir() -> Path:
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 
-        export_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
+        export_dir = (
+            Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
+        )
     except Exception:
         export_dir = Path("/tmp") / "astrbot_plugin_rsshub_exports"
     export_dir.mkdir(parents=True, exist_ok=True)

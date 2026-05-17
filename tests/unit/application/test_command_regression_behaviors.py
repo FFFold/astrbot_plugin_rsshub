@@ -73,7 +73,9 @@ async def test_unsubscribe_by_url_checks_and_deletes():
         return_value=Feed(id=10, link="https://a.com/rss", title="a")
     )
     sub_repo.get_by_user = AsyncMock(
-        return_value=[Subscription(id=1, user_id="u1", feed_id=10, target_session="sess")]
+        return_value=[
+            Subscription(id=1, user_id="u1", feed_id=10, target_session="sess")
+        ]
     )
     sub_repo.delete = AsyncMock()
 

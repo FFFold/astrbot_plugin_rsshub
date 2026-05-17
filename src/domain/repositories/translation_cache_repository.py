@@ -36,7 +36,9 @@ class TranslationCacheRepository(Protocol):
         """
         ...
 
-    async def get_all(self, limit: int = 100, offset: int = 0) -> list[TranslationCache]:
+    async def get_all(
+        self, limit: int = 100, offset: int = 0
+    ) -> list[TranslationCache]:
         """获取所有翻译缓存
 
         Args:

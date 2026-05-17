@@ -56,7 +56,9 @@ class ExportSubscriptionsCommand:
         """
         try:
             if scope == "all" and not is_admin:
-                return CommandResult(success=False, message="导出所有订阅需要管理员权限")
+                return CommandResult(
+                    success=False, message="导出所有订阅需要管理员权限"
+                )
             records = await self._export_query.execute(
                 user_id,
                 scope=scope,

@@ -155,11 +155,7 @@ def _group_commands(cmds: list[CommandDoc]) -> list[dict]:
             groups["管理员"].append(c)
         else:
             groups["订阅管理"].append(c)
-    return [
-        {"title": k, "commands": v}
-        for k, v in groups.items()
-        if v
-    ]
+    return [{"title": k, "commands": v} for k, v in groups.items() if v]
 
 
 def render_html(commands: list[CommandDoc], output_html: Path) -> None:
@@ -191,7 +187,9 @@ def render_png_with_playwright(html_path: Path, output_png: Path) -> bool:
             height = page.evaluate(
                 "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
             )
-            page.set_viewport_size({"width": 1360, "height": max(1000, int(height) + 20)})
+            page.set_viewport_size(
+                {"width": 1360, "height": max(1000, int(height) + 20)}
+            )
             page.screenshot(path=str(output_png), full_page=True)
             browser.close()
         return True
@@ -238,7 +236,9 @@ def render_png_fallback(commands: list[CommandDoc], output_png: Path) -> None:
     font_text = _font(18)
     font_meta = _font(16)
 
-    draw.rectangle((20, 20, width - 20, total_h - 20), fill="#ffffff", outline="#dce6f2", width=2)
+    draw.rectangle(
+        (20, 20, width - 20, total_h - 20), fill="#ffffff", outline="#dce6f2", width=2
+    )
     draw.text((50, 45), "RSSHub 命令帮助", font=font_title, fill="#10243d")
     draw.text(
         (50, 105),

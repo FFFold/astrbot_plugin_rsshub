@@ -27,7 +27,9 @@ from .src.interfaces import handlers as _h
 
 logger = get_logger()
 _HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
-_HELP_GENERATOR = Path(__file__).resolve().parent / "scripts" / "generate_rsshelp_image.py"
+_HELP_GENERATOR = (
+    Path(__file__).resolve().parent / "scripts" / "generate_rsshelp_image.py"
+)
 
 
 class RSSHubPlugin(Star):
@@ -186,7 +188,9 @@ class RSSHubPlugin(Star):
         pass
 
     @sub_session_group.command("set", alias={"设置"})
-    async def sub_set_session(self, event: AstrMessageEvent, key: str = "", value: str = ""):
+    async def sub_set_session(
+        self, event: AstrMessageEvent, key: str = "", value: str = ""
+    ):
         """设置当前会话默认配置。
 
         用法:
