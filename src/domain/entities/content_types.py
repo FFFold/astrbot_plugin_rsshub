@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Union
 
 from pydantic import BaseModel, Field
 
@@ -87,15 +86,15 @@ class MentionContent(ContentNode):
 
 
 # 内容节点联合类型
-ContentNodeType = Union[
-    TextContent,
-    LinkContent,
-    ImageContent,
-    VideoContent,
-    AudioContent,
-    FileContent,
-    MentionContent,
-]
+ContentNodeType = (
+    TextContent
+    | LinkContent
+    | ImageContent
+    | VideoContent
+    | AudioContent
+    | FileContent
+    | MentionContent
+)
 
 
 class HtmlNode(BaseModel):

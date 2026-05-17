@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from astrbot.api.event import AstrMessageEvent
 
+from ...application.services.session_push_queue import SessionPushQueue
+
 
 async def handle_sub(event: AstrMessageEvent, url: str, deps: dict) -> dict:
     """订阅 RSS 源"""
@@ -105,8 +107,20 @@ async def handle_refresh(event: AstrMessageEvent, feed_id: int, deps: dict) -> d
     """刷新订阅"""
     if feed_id <= 0:
         return {"plain": "请提供 Feed ID\n用法: /refresh <feed_id>"}
-    await deps["sync_service"].sync_feed(feed_id)
-    return {"plain": f"Feed {feed_id} 刷新完成"}
+    result = await deps["sync_service"].sync_feed(feed_id)
+    return {"plain": result.message}
+
+
+def handle_rss_stop(event: AstrMessageEvent, queue: SessionPushQueue) -> dict:
+    """停止当前会话正在运行的 RSS 推送任务"""
+    current_session = event.unified_msg_origin
+    result = queue.stop_current(current_session)
+    if result.stopped:
+        queued = (
+            f"，队列中还有 {result.queued_count} 个任务" if result.queued_count else ""
+        )
+        return {"plain": f"{result.message}{queued}"}
+    return {"plain": result.message}
 
 
 async def handle_sub_state(

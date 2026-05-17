@@ -21,7 +21,7 @@ class BaseTranslator(ABC):
     NAME: str = ""
     LANG_MAP: dict[str, str] = {}
 
-    def __init__(self, session: "aiohttp.ClientSession | None" = None):
+    def __init__(self, session: aiohttp.ClientSession | None = None):
         self._session = session
 
     @abstractmethod

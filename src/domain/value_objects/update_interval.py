@@ -7,7 +7,6 @@
 
 from pydantic import BaseModel, Field
 
-
 MIN_INTERVAL_MINUTES = 1
 MAX_INTERVAL_MINUTES = 1440  # 24小时
 

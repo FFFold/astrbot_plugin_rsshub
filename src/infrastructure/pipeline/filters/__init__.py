@@ -125,11 +125,11 @@ class FilterChain:
 
 
 # 延迟导入避免循环依赖；具体过滤器实现在 base.py 中。
-from .base import (  # noqa: E402
-    KeywordFilter,
-    LLMEnrichFilter,
-    LLMFilter,
-    PassThroughFilter,
-    TranslationFilter,
-    build_default_chain,
+from .base import (  # noqa: E402,I001
+    KeywordFilter as KeywordFilter,
+    LLMEnrichFilter as LLMEnrichFilter,
+    LLMFilter as LLMFilter,
+    PassThroughFilter as PassThroughFilter,
+    TranslationFilter as TranslationFilter,
+    build_default_chain as build_default_chain,
 )

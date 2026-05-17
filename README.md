@@ -239,6 +239,7 @@
 | `/sub_import [文件路径]`                   | `/导入订阅` | 从 TOML 文件导入订阅；也可直接上传 TOML 文件进行导入 |
 | `/activate_subs`                       | `/enable_subs`, `/启用全部订阅` | 启用当前会话所有订阅 |
 | `/deactivate_subs`                     | `/disable_subs`, `/禁用全部订阅` | 禁用当前会话所有订阅 |
+| `/rss_stop`                            | `/停止RSS`, `/停止推送` | 停止当前会话正在运行的 RSS 推送任务；同一会话的推送任务会自动排队串行执行 |
 
 **布尔值格式支持**：所有命令中的布尔值参数支持以下格式：`true`/`false`, `yes`/`no`, `y`/`n`, `1`/`0`, `on`/`off`, `enable`/`disable`
 

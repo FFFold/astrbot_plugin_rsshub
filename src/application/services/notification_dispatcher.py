@@ -7,11 +7,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...infrastructure.utils import get_logger
 from ..ports import MessageContext, MessageSenderProvider, SendRequest
+from .session_push_queue import PushJob, SessionPushQueue
 
 logger = get_logger()
 
@@ -51,10 +54,12 @@ class NotificationDispatcher:
         subscription_repo: SubscriptionRepository,
         push_history_repo: PushHistoryRepository,
         sender_provider: MessageSenderProvider,
+        push_job_queue: SessionPushQueue | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._push_history_repo = push_history_repo
         self._sender_provider = sender_provider
+        self._push_job_queue = push_job_queue or SessionPushQueue()
 
     async def dispatch_to_feed_subscribers(
         self,
@@ -66,6 +71,7 @@ class NotificationDispatcher:
         feed_link: str = "",
         media_urls: list[str] | None = None,
         entry_guid: str | None = None,
+        subscription_ids: list[int] | None = None,
     ) -> dict[str, int]:
         """
         将条目分发给 Feed 的所有订阅者
@@ -79,6 +85,7 @@ class NotificationDispatcher:
             feed_link: Feed 链接
             media_urls: 媒体 URL 列表
             entry_guid: 条目 GUID
+            subscription_ids: 限定分发的订阅 ID；为空时分发到所有活跃订阅
 
         Returns:
             统计信息字典 {success: x, failed: y, pending: z}
@@ -87,8 +94,18 @@ class NotificationDispatcher:
 
         # 1. 获取 Feed 的所有启用订阅
         subscriptions = await self._subscription_repo.get_active_by_feed_id(feed_id)
+        if subscription_ids is not None:
+            wanted = set(subscription_ids)
+            subscriptions = [sub for sub in subscriptions if sub.id in wanted]
         if not subscriptions:
-            logger.debug("Feed %s 没有活跃的订阅", feed_id)
+            if subscription_ids is None:
+                logger.debug("Feed %s 没有活跃的订阅", feed_id)
+            else:
+                logger.debug(
+                    "Feed %s 没有匹配的活跃订阅: %s",
+                    feed_id,
+                    subscription_ids,
+                )
             return stats
 
         logger.info(
@@ -145,17 +162,21 @@ class NotificationDispatcher:
                 history = await self._push_history_repo.save(history)
 
                 # 3. 调用消息发送器发送消息
-                result = await self._send_notification(
+                result = await self.send_to_session(
                     subscription=sub,
                     content=content,
                     media_urls=media_urls,
-                    history=history,
+                    job_description=f"feed={feed_id}, sub={sub.id}",
                 )
 
                 # 4. 更新推送状态
                 if result["ok"]:
                     history.mark_success()
                     stats["success"] += 1
+                elif result.get("cancelled"):
+                    history.mark_failed(result.get("error", "Cancelled by /rss_stop"))
+                    history.max_retries = 0
+                    stats["failed"] += 1
                 else:
                     # 首次失败不增加重试计数
                     history.record_first_failure(result.get("error", "Unknown error"))
@@ -183,13 +204,13 @@ class NotificationDispatcher:
         )
         return stats
 
-    async def _send_notification(
+    async def send_to_session(
         self,
         subscription,
         content: str,
         media_urls: list[str] | None,
-        history: PushHistory,
-    ) -> dict:
+        job_description: str = "",
+    ) -> dict[str, Any]:
         """
         发送通知到指定订阅
 
@@ -197,7 +218,7 @@ class NotificationDispatcher:
             subscription: 订阅对象
             content: 消息内容
             media_urls: 媒体 URL 列表
-            history: 推送历史记录
+            job_description: 任务描述，用于队列和日志
 
         Returns:
             发送结果 {"ok": bool, "error": str}
@@ -217,18 +238,62 @@ class NotificationDispatcher:
             if media_urls:
                 media_items = [("image", url) for url in media_urls]
 
-            result = await sender.send_to_user(
-                SendRequest(
-                    session_id=target_session,
-                    message=content,
-                    media=media_items if media_items else None,
-                ),
-                context=MessageContext(platform_name=subscription.platform_name or ""),
+            async def _send(job: PushJob):
+                logger.debug(
+                    "开始 RSS 推送任务: job_id=%s, session=%s, sub=%s",
+                    job.job_id,
+                    target_session,
+                    subscription.id,
+                )
+                return await sender.send_to_user(
+                    SendRequest(
+                        session_id=target_session,
+                        message=content,
+                        media=media_items if media_items else None,
+                    ),
+                    context=MessageContext(
+                        platform_name=subscription.platform_name or ""
+                    ),
+                )
+
+            job_result = await self._push_job_queue.enqueue(
+                target_session,
+                _send,
+                description=job_description,
             )
 
+            if job_result.cancelled:
+                logger.info(
+                    "RSS 推送任务已取消: job_id=%s, session=%s, sub=%s",
+                    job_result.job_id,
+                    target_session,
+                    subscription.id,
+                )
+                return {
+                    "ok": False,
+                    "cancelled": True,
+                    "error": f"Cancelled by /rss_stop (job_id={job_result.job_id})",
+                    "job_id": job_result.job_id,
+                }
+
+            if not job_result.ok or job_result.value is None:
+                return {
+                    "ok": False,
+                    "error": job_result.error or "Push job failed",
+                    "job_id": job_result.job_id,
+                }
+
+            result = job_result.value
+            logger.debug(
+                "RSS 推送任务完成: job_id=%s, session=%s, ok=%s",
+                job_result.job_id,
+                target_session,
+                result.ok,
+            )
             return {
                 "ok": result.ok,
                 "error": result.detail if not result.ok else "",
+                "job_id": job_result.job_id,
             }
 
         except Exception as e:
@@ -269,17 +334,21 @@ class NotificationDispatcher:
                     continue
 
                 # 重新发送
-                result = await self._send_notification(
+                result = await self.send_to_session(
                     subscription=sub,
                     content=history.content,
                     media_urls=None,  # 重试时不重新下载媒体
-                    history=history,
+                    job_description=f"retry history={history.id}",
                 )
 
                 error_msg = result.get("error", "")
                 if result["ok"]:
                     history.mark_success()
                     stats["success"] += 1
+                elif result.get("cancelled"):
+                    history.mark_failed(result.get("error", "Cancelled by /rss_stop"))
+                    history.max_retries = 0
+                    stats["failed"] += 1
                 elif is_unrecoverable_error(error_msg):
                     # 不可恢复错误：直接标记为最终失败，不再重试
                     history.record_first_failure(error_msg)

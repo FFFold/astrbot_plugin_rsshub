@@ -4,8 +4,8 @@
 """
 
 from .config_manager import (
-    BasicConfig,
     BaiduTranslateConfig,
+    BasicConfig,
     FFmpegConfig,
     GlobalConfig,
     GoogleTranslateConfig,

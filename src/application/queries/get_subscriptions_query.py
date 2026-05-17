@@ -57,9 +57,10 @@ class GetSubscriptionsQuery:
             SubscriptionsResult: 查询结果
         """
         # 需要从 persistence 层获取订阅并加载关联的 Feed
-        from ...infrastructure.persistence.database import get_database
-        from ...infrastructure.persistence.models import SubORM, FeedORM
         from sqlmodel import select
+
+        from ...infrastructure.persistence.database import get_database
+        from ...infrastructure.persistence.models import FeedORM, SubORM
 
         db = get_database()
         async with db.get_session() as session:

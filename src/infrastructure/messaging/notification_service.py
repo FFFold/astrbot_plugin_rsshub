@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from ...application.ports import MessageContext, MessageSenderProvider, SendRequest
+from ...application.ports import MessageSenderProvider
 from ...application.services.notification_dispatcher import NotificationDispatcher
+from ...application.services.session_push_queue import SessionPushQueue
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..utils import get_logger
@@ -34,12 +35,15 @@ class NotificationServiceImpl:
         subscription_repo: SubscriptionRepository,
         push_history_repo: PushHistoryRepository,
         sender_provider: MessageSenderProvider | None = None,
+        push_job_queue: SessionPushQueue | None = None,
     ):
         self._sender_provider = sender_provider or InfrastructureMessageSenderProvider()
+        self._push_job_queue = push_job_queue or SessionPushQueue()
         self._dispatcher = NotificationDispatcher(
             subscription_repo=subscription_repo,
             push_history_repo=push_history_repo,
             sender_provider=self._sender_provider,
+            push_job_queue=self._push_job_queue,
         )
 
     async def notify_feed_update(
@@ -129,14 +133,11 @@ class NotificationServiceImpl:
             if not sub.target_session:
                 continue
 
-            sender = self._sender_provider.get(sub.platform_name)
-            context = MessageContext(platform_name=sub.platform_name or "")
-            await sender.send_to_user(
-                SendRequest(
-                    session_id=sub.target_session,
-                    message=content,
-                ),
-                context=context,
+            await self._dispatcher.send_to_session(
+                subscription=sub,
+                content=content,
+                media_urls=None,
+                job_description=f"feed-error feed={feed.id}, sub={sub.id}",
             )
 
 
@@ -147,6 +148,7 @@ def get_notification_service(
     subscription_repo: SubscriptionRepository | None = None,
     push_history_repo: PushHistoryRepository | None = None,
     sender_provider: MessageSenderProvider | None = None,
+    push_job_queue: SessionPushQueue | None = None,
 ) -> NotificationServiceImpl:
     """获取通知服务实例
 
@@ -167,6 +169,7 @@ def get_notification_service(
             subscription_repo=subscription_repo,
             push_history_repo=push_history_repo,
             sender_provider=sender_provider,
+            push_job_queue=push_job_queue,
         )
     return _notification_service_instance
 

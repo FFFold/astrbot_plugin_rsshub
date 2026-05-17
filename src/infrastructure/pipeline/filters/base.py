@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ...utils import get_logger
 from . import BaseFilter, FilterContext, FilterResult
+
+if TYPE_CHECKING:
+    from . import FilterChain
 
 logger = get_logger()
 

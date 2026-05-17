@@ -10,10 +10,11 @@ import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
-from quart import jsonify, request, Response
+from quart import Response, jsonify, request
 
 if TYPE_CHECKING:
     from astrbot.api.star import Context
+
     from ..application.commands.batch_activate_cmd import BatchActivateCommand
     from ..application.commands.batch_deactivate_cmd import BatchDeactivateCommand
     from ..application.commands.batch_unsubscribe_cmd import BatchUnsubscribeCommand
@@ -28,9 +29,9 @@ if TYPE_CHECKING:
     from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
     from ..application.queries.get_feed_items_query import GetFeedItemsQuery
     from ..application.services import FeedSyncService
-    from ..infrastructure.config.config_manager import RsshubPluginConfig
     from ..domain.repositories.feed_repository import FeedRepository
     from ..domain.repositories.subscription_repository import SubscriptionRepository
+    from ..infrastructure.config.config_manager import RsshubPluginConfig
 
 PLUGIN_NAME = "astrbot_plugin_rsshub"
 
@@ -335,10 +336,22 @@ class WebApiHandler:
             return jsonify({"ok": False, "error": "feed_id 不能为空"})
 
         try:
-            await self._sync_service.sync_feed(int(feed_id))
+            result = await self._sync_service.sync_feed(int(feed_id))
             self._bump_counter()
             asyncio.create_task(self._broadcast({"event": "data_changed"}))
-            return jsonify({"ok": True, "message": f"Feed {feed_id} 刷新完成"})
+            return jsonify(
+                {
+                    "ok": result.success,
+                    "message": result.message,
+                    "status": result.status,
+                    "feed_id": result.feed_id,
+                    "total_entries": result.total_entries,
+                    "new_entries": result.new_entries,
+                    "dispatched": result.dispatched,
+                    "bootstrap_skipped": result.bootstrap_skipped,
+                    "error": result.error,
+                }
+            )
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)})
 
