@@ -252,7 +252,9 @@ class TestExportCommand:
         assert feed_repo.calls == [[1]]
 
     @pytest.mark.asyncio
-    async def test_export_uses_bulk_feed_lookup_for_multiple_subscriptions(self) -> None:
+    async def test_export_uses_bulk_feed_lookup_for_multiple_subscriptions(
+        self,
+    ) -> None:
         subscriptions = [
             Subscription(user_id="user-001", feed_id=1, title="First"),
             Subscription(user_id="user-001", feed_id=2, title="Second"),
