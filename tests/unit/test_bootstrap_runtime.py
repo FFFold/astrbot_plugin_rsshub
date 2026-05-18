@@ -34,7 +34,13 @@ async def test_create_runtime_does_not_start_scheduler_when_register_web_api_fai
     monkeypatch.setattr(
         bootstrap,
         "_init_config",
-        lambda _cfg: (MagicMock(), MagicMock(scheduler=MagicMock(default_interval=10, history_retention_days=30), sender_strategies=MagicMock())),
+        lambda _cfg: (
+            MagicMock(),
+            MagicMock(
+                scheduler=MagicMock(default_interval=10, history_retention_days=30),
+                sender_strategies=MagicMock(),
+            ),
+        ),
     )
     monkeypatch.setattr(bootstrap, "_init_database", AsyncMock())
     monkeypatch.setattr(

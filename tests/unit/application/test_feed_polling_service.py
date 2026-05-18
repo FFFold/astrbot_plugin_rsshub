@@ -292,9 +292,10 @@ async def test_poll_feed_applies_content_processor_before_dispatch():
     call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
     assert call_kwargs["entry_title"] == "Processed"
     assert "Processed body" in call_kwargs["content"]
-    assert "via https://example.com/1 | Timeline (author: Author)" in call_kwargs[
-        "content"
-    ]
+    assert (
+        "via https://example.com/1 | Timeline (author: Author)"
+        in call_kwargs["content"]
+    )
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
 
 

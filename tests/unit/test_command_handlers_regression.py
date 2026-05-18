@@ -132,7 +132,9 @@ async def test_handle_export_onebot_fallback_inline(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_handle_export_onebot_send_file_when_callback_available(monkeypatch, tmp_path):
+async def test_handle_export_onebot_send_file_when_callback_available(
+    monkeypatch, tmp_path
+):
     event = MagicMock()
     event.get_sender_id.return_value = "u1"
     event.unified_msg_origin = "sess"

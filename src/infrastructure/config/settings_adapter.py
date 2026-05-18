@@ -48,7 +48,9 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     sender_cfg = _get_value(config, "sender_strategies")
 
     basic = BasicSettings(
-        proxy=str(_get_value(basic_cfg, "proxy", _get_value(config, "proxy", "")) or ""),
+        proxy=str(
+            _get_value(basic_cfg, "proxy", _get_value(config, "proxy", "")) or ""
+        ),
         timeout=int(
             _get_value(basic_cfg, "timeout", _get_value(config, "timeout", 30)) or 30
         ),
@@ -147,7 +149,9 @@ def build_application_settings(config: Any) -> ApplicationSettings:
                 _get_value(global_cfg, "display_author", "自动") or "自动"
             ),
             display_via=str(_get_value(global_cfg, "display_via", "自动") or "自动"),
-            display_title=str(_get_value(global_cfg, "display_title", "自动") or "自动"),
+            display_title=str(
+                _get_value(global_cfg, "display_title", "自动") or "自动"
+            ),
             display_entry_tags=bool(
                 _get_value(global_cfg, "display_entry_tags", False)
             ),

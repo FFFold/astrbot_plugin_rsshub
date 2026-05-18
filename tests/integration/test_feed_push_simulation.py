@@ -43,9 +43,7 @@ class TestFeedDedupSimulation:
 
         later_entries = rounds[1] + rounds[2]
         new_guids = [
-            entry.guid
-            for entry in later_entries
-            if not feed.has_entry(entry.guid)
+            entry.guid for entry in later_entries if not feed.has_entry(entry.guid)
         ]
 
         assert new_guids == [entry.guid for entry in later_entries]
@@ -78,9 +76,7 @@ class TestFeedDedupSimulation:
             entry_hashes=[[entry.guid] for entry in all_entries],
         )
 
-        new_entries = [
-            entry for entry in all_entries if not feed.has_entry(entry.guid)
-        ]
+        new_entries = [entry for entry in all_entries if not feed.has_entry(entry.guid)]
 
         assert new_entries == []
 

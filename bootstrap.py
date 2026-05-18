@@ -260,6 +260,8 @@ def _build_dependencies(
         subscription_repo=sub_repo,
     )
     return deps, notification_dispatcher
+
+
 def _build_llm_generate(
     context: Context | None,
     app_settings: ApplicationSettings,

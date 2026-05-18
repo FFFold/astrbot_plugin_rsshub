@@ -10,12 +10,14 @@ from urllib.parse import parse_qsl, urlencode, urljoin
 try:
     from astrbot.core.agent.tool import FunctionTool
 except Exception:  # pragma: no cover - test/mocking fallback
+
     @py_dataclass
     class FunctionTool:  # type: ignore[no-redef]
         name: str
         description: str
         parameters: dict
         handler: Any = None
+
 
 if TYPE_CHECKING:
     from astrbot.core.agent.run_context import ContextWrapper

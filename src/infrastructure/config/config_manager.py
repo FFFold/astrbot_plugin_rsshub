@@ -163,8 +163,12 @@ class FFmpegConfig(BaseModel):
 class PipelineFeatureConfig(BaseModel):
     """内容处理管线配置"""
 
-    keyword_blacklist: list[str] = Field(default_factory=list, description="关键词黑名单")
-    keyword_whitelist: list[str] = Field(default_factory=list, description="关键词白名单")
+    keyword_blacklist: list[str] = Field(
+        default_factory=list, description="关键词黑名单"
+    )
+    keyword_whitelist: list[str] = Field(
+        default_factory=list, description="关键词白名单"
+    )
     min_content_length: int = Field(default=0, description="最小正文长度")
     min_media_count: int = Field(default=0, description="最少媒体数量")
     ai_filter_enabled: bool = Field(default=False, description="启用 AI 筛选")
@@ -328,6 +332,7 @@ class RsshubPluginConfig(BaseModel):
     def download_image_before_send(self) -> bool:
         """向后兼容旧名称"""
         return self.basic_config.download_media_before_send
+
 
 _config: RsshubPluginConfig | None = None
 

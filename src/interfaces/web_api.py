@@ -565,9 +565,8 @@ class WebApiHandler:
 
         pipeline_updates = data.get("pipeline") or {}
         subscription_updates = data.get("subscription_defaults") or {}
-        if (
-            not isinstance(pipeline_updates, dict)
-            or not isinstance(subscription_updates, dict)
+        if not isinstance(pipeline_updates, dict) or not isinstance(
+            subscription_updates, dict
         ):
             return jsonify({"ok": False, "error": "配置格式无效"})
 

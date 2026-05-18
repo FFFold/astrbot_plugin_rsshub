@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from astrbot_plugin_rsshub.src.infrastructure.persistence.database import DatabaseManager
+from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
+    DatabaseManager,
+)
 
 
 def test_database_is_initialized_requires_session_maker():
