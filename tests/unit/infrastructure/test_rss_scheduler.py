@@ -56,11 +56,26 @@ class _FakeDatabase:
     def __init__(self, subs: list[SubORM]):
         self.subs = subs
         self.sessions: list[_FakeSession] = []
+        self.is_initialized = True
 
     def get_session(self):
         session = _FakeSession(self.subs)
         self.sessions.append(session)
         return session
+
+
+class _UninitializedDatabase:
+    is_initialized = False
+
+    def get_session(self):
+        raise RuntimeError("数据库未初始化，请先调用 init()")
+
+
+class _BrokenInitializedDatabase:
+    is_initialized = True
+
+    def get_session(self):
+        raise RuntimeError("数据库未初始化，请先调用 init()")
 
 
 def _sub(sub_id: int, feed_id: int, interval: int | None) -> SubORM:
@@ -178,3 +193,67 @@ async def test_scheduler_does_not_poll_when_no_subscriptions_are_due(monkeypatch
     await scheduler.run_periodic_task()
 
     polling_service.poll_feed_group.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_database_not_initialized(monkeypatch):
+    fake_db = _UninitializedDatabase()
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.schedule.rss_scheduler.get_database",
+        lambda: fake_db,
+    )
+
+    polling_service = AsyncMock()
+    scheduler = RSSScheduler(feed_polling_service=polling_service, default_interval=10)
+
+    await scheduler.run_periodic_task()
+
+    polling_service.poll_feed_group.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_when_session_factory_is_missing(monkeypatch):
+    fake_db = _BrokenInitializedDatabase()
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.schedule.rss_scheduler.get_database",
+        lambda: fake_db,
+    )
+
+    polling_service = AsyncMock()
+    scheduler = RSSScheduler(feed_polling_service=polling_service, default_interval=10)
+
+    await scheduler.run_periodic_task()
+
+    polling_service.poll_feed_group.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_retry_when_database_not_initialized():
+    dispatcher = AsyncMock()
+    dispatcher.dispatch_pending_retries.side_effect = RuntimeError(
+        "数据库未初始化，请先调用 init()"
+    )
+    scheduler = RSSScheduler(
+        feed_polling_service=AsyncMock(),
+        notification_dispatcher=dispatcher,
+    )
+
+    await scheduler._dispatch_pending_retries()
+
+    dispatcher.dispatch_pending_retries.assert_awaited_once_with(limit=50)
+
+
+@pytest.mark.asyncio
+async def test_scheduler_skips_cleanup_when_database_not_initialized():
+    dispatcher = AsyncMock()
+    dispatcher.cleanup_old_records.side_effect = RuntimeError(
+        "数据库未初始化，请先调用 init()"
+    )
+    scheduler = RSSScheduler(
+        feed_polling_service=AsyncMock(),
+        notification_dispatcher=dispatcher,
+    )
+
+    await scheduler._cleanup_old_records()
+
+    dispatcher.cleanup_old_records.assert_awaited_once()

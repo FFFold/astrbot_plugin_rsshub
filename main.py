@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover - fallback for test/mocking env
 from astrbot.api.message_components import Image
 
 from .bootstrap import PluginDeps, PluginRuntime, create_plugin_runtime
+from .src.application.llmtools import LLM_TOOL_NAMES, build_llm_tools
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.application.settings import ApplicationSettings
 from .src.infrastructure.schedule import RSSScheduler
@@ -44,6 +45,7 @@ class RSSHubPlugin(Star):
         self._push_job_queue = SessionPushQueue()
         self._notification_dispatcher = None
         self._runtime: PluginRuntime | None = None
+        self._registered_llm_tools: list[str] = []
 
     async def initialize(self):
         try:
@@ -60,16 +62,37 @@ class RSSHubPlugin(Star):
             self._app_settings = runtime.app_settings
             self._push_job_queue = runtime.push_job_queue
             self._notification_dispatcher = runtime.notification_dispatcher
+            self.context.add_llm_tools(
+                *build_llm_tools(
+                    deps=self._deps,
+                    plugin_context=self.context,
+                )
+            )
+            self._registered_llm_tools = list(LLM_TOOL_NAMES)
         except Exception as e:
             logger.exception("RSSHub 插件初始化失败: %s", e)
 
     async def terminate(self):
         logger.info("正在停止 RSSHub 插件...")
+        self._unregister_llm_tools()
         if self._runtime:
             await self._runtime.stop()
         else:
             await self._push_job_queue.stop_all()
         logger.info("RSSHub 插件已停止")
+
+    def _unregister_llm_tools(self) -> None:
+        if not self._registered_llm_tools:
+            return
+        for tool_name in self._registered_llm_tools:
+            try:
+                self.context.unregister_llm_tool(tool_name)
+            except Exception:
+                try:
+                    self.context.get_llm_tool_manager().remove_func(tool_name)
+                except Exception:
+                    logger.warning("卸载 LLM 工具失败: %s", tool_name)
+        self._registered_llm_tools = []
 
     # ── 命令方法（装饰器留在插件入口类，委托到纯函数） ───────────────────────
 

@@ -7,10 +7,10 @@ from .batch import (
     handle_unsub_all,
 )
 from .config import (
-    handle_sub_profile_get,
-    handle_sub_profile_set,
     handle_sub_get_session,
     handle_sub_get_user,
+    handle_sub_profile_get,
+    handle_sub_profile_set,
     handle_sub_set,
     handle_sub_set_session,
     handle_sub_set_user,

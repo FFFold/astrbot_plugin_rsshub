@@ -74,12 +74,12 @@
 - 🎨 **富媒体支持** - 基于 HTML 结构解析内容（链接、图片、音频、视频、文件、At 组件等）
 - ⚙️ **灵活配置** - 订阅级与用户默认级的消息格式选项，会话级默认配置（KV）
 - 🤖 **LLM 工具调用** - 支持 AI 订阅、查询、管理等操作
-- 🌐 **WebUI 管理** - 可选 aiohttp WebUI 管理界面，可视化操作订阅
+- 🌐 **管理面板** - 基于 AstrBot Plugin Pages 的可视化管理界面
 - 📦 **数据导入导出** - 支持 TOML 格式备份和恢复订阅数据
 - 🔄 **失败队列** - 平台连接失败时自动进入队列，恢复后重试推送
 - 🤝 **多 BOT 支持** - 单会话多 BOT 去重
-- 🔍 **RSSHub 集成** - 内置 RSSHub 路由检索，快速构建订阅链接
-- 🌐 **自动翻译** - 支持 Google(免费)、百度翻译，自动翻译 RSS 条目内容
+- 🔍 **RSSHub 集成** - 通过 LLM 工具快速构建 RSSHub 订阅链接
+- 🧠 **AI 内容管线** - 支持 Plugin Pages 配置 AI 筛选与 AI 增强
 
 ---
 
@@ -118,7 +118,7 @@
 
 ## 🛠️ 配置项
 
-> **注意**：v2.0.0 版本起，全局配置请前往 AstrBot 管理面板的「配置」页面或 WebUI 进行设置。
+> **注意**：AstrBot 配置页仅保留启动级基础设施配置和平台发送策略；订阅默认值与内容管线请前往 AstrBot 面板的 Plugin Pages 管理。
 
 在 AstrBot 管理面板的「配置」页面，找到 `RSSHub` 插件配置：
 
@@ -129,7 +129,7 @@
 | `proxy` | 字符串 | HTTP/SOCKS 代理地址，留空则不使用代理。例如 `http://127.0.0.1:7890` | `""` |
 | `rsshub_base_url` | 字符串 | 默认 RSSHub 域名，用于路由检索与订阅链接拼接 | `https://rsshub.app` |
 | `timeout` | 整数 | 请求超时（秒），获取 RSS 源时的 HTTP 请求超时时间 | `30` |
-| `minimal_interval` | 整数 | 最小监控间隔（分钟），限制命令/WebUI 设置的最小值 | `1` |
+| `minimal_interval` | 整数 | 最小监控间隔（分钟），限制命令/Plugin Pages 设置的最小值 | `1` |
 | `hash_history_min` | 整数 | 去重历史最小保留数量，避免历史回流重复推送 | `500` |
 | `hash_history_multiplier` | 整数 | 去重历史增长倍数，动态扩展历史窗口 | `2` |
 | `hash_history_hard_limit` | 整数 | 去重历史硬上限，限制数据库体积与监控开销 | `5000` |
@@ -143,23 +143,11 @@
 | `download_media_before_send` | 布尔值 | 先下载媒体后发送，Docker 环境下需共享数据卷 | `false` |
 | `download_media_timeout` | 整数 | 媒体下载超时（秒），m3u8/HLS 建议 60-180 秒 | `30` |
 
-### 订阅全局默认配置 (`global_config`)
+### 订阅默认配置（Plugin Pages）
 
-| 配置项 | 类型 | 说明 | 默认值 |
-|--------|------|------|--------|
-| `interval` | 整数 | 默认监控间隔（分钟），订阅未设置 interval 时使用 | `5` |
-| `notify` | 布尔值 | 是否发送 RSS 更新通知 | `true` |
-| `send_mode` | 字符串 | 发送模式：仅链接/自动/直接消息 | `自动` |
-| `length_limit` | 整数 | 内容长度限制，0=不限制 | `0` |
-| `link_preview` | 字符串 | 链接预览：自动/强制启用 | `自动` |
-| `display_author` | 字符串 | 显示作者：禁用/自动/强制 | `自动` |
-| `display_via` | 字符串 | 显示来源：完全禁用/仅链接/自动/强制 | `自动` |
-| `display_title` | 字符串 | 显示标题：禁用/自动/强制 | `自动` |
-| `display_entry_tags` | 布尔值 | 是否在推送中显示 RSS 条目标签 | `false` |
-| `style` | 字符串 | 推送样式：RSStT/flowerss | `RSStT` |
-| `display_media` | 布尔值 | 是否在推送中显示图片、视频等媒体 | `true` |
-| `translate` | 布尔值 | 是否自动翻译 RSS 内容 | `false` |
-| `translate_target_lang` | 字符串 | 翻译目标语言：zh-CN/zh-TW/en/ja | `zh-CN` |
+订阅全局默认值不再在 AstrBot 配置页暴露，请在 Plugin Pages 中维护。包括默认监控间隔、通知、发送模式、内容长度、展示策略和媒体展示等。
+
+> 旧配置中的 `global_config` 仍可被运行时读取，避免升级后丢失已有设置。
 
 ### FFmpeg 配置 (`ffmpeg`)
 
@@ -180,47 +168,6 @@
 
 > **命名说明：**
 > - 配置文件中使用 `sender_strategies.<platform>` 形式（点号分隔），例如：`sender_strategies.telegram`、`sender_strategies.aiocqhttp`
-> - `/rss_conf` 命令参数中使用 `sender_strategy_<platform>` 形式（下划线分隔），例如：`sender_strategy_telegram`、`sender_strategy_aiocqhttp`
-> - 两者是一一对应的配置项，仅书写形式不同，含义完全相同
-
-### 翻译配置 (`translation`)
-
-| 配置项 | 类型 | 说明 | 默认值 |
-|--------|------|------|--------|
-| `translation.provider` | 字符串 | 翻译服务提供商：`google`(免费) / `baidu` | `google` |
-| `translation.target_lang` | 字符串 | 目标语言：`zh-CN`, `zh-TW`, `en`, `ja` | `zh-CN` |
-| `translation.auto_translate` | 布尔值 | 是否自动翻译新条目 | `false` |
-| `translation.force_translate` | 布尔值 | 是否跳过语言检测强制翻译 | `false` |
-| `translation.translate_title` | 布尔值 | 是否翻译标题 | `true` |
-| `translation.translate_content` | 布尔值 | 是否翻译正文 | `true` |
-| `translation.display_orignal_content` | 布尔值 | 是否显示原文（格式：原文 + 换行 + 分隔线 + 译文） | `false` |
-| `translation.cache_translations` | 布尔值 | 是否缓存翻译结果以减少 API 调用 | `true` |
-
-**百度翻译认证配置** (`translation_template`)：
-
-| 配置项 | 类型 | 说明 |
-|--------|------|------|
-| `translation_template.baidu.baidu_appid` | 字符串 | 百度翻译 AppID（申请地址：http://api.fanyi.baidu.com） |
-| `translation_template.baidu.baidu_key` | 字符串 | 百度翻译 API 密钥 |
-
-**使用说明：**
-- Google 翻译无需配置，开箱即用（免费但有频率限制）
-- 百度翻译需要申请 AppID 和密钥
-- 翻译功能可全局开启或按订阅单独控制
-- 按订阅控制：`/sub_profile set sub <订阅 ID> translate 1` 开启、`translate 0` 关闭
-
-### WebUI 配置 (`webui`)
-
-| 配置项 | 类型 | 说明 | 默认值 |
-|--------|------|------|--------|
-| `webui.enabled` | 布尔值 | 启用 WebUI 管理界面 | `false` |
-| `webui.host` | 字符串 | 监听地址，`0.0.0.0`=允许外部访问 | `0.0.0.0` |
-| `webui.port` | 整数 | 监听端口 | `9191` |
-| `webui.auth_enabled` | 布尔值 | 启用登录验证 | `true` |
-| `webui.password` | 字符串 | 访问密码，留空则自动生成 6 位随机密码 | `""` |
-| `webui.session_timeout` | 整数 | 会话超时时间（秒） | `3600` |
-
----
 
 ## 📝 使用方法
 
@@ -290,6 +237,11 @@ v1.1.0 起引入三层配置继承体系：
 | `/rsshelp` | `/RSS 帮助` | 查看帮助图片 |
 
 > `rsshelp` 图片由 `scripts/generate_rsshelp_image.py` 根据 `main.py` 命令注释自动生成（HTML 模板：`assets/help/rsshelp_template.html`）。
+>
+> 当命令变更后可手动刷新帮助图：
+> ```bash
+> python scripts/generate_rsshelp_image.py
+> ```
 
 **`/sub_test` 命令示例：**
 
@@ -323,8 +275,6 @@ v1.1.0 起引入三层配置继承体系：
 | `interval` | 正整数 | 监控间隔（分钟，默认 5） |
 | `title` | 字符串 | 订阅标题 |
 | `tags` | 字符串 | 标签 |
-| `translate` | 0/1 | 翻译开关 |
-| `translate_target_lang` | 字符串 | 翻译目标语言 |
 
 ---
 
@@ -340,11 +290,11 @@ v1.1.0 起引入三层配置继承体系：
 - `rss_set_user_default_option` - 设置用户默认选项
 - `rss_set_session_default_option` - 设置会话默认选项
 - `rss_get_session_defaults` - 获取会话默认配置
-- `rsshub_search_routes` - 搜索 RSSHub 路由
-- `rsshub_get_route_schema` - 获取 RSSHub 路由参数
 - `rsshub_build_subscribe_url` - 构建 RSSHub 订阅链接
 
 在 AstrBot 的 LLM 配置中开启工具调用即可使用。
+
+> RSSHub 路由检索后续走 AstrBot 知识库和 route skill；插件不再提供 route 搜索 LLM tool。
 
 ---
 
@@ -368,11 +318,10 @@ src/
 │   ├── config/       # 配置管理
 │   ├── messaging/    # 消息发送
 │   ├── persistence/  # 数据持久化
-│   ├── rss/          # RSS 解析与获取
+│   ├── fetcher/      # RSS 拉取与解析
+│   ├── pipeline/     # 内容处理与格式化
 │   ├── schedule/     # 调度服务
-│   ├── translation/  # 翻译服务
 │   ├── utils/        # 工具函数
-│   └── web/          # WebUI
 └── __init__.py       # 统一导出
 ```
 
@@ -381,22 +330,15 @@ src/
 1. **依赖倒置**: 领域层不依赖其他层，基础设施层实现领域层定义的接口
 2. **命令模式**: 每个业务用例封装为独立的命令类，便于测试和扩展
 3. **仓库模式**: 数据访问抽象，支持灵活的存储实现
-4. **单例管理**: 关键服务（数据库、配置、翻译）采用单例模式
+4. **单例管理**: 关键服务（数据库、配置、调度）采用单例模式
 5. **类型安全**: 全面使用 Python 类型注解，增强代码健壮性
 
 ---
 
-## 🌐 WebUI
+## 🌐 管理界面
 
-在插件配置 `webui.enabled=true` 后自动启动
-
-- 默认地址：`http://0.0.0.0:9191`
-- 主要接口：
-    - `GET /` 页面
-    - `POST /api/login` 登录
-    - `GET /api/subscriptions` 获取订阅列表
-    - `PATCH /api/subscriptions/{sub_id}` 更新订阅
-    - `DELETE /api/subscriptions/{sub_id}` 删除订阅
+本项目管理界面使用 **AstrBot Plugin Pages**（`pages/dashboard`），通过 AstrBot 面板访问。  
+后端接口由 `WebApiHandler` 注册到 `/{plugin_name}/...` 路径下（当前为 `/astrbot_plugin_rsshub/...`）。
 
 ---
 

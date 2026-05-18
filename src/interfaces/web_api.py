@@ -12,7 +12,11 @@ from typing import TYPE_CHECKING, Any
 
 from quart import Response, jsonify, request
 
+from ..infrastructure.config import RsshubPluginConfig, set_config
+from ..infrastructure.config.settings_adapter import build_application_settings
+
 if TYPE_CHECKING:
+    from astrbot.api import AstrBotConfig
     from astrbot.api.star import Context
 
     from ..application.commands.batch_activate_cmd import BatchActivateCommand
@@ -22,6 +26,9 @@ if TYPE_CHECKING:
         ExportSubscriptionsCommand,
     )
     from ..application.commands.get_user_settings_cmd import GetUserSettingsCommand
+    from ..application.commands.import_subscriptions_cmd import (
+        ImportSubscriptionsCommand,
+    )
     from ..application.commands.set_user_settings_cmd import SetUserSettingsCommand
     from ..application.commands.subscribe_feed_cmd import SubscribeFeedCommand
     from ..application.commands.test_subscription_cmd import TestSubscriptionCommand
@@ -32,12 +39,7 @@ if TYPE_CHECKING:
     from ..domain.repositories.feed_repository import FeedRepository
     from ..domain.repositories.push_history_repository import PushHistoryRepository
     from ..domain.repositories.subscription_repository import SubscriptionRepository
-    from ..domain.repositories.translation_cache_repository import (
-        TranslationCacheRepository,
-    )
     from ..domain.repositories.user_repository import UserRepository
-    from ..infrastructure.config.config_manager import RsshubPluginConfig
-
 PLUGIN_NAME = "astrbot_plugin_rsshub"
 
 
@@ -56,6 +58,7 @@ class WebApiHandler:
         batch_deactivate_cmd: BatchDeactivateCommand,
         batch_unsub_cmd: BatchUnsubscribeCommand,
         export_cmd: ExportSubscriptionsCommand,
+        import_cmd: ImportSubscriptionsCommand,
         get_user_settings_cmd: GetUserSettingsCommand,
         set_user_settings_cmd: SetUserSettingsCommand,
         test_sub_cmd: TestSubscriptionCommand,
@@ -65,8 +68,8 @@ class WebApiHandler:
         sub_repo: SubscriptionRepository,
         user_repo: UserRepository,
         push_history_repo: PushHistoryRepository,
-        translation_cache_repo: TranslationCacheRepository,
         config: RsshubPluginConfig | None = None,
+        raw_config: AstrBotConfig | None = None,
     ):
         self._sse_clients: list[asyncio.Queue] = []
         self._change_counter: int = 0
@@ -78,6 +81,7 @@ class WebApiHandler:
         self._batch_deactivate_cmd = batch_deactivate_cmd
         self._batch_unsub_cmd = batch_unsub_cmd
         self._export_cmd = export_cmd
+        self._import_cmd = import_cmd
         self._get_user_settings_cmd = get_user_settings_cmd
         self._set_user_settings_cmd = set_user_settings_cmd
         self._test_sub_cmd = test_sub_cmd
@@ -87,8 +91,8 @@ class WebApiHandler:
         self._sub_repo = sub_repo
         self._user_repo = user_repo
         self._push_history_repo = push_history_repo
-        self._translation_cache_repo = translation_cache_repo
         self._config = config
+        self._raw_config = raw_config
 
     def register_all(self, context: Context) -> None:
         """注册所有 API 端点到 AstrBot"""
@@ -112,19 +116,29 @@ class WebApiHandler:
             ("POST", "/feeds/refresh", self.handle_refresh_feed, "刷新 Feed"),
             ("GET", "/settings", self.handle_get_settings, "获取用户设置"),
             ("POST", "/settings", self.handle_set_settings, "更新用户设置"),
+            (
+                "GET",
+                "/plugin-settings",
+                self.handle_get_plugin_settings,
+                "获取插件设置",
+            ),
+            (
+                "POST",
+                "/plugin-settings",
+                self.handle_set_plugin_settings,
+                "更新插件设置",
+            ),
             ("POST", "/test-subscription", self.handle_test_subscription, "测试订阅"),
             ("POST", "/test-url", self.handle_test_url, "测试 URL"),
             ("POST", "/batch/activate", self.handle_batch_activate, "批量启用"),
             ("POST", "/batch/deactivate", self.handle_batch_deactivate, "批量禁用"),
             ("POST", "/batch/unsubscribe", self.handle_batch_unsubscribe, "批量取消"),
             ("POST", "/export", self.handle_export, "导出订阅"),
+            ("POST", "/import", self.handle_import, "导入订阅"),
             ("GET", "/stats", self.handle_stats, "插件统计"),
             ("GET", "/push-history", self.handle_push_history, "推送历史"),
             ("POST", "/push-history/delete", self.handle_delete_push_history, "删除推送历史"),
             ("POST", "/push-history/cleanup", self.handle_cleanup_push_history, "清理推送历史"),
-            ("GET", "/translation-cache", self.handle_translation_cache, "翻译缓存"),
-            ("POST", "/translation-cache/delete", self.handle_delete_translation_cache, "删除翻译缓存"),
-            ("POST", "/translation-cache/cleanup", self.handle_cleanup_translation_cache, "清理翻译缓存"),
             ("GET", "/users/detail", self.handle_user_details, "用户详情列表"),
             ("POST", "/users/update", self.handle_update_user, "更新用户配置"),
             ("POST", "/users/delete", self.handle_delete_user, "删除用户"),
@@ -232,8 +246,6 @@ class WebApiHandler:
                     "display_entry_tags": s.display_entry_tags,
                     "style": s.style,
                     "display_media": s.display_media,
-                    "translate": s.translate,
-                    "translate_target_lang": s.translate_target_lang,
                     "use_sub_config": s.use_sub_config,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -269,11 +281,14 @@ class WebApiHandler:
                     "interval": u.interval,
                     "notify": u.notify,
                     "send_mode": u.send_mode,
+                    "length_limit": u.length_limit,
                     "link_preview": u.link_preview,
                     "display_author": u.display_author,
                     "display_via": u.display_via,
                     "display_title": u.display_title,
+                    "display_entry_tags": u.display_entry_tags,
                     "style": u.style,
+                    "display_media": u.display_media,
                     "default_target_session": u.default_target_session,
                     "use_user_config": u.use_user_config,
                     "created_at": u.created_at.isoformat() if u.created_at else None,
@@ -508,6 +523,73 @@ class WebApiHandler:
         asyncio.create_task(self._broadcast({"event": "data_changed"}))
         return jsonify({"ok": result.success, "message": result.message})
 
+    async def handle_get_plugin_settings(self):
+        """获取插件级订阅默认值和内容管线配置"""
+        if self._config is None:
+            return jsonify({"ok": False, "error": "插件配置未初始化"})
+        settings = build_application_settings(self._config)
+        return jsonify(
+            {
+                "ok": True,
+                "subscription_defaults": _dump_dataclass_like(
+                    settings.subscription_defaults
+                ),
+                "pipeline": _dump_dataclass_like(settings.pipeline),
+            }
+        )
+
+    async def handle_set_plugin_settings(self):
+        """更新插件级订阅默认值和内容管线配置"""
+        if self._config is None:
+            return jsonify({"ok": False, "error": "插件配置未初始化"})
+        if self._raw_config is None or not hasattr(self._raw_config, "save_config"):
+            return jsonify({"ok": False, "error": "当前运行环境不支持保存插件配置"})
+
+        data = await request.get_json()
+        if not data:
+            return jsonify({"ok": False, "error": "请求体为空"})
+
+        pipeline_updates = data.get("pipeline") or {}
+        subscription_updates = data.get("subscription_defaults") or {}
+        if (
+            not isinstance(pipeline_updates, dict)
+            or not isinstance(subscription_updates, dict)
+        ):
+            return jsonify({"ok": False, "error": "配置格式无效"})
+
+        try:
+            config_dict = self._config.model_dump()
+            if subscription_updates:
+                config_dict["global_config"] = {
+                    **config_dict.get("global_config", {}),
+                    **subscription_updates,
+                }
+            if pipeline_updates:
+                config_dict["pipeline"] = {
+                    **config_dict.get("pipeline", {}),
+                    **pipeline_updates,
+                }
+
+            updated = RsshubPluginConfig.from_astrbot_config(config_dict)
+            updated.save(self._raw_config)
+            self._config = updated
+            set_config(updated)
+            self._bump_counter()
+            asyncio.create_task(self._broadcast({"event": "settings_changed"}))
+            settings = build_application_settings(updated)
+            return jsonify(
+                {
+                    "ok": True,
+                    "message": "插件设置已保存，部分运行时设置需重启插件后完全生效",
+                    "subscription_defaults": _dump_dataclass_like(
+                        settings.subscription_defaults
+                    ),
+                    "pipeline": _dump_dataclass_like(settings.pipeline),
+                }
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": f"保存失败: {exc}"})
+
     # ─── 测试 ─────────────────────────────────────────────────
 
     async def handle_test_subscription(self):
@@ -607,6 +689,42 @@ class WebApiHandler:
             )
         return jsonify({"ok": False, "error": result.message})
 
+    async def handle_import(self):
+        """导入 TOML 订阅内容"""
+        data = await request.get_json()
+        content = (data or {}).get("content", "")
+        user_id = (data or {}).get("user_id", "webadmin")
+        target_session = (data or {}).get("target_session")
+        platform_name = (data or {}).get("platform_name")
+        skip_existing = bool((data or {}).get("skip_existing", True))
+
+        if not str(content).strip():
+            return jsonify({"ok": False, "error": "content 不能为空"})
+
+        result = await self._import_cmd.execute(
+            content=str(content),
+            user_id=user_id,
+            target_session=target_session,
+            platform_name=platform_name,
+            skip_existing=skip_existing,
+        )
+        if result.success:
+            self._bump_counter()
+            asyncio.create_task(self._broadcast({"event": "data_changed"}))
+            payload = {
+                "ok": True,
+                "message": result.message,
+            }
+            if result.data:
+                payload["data"] = {
+                    "total": result.data.total,
+                    "success_count": result.data.success_count,
+                    "failure_count": result.data.failure_count,
+                    "skipped_count": result.data.skipped_count,
+                }
+            return jsonify(payload)
+        return jsonify({"ok": False, "error": result.message})
+
     async def handle_stats(self):
         """获取插件统计概览"""
         subs = await self._sub_repo.get_all_active()
@@ -692,55 +810,9 @@ class WebApiHandler:
         self._bump_counter()
         return jsonify({"ok": True, "message": f"已清理 {count} 条记录"})
 
-    # ─── 翻译缓存 ─────────────────────────────────────────────
-
-    async def handle_translation_cache(self):
-        """获取翻译缓存列表"""
-        page = request.args.get("page", 1, type=int)
-        page_size = request.args.get("page_size", 20, type=int)
-        offset = (page - 1) * page_size
-
-        items = await self._translation_cache_repo.get_all(limit=page_size, offset=offset)
-        stats = await self._translation_cache_repo.get_stats()
-
-        data = []
-        for c in items:
-            data.append(
-                {
-                    "id": c.id,
-                    "hash": c.hash[:16] + "..." if c.hash and len(c.hash) > 16 else c.hash,
-                    "provider": c.provider,
-                    "target_lang": c.target_lang,
-                    "translated_text": c.translated_text[:100] + "..."
-                    if c.translated_text and len(c.translated_text) > 100
-                    else c.translated_text,
-                    "created_at": c.created_at.isoformat() if c.created_at else None,
-                }
-            )
-
-        return jsonify(
-            {
-                "ok": True,
-                "items": data,
-                "total": stats.get("total", 0),
-                "page": page,
-                "page_size": page_size,
-            }
-        )
-
-    async def handle_delete_translation_cache(self):
-        """删除翻译缓存"""
-        data = await request.get_json()
-        cache_id = data.get("cache_id", 0) if data else 0
-        if not cache_id:
-            return jsonify({"ok": False, "error": "cache_id 不能为空"})
-        ok = await self._translation_cache_repo.delete(int(cache_id))
-        return jsonify({"ok": ok, "message": "已删除" if ok else "记录不存在"})
-
-    async def handle_cleanup_translation_cache(self):
-        """清理旧翻译缓存"""
-        data = await request.get_json()
-        days = data.get("days", 30) if data else 30
-        count = await self._translation_cache_repo.delete_old_records(int(days))
-        self._bump_counter()
-        return jsonify({"ok": True, "message": f"已清理 {count} 条记录"})
+def _dump_dataclass_like(value: Any) -> dict[str, Any]:
+    return {
+        key: list(item) if isinstance(item, tuple) else item
+        for key, item in vars(value).items()
+        if not key.startswith("_")
+    }

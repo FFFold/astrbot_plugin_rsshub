@@ -17,11 +17,10 @@ SESSION_DEFAULT_KEYS = {
     "display_entry_tags",
     "style",
     "display_media",
-    "translate",
-    "translate_target_lang",
     "title",
     "tags",
 }
+REMOVED_TRANSLATION_KEYS = {"translate", "translate_target_lang"}
 
 
 async def handle_sub_set(
@@ -33,8 +32,11 @@ async def handle_sub_set(
             "plain": "用法: /sub_set <sub_id> <option> <value>\n示例: /sub_set 1 interval 30"
         }
     user_id = event.get_sender_id()
+    option_key = option.strip().lower()
+    if option_key in REMOVED_TRANSLATION_KEYS:
+        return {"plain": f"选项 {option_key} 已移除，请使用 AI 内容管线或扩展处理翻译。"}
     result = await deps["update_sub_cmd"].execute(
-        sub_id=sub_id, user_id=user_id, **{option: value}
+        sub_id=sub_id, user_id=user_id, **{option_key: value}
     )
     return {"plain": result.message}
 
@@ -137,7 +139,7 @@ async def handle_sub_set_session(
     """设置会话默认配置"""
     if not key or not value:
         return {
-            "plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, length_limit, display_title, display_media, translate 等"
+            "plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, length_limit, display_title, display_media 等"
         }
 
     session_id = event.unified_msg_origin

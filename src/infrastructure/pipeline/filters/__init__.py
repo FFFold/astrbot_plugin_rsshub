@@ -27,9 +27,6 @@ class PipelineConfig:
     ai_enrich_enabled: bool = False
     ai_enrich_prompt: str = ""
     ai_timeout_seconds: int = 15
-    translate_enabled: bool = False
-    translate_engine: str = "google"
-    translate_target_lang: str = "zh-CN"
 
     @classmethod
     def from_config(cls, config: Any) -> PipelineConfig:
@@ -39,6 +36,11 @@ class PipelineConfig:
             or None,
             min_content_length=int(getattr(config, "min_content_length", 0) or 0),
             min_media_count=int(getattr(config, "min_media_count", 0) or 0),
+            ai_filter_enabled=bool(getattr(config, "ai_filter_enabled", False)),
+            ai_filter_prompt=str(getattr(config, "ai_filter_prompt", "") or ""),
+            ai_enrich_enabled=bool(getattr(config, "ai_enrich_enabled", False)),
+            ai_enrich_prompt=str(getattr(config, "ai_enrich_prompt", "") or ""),
+            ai_timeout_seconds=int(getattr(config, "ai_timeout_seconds", 15) or 15),
         )
 
 
@@ -130,6 +132,5 @@ from .base import (  # noqa: E402,I001
     LLMEnrichFilter as LLMEnrichFilter,
     LLMFilter as LLMFilter,
     PassThroughFilter as PassThroughFilter,
-    TranslationFilter as TranslationFilter,
     build_default_chain as build_default_chain,
 )

@@ -57,7 +57,7 @@ class DatabaseManager:
     @property
     def is_initialized(self) -> bool:
         """检查数据库是否已初始化。"""
-        return self._engine is not None
+        return self._engine is not None and self._session_maker is not None
 
     async def init(self, db_path: str) -> None:
         """初始化数据库连接并运行迁移。

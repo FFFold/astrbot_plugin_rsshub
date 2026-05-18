@@ -31,6 +31,13 @@ from .normalizer import (
     normalize_path,
     normalize_text,
 )
+from .paths import (
+    PLUGIN_NAME,
+    PLUGIN_ROOT,
+    get_plugin_cache_dir,
+    get_plugin_data_dir,
+    get_plugin_export_dir,
+)
 
 __all__ = [
     # Logger
@@ -66,4 +73,10 @@ __all__ = [
     "normalize_identifier",
     "normalize_path",
     "normalize_config_positive_int",
+    # Paths
+    "PLUGIN_NAME",
+    "PLUGIN_ROOT",
+    "get_plugin_data_dir",
+    "get_plugin_cache_dir",
+    "get_plugin_export_dir",
 ]

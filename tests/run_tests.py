@@ -267,7 +267,7 @@ def test_lock_manager():
 
 def test_rss_parser_basic():
     """测试 RSS 解析器基本功能."""
-    from astrbot_plugin_rsshub.src.infrastructure.rss import RSSParser
+    from astrbot_plugin_rsshub.src.infrastructure.fetcher import RSSParser
 
     passed = 0
     failed = 0

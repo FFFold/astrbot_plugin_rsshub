@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .expression_parser import CompiledExpression, ExpressionParser
+from .paths import get_plugin_cache_dir
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -232,11 +233,7 @@ class DiskCache(BaseCache):
         gc_interval_seconds: int = 300,
     ):
         if cache_dir is None:
-            from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
-
-            cache_dir = (
-                Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "cache"
-            )
+            cache_dir = get_plugin_cache_dir()
         self._cache_dir = cache_dir
         self._max_size_bytes = max_size_mb * 1024 * 1024
         self._gc_interval = gc_interval_seconds

@@ -25,6 +25,7 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ...infrastructure.utils import get_logger
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
 from ..settings import FeedFetchSettings, RSSSettings
+from .content_processing_service import ContentProcessingService
 from .html_parser import HTMLParser
 from .notification_dispatcher import NotificationDispatcher
 
@@ -90,6 +91,7 @@ class FeedPollingService:
         parser: FeedParser | None = None,
         notification_dispatcher: NotificationDispatcher | None = None,
         media_fingerprint_service: MediaFingerprintService | None = None,
+        content_processor: ContentProcessingService | None = None,
         history_entry_limit: int = 0,
     ) -> None:
         self._feed_repo = feed_repo
@@ -100,6 +102,7 @@ class FeedPollingService:
         self._parser = parser
         self._notification_dispatcher = notification_dispatcher
         self._media_fingerprint_service = media_fingerprint_service
+        self._content_processor = content_processor
         self._history_entry_limit = max(0, history_entry_limit)
 
     async def fetch_feed_entries(
@@ -602,22 +605,13 @@ class FeedPollingService:
             link = self._resolve_entry_link(entry, feed.link)
             guid = self._entry_identity(entry)
             author = str(self._entry_value(entry, "author") or "").strip()
-            content = str(
+            raw_content = str(
                 self._entry_value(entry, "content")
                 or self._entry_value(entry, "summary")
                 or title
             )
-            parsed = await HTMLParser(content, feed_link=feed.link).parse()
+            parsed = await HTMLParser(raw_content, feed_link=feed.link).parse()
             plain_content = parsed.html_tree.get_plain().strip()
-            if title and plain_content and plain_content != title:
-                content = f"{title}\n\n{plain_content}"
-            else:
-                content = plain_content or title
-            via_suffix = f"via {link} | {feed.title or feed.link}"
-            if author:
-                via_suffix += f" (author: {author})"
-            content = f"{content}\n\n{via_suffix}"
-
             media_urls = [m.url for m in parsed.media if getattr(m, "url", "")]
             media_urls.extend(
                 str(self._entry_value(enclosure, "url"))
@@ -625,6 +619,39 @@ class FeedPollingService:
                 if self._entry_value(enclosure, "url")
             )
             media_urls = list(dict.fromkeys(media_urls))
+            processed = await self._process_dispatch_entry(
+                {
+                    "title": title,
+                    "summary": plain_content,
+                    "content": plain_content,
+                    "raw_content": raw_content,
+                    "link": link,
+                    "guid": guid,
+                    "author": author,
+                    "feed_title": feed.title,
+                    "feed_link": feed.link,
+                    "media_urls": media_urls,
+                }
+            )
+            if processed is None:
+                continue
+
+            title = str(processed.get("title", "") or title)
+            plain_content = str(
+                processed.get("summary") or processed.get("content") or plain_content
+            ).strip()
+            author = str(processed.get("author", "") or author).strip()
+            media_urls = list(
+                dict.fromkeys(processed.get("media_urls", media_urls) or [])
+            )
+            content = self._format_dispatch_content(
+                title=title,
+                body=plain_content,
+                link=link,
+                feed_title=feed.title,
+                feed_link=feed.link,
+                author=author,
+            )
             if self._media_fingerprint_service is not None and media_urls:
                 try:
                     media_hashes = (
@@ -661,6 +688,42 @@ class FeedPollingService:
                 + stats.get("pending", 0)
             )
         return dispatched
+
+    async def _process_dispatch_entry(
+        self,
+        entry_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if self._content_processor is None:
+            return entry_data
+        result = await self._content_processor.process(entry_data)
+        if result.filtered_out:
+            logger.info(
+                "poll_feed: entry filtered before dispatch: title=%s engine=%s reason=%s",
+                entry_data.get("title", ""),
+                result.engine,
+                result.error,
+            )
+            return None
+        return result.entry
+
+    @staticmethod
+    def _format_dispatch_content(
+        *,
+        title: str,
+        body: str,
+        link: str,
+        feed_title: str,
+        feed_link: str,
+        author: str,
+    ) -> str:
+        if title and body and body != title:
+            content = f"{title}\n\n{body}"
+        else:
+            content = body or title
+        via_suffix = f"via {link} | {feed_title or feed_link}"
+        if author:
+            via_suffix += f" (author: {author})"
+        return f"{content}\n\n{via_suffix}"
 
     def _entry_sort_key(self, entry: Any) -> Any:
         return (

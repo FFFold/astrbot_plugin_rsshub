@@ -103,7 +103,7 @@ async def test_handle_export_scope_and_permission():
 
 
 @pytest.mark.asyncio
-async def test_handle_export_onebot_fallback_inline(monkeypatch):
+async def test_handle_export_onebot_fallback_inline(monkeypatch, tmp_path):
     event = MagicMock()
     event.get_sender_id.return_value = "u1"
     event.unified_msg_origin = "sess"
@@ -116,6 +116,7 @@ async def test_handle_export_onebot_fallback_inline(monkeypatch):
         count=1,
     )
     monkeypatch.setattr(data_handlers, "_has_callback_file_service", lambda: False)
+    monkeypatch.setattr(data_handlers, "get_plugin_export_dir", lambda: tmp_path)
     export_cmd = MagicMock()
     export_cmd.execute = AsyncMock(return_value=SimpleNamespace(message="ok", data=data))
     result = await handle_export(event, "all", {"export_cmd": export_cmd})
@@ -124,7 +125,7 @@ async def test_handle_export_onebot_fallback_inline(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handle_export_onebot_send_file_when_callback_available(monkeypatch):
+async def test_handle_export_onebot_send_file_when_callback_available(monkeypatch, tmp_path):
     event = MagicMock()
     event.get_sender_id.return_value = "u1"
     event.unified_msg_origin = "sess"
@@ -137,6 +138,7 @@ async def test_handle_export_onebot_send_file_when_callback_available(monkeypatc
         count=1,
     )
     monkeypatch.setattr(data_handlers, "_has_callback_file_service", lambda: True)
+    monkeypatch.setattr(data_handlers, "get_plugin_export_dir", lambda: tmp_path)
     export_cmd = MagicMock()
     export_cmd.execute = AsyncMock(return_value=SimpleNamespace(message="ok", data=data))
     result = await handle_export(event, "all", {"export_cmd": export_cmd})

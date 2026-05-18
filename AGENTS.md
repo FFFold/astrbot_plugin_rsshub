@@ -54,6 +54,10 @@ Behavior invariants:
 - Do not reintroduce `/rsshub_admin` or `handle_admin_panel`.
 - Do not add `Main` alias.
 - Do not move startup ownership out of `bootstrap.py`.
+- Do not call `get_astrbot_plugin_data_path()` directly outside `src/infrastructure/utils/paths.py`.
+- Local debugging from this plugin directory must not create/use `<plugin>/data` for runtime state; use `get_plugin_data_dir()`, `get_plugin_cache_dir()`, or `get_plugin_export_dir()`.
+- `_conf_schema.json` only exposes startup-level config, credentials, and platform strategies; subscription defaults and pipeline behavior belong in Plugin Pages.
+- Keep `src/application/settings.py` as application dataclasses only; AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
 
 ## Dev and test commands
 
@@ -92,6 +96,12 @@ Recently completed regression fixes include:
   - `scripts/generate_rsshelp_image.py`
   - `assets/help/rsshelp_template.html`
   - `assets/help/rsshelp.png` (committed pre-generated image)
+- Centralized runtime data/cache/export paths in `src/infrastructure/utils/paths.py` to avoid plugin-repo `data/` pollution during local debugging.
+- Completed P1 content pipeline integration:
+  - `FeedPollingService` now runs `ContentProcessingService` after dedup/HTML parsing and before dispatch.
+  - Pipeline config supports keyword black/white lists, minimum content/media thresholds, and AI filter/enrich toggles.
+  - Plugin Pages exposes subscription defaults, pipeline settings, TOML import/export, test URL, refresh, push history, and stats entry points.
+- Traditional translation pipeline, translation cache UI/API, RSSHub route stub LLM tools, and legacy `ContentFilterService` have been removed. Future translation/summarization work belongs in AI/extension paths.
 
 ## Update policy
 

@@ -13,7 +13,6 @@ SUBSCRIPTION_EXPORT_STRING_FIELDS = {
     "tags",
     "platform_name",
     "feed_title",
-    "translate_target_lang",
 }
 
 SUBSCRIPTION_EXPORT_INT_FIELDS = {
@@ -28,7 +27,6 @@ SUBSCRIPTION_EXPORT_INT_FIELDS = {
     "style",
     "display_media",
     "interval",
-    "translate",
 }
 
 

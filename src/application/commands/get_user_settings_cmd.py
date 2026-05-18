@@ -33,6 +33,7 @@ class GetUserSettingsCommand:
             CommandResult: 命令执行结果
         """
         user = await self._user_repo.get_by_id(user_id)
+        removed_translation_keys = {"translate", "translate_target_lang"}
 
         if not user:
             return CommandResult(
@@ -41,6 +42,11 @@ class GetUserSettingsCommand:
             )
 
         if key:
+            if key in removed_translation_keys:
+                return CommandResult(
+                    success=False,
+                    message=f"配置项 {key} 已移除，请使用 AI 内容管线或扩展处理翻译。",
+                )
             # 获取单个配置项
             current_value = getattr(user, key, None)
             return CommandResult(
@@ -61,8 +67,6 @@ class GetUserSettingsCommand:
             "display_entry_tags": user.display_entry_tags,
             "style": user.style,
             "display_media": user.display_media,
-            "translate": user.translate,
-            "translate_target_lang": user.translate_target_lang,
         }
 
         lines = ["用户配置:"]

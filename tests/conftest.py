@@ -47,7 +47,7 @@ sys.modules["astrbot.core.utils.astrbot_path"] = MagicMock()
 sys.modules["astrbot.core.utils.http_ssl"] = MagicMock()
 sys.modules[
     "astrbot.core.utils.astrbot_path"
-].get_astrbot_plugin_data_path.return_value = str(PLUGIN_DIR)
+].get_astrbot_plugin_data_path.return_value = str(PLUGIN_DIR / "data" / "plugin_data")
 
 
 @pytest.fixture(scope="session")
@@ -93,7 +93,7 @@ def sample_duplicate_feed(fixtures_dir: Path) -> str:
 @pytest.fixture
 def sample_entries():
     """提供示例条目列表."""
-    from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
+    from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed
 
     return [
         EntryParsed(

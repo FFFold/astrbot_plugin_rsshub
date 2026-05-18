@@ -7,6 +7,8 @@ from pathlib import Path
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.message_components import File
 
+from ...infrastructure.utils import get_plugin_export_dir
+
 _ONEBOT_PLATFORMS = {"aiocqhttp", "onebot", "onebot11", "onebotv11"}
 _INLINE_EXPORT_LIMIT = 5000
 
@@ -83,12 +85,7 @@ async def handle_import(event: AstrMessageEvent, content: str, deps: dict) -> di
 
 def _get_export_dir() -> Path:
     """Use plugin data dir for export files to avoid /tmp cleanup races."""
-    try:
-        from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
-
-        export_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
-    except Exception:
-        export_dir = Path("/tmp") / "astrbot_plugin_rsshub_exports"
+    export_dir = get_plugin_export_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
     return export_dir
 

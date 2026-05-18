@@ -121,8 +121,6 @@ class TestTOMLRoundtrip:
             display_entry_tags=1,
             style=3,
             display_media=-1,
-            translate=1,
-            translate_target_lang="ja",
         )
 
         content = serialize_subscriptions_to_toml(
@@ -148,8 +146,6 @@ class TestTOMLRoundtrip:
             "style": 3,
             "tags": "alerts,news",
             "title": "Configured",
-            "translate": 1,
-            "translate_target_lang": "ja",
         }
 
 

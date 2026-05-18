@@ -1,639 +1,253 @@
-# RSSHub 插件重构与更新计划
-
-日期：2026-05-16
-
-## 背景
-
-本计划用于替代 `docs/llm/` 中分散的历史文档。`docs/llm/` 里有价值的信息主要分为三类：
-
-- 长期架构决策：DDD 保留但简化、SQLite 继续使用、发送器策略模式保留、Plugin Pages 替代旧 aiohttp WebUI。
-- 已完成实现记录：WebUI 迁移、微信专用发送器删除、部分 v2.1.1 修复、utils 分层清理。
-- 后续路线图：配置收敛、同步去重统一、过滤器链集成、翻译管线、cron/PollRecord、Digest 功能。
-
-这些内容已收敛到本文档。`docs/llm/` 后续可以删除，但删除前建议确认 `operations.md` 中的线上路径和热重载命令是否需要迁移到 `README.md` 或 `docs/operations.md`。
-
-当前 `src/` 已经采用 `domain / application / infrastructure / interfaces` 的 DDD 风格目录，但实际依赖方向还不够干净：
-
-- `application` 仍有少量直接依赖 `infrastructure`，例如日志工具和部分过渡路径；全局 config 读取已开始收敛到 `ApplicationSettings`。
-- `infrastructure/schedule/rss_scheduler.py` 承载了核心同步、去重、状态更新、通知分发逻辑，不只是调度 Adapter。
-- Feed 同步和去重仍存在两条路径：手动刷新/Web API 已走 `FeedPollingService`，但 scheduler 仍保留内联多指纹同步逻辑。
-- `config` 既是 AstrBot 配置 Adapter，又是跨层全局 service locator。
-- `Subscription.feed` 这类运行时展示/导出字段开始污染领域实体。
-
-本计划的目标不是大规模移动文件，而是逐步建立清晰的 Module、Interface 和 Adapter，让核心用例有更好的 Locality 和测试面。
-
-## 从 `docs/llm` 保留的决策
-
-以下决策继续有效，应作为后续重构约束：
-
-- **保留 DDD 基调，但压缩浅 Module。** 不追求“纯 DDD”，优先让核心用例有清晰 Interface 和集中 Implementation。命令/查询/DTO 如果只是传递参数，应在后续合并或简化。
-- **继续使用 SQLite + SQLModel。** 当前订阅、Feed、用户、推送历史有明确关系查询需求，暂不迁移到 AstrBot KV。只有当迁移、锁竞争或部署成本成为主要问题时再评估 KV + JSON。
-- **保留发送器策略模式。** OneBot、Telegram、QQ Official 有实际平台差异；微信/WeChat 继续走 `DefaultMessageSender`，不恢复专用发送器，除非未来有可验证的平台特异需求。
-- **保留独立 `@filter.command` 注册。** Telegram/QQ 等平台的命令发现依赖明确命令注册，不改成单一 `/rss ...` 路由。
-- **调度仍以订阅维度为主。** 不引入全局 Job 模型；cron、执行统计和批次摘要应作为订阅调度的增强。
-- **不做 LLM 翻译回退链。** Google/Baidu 继续承担传统翻译；AI 能力应作为内容处理 Processor，一次完成总结、翻译、改写，而不是接在翻译失败后兜底。
-- **Digest 是独立功能。** 日报/定点推送不扩展现有 Subscription 模型，应建立 `Digest` 模块，从 `PushHistory` 或轮询结果按时间窗口取材。
-- **WebUI 走 Plugin Pages。** 旧 `src/infrastructure/web/` 的 aiohttp WebUI 已被 `pages/` + `src/interfaces/web_api.py` 替代，后续只维护 Plugin Pages。
-
-## 当前代码校验结论
-
-本次对 `docs/llm/` 和当前代码交叉检查后，以下事项需要按当前代码状态理解：
-
-- `docs/llm/project-map.md` 已经过时，仍提到旧 `pipeline/normalizer.py`、`deduplication_service.py` 等路径；当前实际代码已有 `pipeline/filters/`、`pipeline/formatter.py`、`infrastructure/media/`、`interfaces/web_api.py`。
-- `docs/llm/dedup.md` 和 `roadmap.md` 中“图片/视频指纹待实现”的描述不完全准确；当前 `RSSScheduler._hash_entry()` 已经尝试媒体 SHA256，但实现直接碰 `RSSFeedFetcher` 私有 session，应该抽成独立 Adapter 或在第一轮先限制为文本/URL 指纹。
-- `FeedSyncService` 旧 wrapper 已删除；手动刷新、WebUI refresh 和 scheduler 均直接使用 `FeedPollingService`。
-- `pipeline/filters/` 已有过滤器链 Interface 和默认过滤器，但尚未接入 scheduler 主路径，也缺少从插件配置到 `PipelineConfig` 的完整映射。
-- `NotificationDispatcher` 已改为通过 `MessageSenderProvider` 注入发送器；后续仍需减少 application 层对 infrastructure utils 的轻量依赖。
-- `MediaDownloader` 已移动到 `infrastructure/media/`，但仍保留较复杂的自定义缓存、锁和 GC。`docs/llm` 里的激进删除方案不建议直接做，后续只做低风险并发/缓存收敛。
-
-## 目标形态
-
-```text
-main.py
-  -> 读取 AstrBot config
-  -> 构造 application settings
-  -> 构造 infrastructure adapters
-  -> 注入 application use cases
-
-interfaces/
-  -> 只处理 AstrBot 命令、Web API、输入输出适配
-
-application/
-  -> 编排用例
-  -> 依赖 ports/settings，不直接 import infrastructure
-
-domain/
-  -> Feed、Subscription、去重策略等纯领域规则
-  -> 不读取 config，不依赖 ORM，不依赖 AstrBot
-
-infrastructure/
-  -> DB、HTTP、RSS parser、sender、AstrBot config adapter、scheduler adapter
-```
-
-## 当前执行状态
-
-更新日期：2026-05-16
-
-标记说明：
-
-- `[x]` 已完成并通过当前测试。
-- `[~]` 已部分完成，仍有明确剩余工作。
-- `[ ]` 未开始。
-
-架构重构阶段：
-
-- `[x]` 阶段 1：收敛 Config。`ApplicationSettings` 已建立，主要命令和服务已从 `main.py` 注入 settings/adapter；全局 config 遗留读取点放到阶段 6 清理。
-- `[x]` 阶段 2：建立 Application Ports。`FeedFetcher`、`FeedParser`、`MessageSenderProvider`、`Clock` port 已建立，发送器已通过 provider 注入。
-- `[x]` 阶段 3：统一 Feed 同步用例。`FeedPollingService` 已落地，手动 `/refresh`、Web API refresh、scheduler 和 `test_sub` 已统一到同一抓取解析入口。
-- `[x]` 阶段 4：把 Scheduler 降级为 Adapter。`RSSScheduler` 现只负责到期订阅查询、分组触发和下次检查时间回写。
-- `[x]` 阶段 5：整理 Domain 和 DTO。`SubscriptionExportRecord` 和导出查询已落地，导出不再往 `Subscription` 挂运行时 `feed`。
-- `[x]` 阶段 6：清理聚合导出和全局状态。聚合导出已改为懒加载兼容层，主调用方改从具体模块导入。
-
-插件更新计划：
-
-- `[~]` P0：稳定性和行为一致性。RSS 解析、Feed 去重、TOML 导入导出测试已固化；会话级推送队列和 `/rss_stop` 已实现；scheduler refresh 统一和重试路径细测仍未完成。
-- `[ ]` P1：核心体验增强。过滤器链、翻译管线、内容处理服务尚未接入主流程。
-- `[ ]` P2：调度与可观测性。cron、PollRecord、轮询健康状态尚未开始。
-- `[ ]` P3：新功能。RSSHub Routes 知识库、Digest、AI 内容处理尚未开始。
-- `[~]` P4：代码瘦身。legacy 同步 wrapper、全局 config 标记和 eager exports 已清理；旧兼容别名/未用 DTO 仍需后续按真实调用继续收敛。
-
-最近一次验证：
-
-```bash
-python tests/run_tests.py -v
-# 20 passed, 0 failed
-
-UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run pytest --collect-only -q
-# 182 tests collected
-
-UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run ruff check .
-# All checks passed
-
-UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run ruff format --check .
-# 131 files already formatted
-
-UV_CACHE_DIR=.uv-cache RUFF_CACHE_DIR=.ruff-cache-local uv run pytest -p no:cacheprovider tests/unit/application tests/unit/infrastructure/test_rss_scheduler.py tests/integration/test_plugin_integration.py -q
-# 58 passed, 182 warnings
-```
-
-## 分阶段实施
-
-### 阶段 1：收敛 Config
-
-状态：`[x]` 已完成基础落地；遗留清理并入阶段 6。
-
-目标：去掉 application 层对 `get_config_manager()` 的直接调用。
-
-新增：
-
-- `src/application/settings.py`
-  - `FeedFetchSettings`
-  - `SchedulerSettings`
-  - `SubscriptionDefaults`
-  - `TranslationSettings`
-  - `SenderStrategySettings`
-
-保留：
-
-- `src/infrastructure/config/config_manager.py` 继续负责 AstrBot config 解析、迁移和保存。
-
-调整：
-
-- `main.py` 将 `RsshubPluginConfig` 转成 application settings，再注入 commands/services。
-- `SubscribeFeedCommand` 不再读取 `get_config_manager()`，改为接收 `FeedFetcher` 或 `FeedFetchSettings`。
-- `TranslationService` 不再读取不一致字段名。
-- 修复字段不一致：
-  - `TranslationConfig.display_original_content` vs `translation_service.display_original`
-  - `TranslationConfig.cache_translations` vs `translation_service.cache_enabled`
-  - `BaiduTranslator` 读取 `config.baidu_translate`，但 `RsshubPluginConfig` 当前没有该字段。
-
-验证：
-
-- `[x]` 新增 config/settings 单测。
-- `[x]` `SubscribeFeedCommand` 单测不依赖全局 config。
-- `[x]` 现有导入导出、订阅命令测试通过。
-- `[ ]` 清理少数过渡路径中的全局 config 读取点，放到阶段 6。
-
-### 阶段 2：建立 Application Ports
-
-状态：`[x]` 已完成基础落地；轻量 import 清理并入阶段 6。
-
-目标：application 只依赖 Interface，infrastructure 提供 Adapter。
-
-新增：
-
-```text
-src/application/ports/
-  feed_fetcher.py
-  feed_parser.py
-  message_sender.py
-  clock.py
-```
-
-建议 Interface：
-
-- `FeedFetcher.fetch(url, headers=None) -> WebFeed`
-- `FeedParser.parse(content) -> tuple[list[EntryParsed], str | None]`
-- `MessageSenderProvider.get(platform_name) -> MessageSender`
-- `Clock.now() -> datetime`
-
-调整：
-
-- `RSSFeedFetcher` 成为 `FeedFetcher` Adapter。
-- `RSSParser` 成为 `FeedParser` Adapter。
-- sender factory 不再被 `NotificationDispatcher` 直接 import，改由 `MessageSenderProvider` 注入。
-- `main.py` 负责组装具体 Adapter。
-
-验证：
-
-- `[x]` application tests 使用 fake port，不 mock infrastructure。
-- `[x]` `NotificationDispatcher` 测试不需要 AstrBot sender mock。
-- `[ ]` 减少 application 层对 infrastructure utils/logger 的直接 import，放到阶段 6。
-
-### 阶段 3：统一 Feed 同步用例
-
-状态：`[~]` 部分完成；核心 use case 已落地，scheduler 迁移未完成。
-
-目标：让手动刷新、定时轮询、测试推送走同一套同步和去重逻辑。
-
-新增 Module：
-
-- `src/application/services/feed_polling_service.py`
-
-职责：
-
-- 获取 Feed。
-- 抓取 RSS。
-- 解析 entries。
-- 计算新增条目。
-- 更新 Feed 去重状态。
-- 调用通知分发。
-
-从 `rss_scheduler.py` 迁移：
-
-- `_migrate_hashes`
-- `_calculate_update`
-- `_hash_entry`
-- `_merge_hash_history`
-- `_resolve_hash_history_limit`
-- `_resolve_entry_link`
-- `_legacy_crc32`
-
-媒体指纹逻辑单独决定：
-
-- 若保留媒体内容 hash，抽成 `MediaFingerprintService` port。
-- infrastructure adapter 负责下载媒体和计算 hash。
-- application 不直接碰 aiohttp session。
-
-调整：
-
-- `[x]` `FeedSyncService` 旧 wrapper 已删除。
-- `[x]` `/refresh` 和 Web API refresh 已调用 `FeedPollingService`。
-- `[x]` `FeedPollingService` 已迁移文本/URL 多指纹去重、旧 hash 格式迁移、hash history 合并、bootstrap skip。
-- `[x]` `Feed.entry_hashes` 已兼容旧版扁平列表并规范化为 `list[list[str]]`。
-- `[ ]` scheduler 尚未调用 `FeedPollingService`。
-- `[ ]` `test_sub` 尚未迁移到统一 polling/test path。
-- `[ ]` 媒体内容指纹尚未抽成 `MediaFingerprintService` port；当前 application use case 不直接下载媒体。
-- `[ ]` `ContentFilterService` 的后续定位尚未清理。
-
-验证：
-
-- `[x]` 使用 `tests/fixtures/feeds/twitter_rss.xml` 验证 RSS 解析和三轮去重。
-- `[x]` 验证首次 bootstrap skip 行为。
-- `[x]` 验证同一 entry 的稳定身份去重。
-- `[x]` 验证旧 flat hash history 兼容。
-- `[ ]` 验证手动 refresh 和定时 scheduler 结果一致，需阶段 4 完成后补。
-
-### 阶段 4：把 Scheduler 降级为 Adapter
-
-状态：`[x]` 已完成。
-
-目标：`RSSScheduler` 只负责时间触发和订阅到期查询，不承载业务用例。
-
-调整前：
-
-- scheduler 直接依赖 ORM、DB session、HTTP fetcher、去重、notification dispatcher。
-
-调整后：
-
-```python
-await feed_polling_service.poll_feed_group(feed_id, subscription_ids)
-```
-
-或：
-
-```python
-await feed_polling_service.poll_feed(feed_id)
-```
-
-保留在 scheduler 的职责：
-
-- 找到 due subscriptions。
-- 按 feed/interval 分组。
-- 更新时间触发字段。
-- 控制定时循环。
-
-移出 scheduler 的职责：
-
-- 抓取 RSS。
-- 解析条目。
-- 判断新增。
-- 合并 hash history。
-- 发送通知。
-
-验证：
-
-- `[x]` scheduler 单测只测“到期订阅分组和触发调用”。
-- `[x]` Feed 同步行为只测 `FeedPollingService`。
-
-### 阶段 5：整理 Domain 和 DTO
-
-状态：`[x]` 已完成。
-
-目标：领域实体不承担展示/导出 read model 职责。
-
-调整：
-
-- 移除或弱化 `Subscription.feed` 这种运行时关联字段。
-- 新增导出 read model：
-
-```text
-src/application/dto/subscription_export_record.py
-```
-
-或：
-
-```text
-src/application/queries/get_subscription_exports_query.py
-```
-
-建议模型：
-
-```python
-SubscriptionExportRecord(
-    link: str,
-    feed_title: str | None,
-    options: dict[str, int | str],
-)
-```
-
-调整：
-
-- `ExportSubscriptionsCommand` 不再往 `Subscription` 挂 `feed`。
-- repository/query 提供导出所需 read model。
-
-验证：
-
-- `[x]` TOML roundtrip 测试继续通过。
-- `[x]` `Subscription.model_dump()` 不包含展示关联。
-
-### 阶段 6：清理聚合导出和全局状态
-
-状态：`[x]` 已完成。
-
-目标：减少浅 Module 和 import 副作用。
-
-调整：
-
-- 减少 `src/infrastructure/__init__.py` 的 eager import。
-- 调用方改为从具体子包导入。
-- `get_config_manager()` 标记为 legacy，只允许在 config Adapter 或少数过渡路径使用。
-- 删除重复或废弃同步路径。
-
-验证：
-
-- `[x]` pytest collection 不需要大量 AstrBot mock 才能导入纯模块。
-- `[x]` `ruff check .` 不出现 import 副作用、未使用导入和隐藏依赖。
-
-## 插件更新计划
-
-插件更新计划按用户可见价值和风险排序，和上面的架构重构交错推进。
-
-### P0：稳定性和行为一致性
-
-状态：`[~]` 部分完成；刷新和推送关键路径已加固，scheduler 统一仍未完成。
-
-目标：先保证现有订阅、刷新、推送、导入导出行为一致。
-
-- `[x]` 固化 RSS 解析、三轮 Feed 去重、TOML 导入导出的测试。已新增的 `twitter_rss.xml` 场景应作为回归测试保留。
-- `[x]` 修正配置字段不一致，尤其是 translation、Baidu 凭据、sender strategy、media download、history limit 等运行时读取路径。
-- `[~]` 统一手动 refresh、WebUI refresh、scheduler refresh 的同步逻辑；手动和 WebUI 已完成，scheduler 待阶段 4。
-- `[x]` 修复 dispatch guard，使用明确的 `already_sent` 判断跳过已成功推送过的条目。
-- `[~]` 给推送路径补单测；会话队列和 dispatcher 基础测试已补，重试细分场景仍待补。
-- `[x]` 为每个会话推送任务建立 job id，支持 `/rss_stop` 停止当前会话正在运行的任务；同一会话串行执行，后续任务排队。
+# RSSHub 插件扩展化与 AI 编排重构计划
+
+日期：2026-05-18
+
+## Summary
+
+插件定位收敛为 **RSS 状态、调度、去重、可靠发送基础设施 + 可扩展组件加工 runtime**。
+
+RSS 抓取、订阅管理、去重、推送历史、多平台发送和失败重试继续由插件负责；翻译、总结、日报、深层 XML 解析、Feed 级格式化交给 AI 或外部扩展完成。插件核心只接收稳定的结构化组件结果，再按平台可靠发送。
+
+实施顺序调整为：
+
+1. 先完成旧计划收尾，删除会阻碍新架构的翻译管道、翻译缓存、RSSHub route stub 和旧内容过滤残留。
+2. 集成 RSSHub Routes 知识库导入/同步，让 Agent 能通过 AstrBot KB 和 skill 查路由。
+3. 再建立平台无关组件契约，把发送层输入从“最终文本 + 媒体 URL”升级为 `ComponentDocument`。
+4. 最后实现独立 venv 子进程扩展 runtime、Registry、作者辅助 skill 和内置 AI formatter extension。
+
+## Decisions
+
+- **AI 边界**：日报、翻译、总结全部交给 AI 或扩展；插件只保留可靠发送、基础 fallback、推送历史和可观测性。
+- **失败策略**：AI/扩展失败时有限重试；仍失败则放行原始 entry 或基础组件，避免断流。
+- **发布策略**：AI 产物默认自动发布，不做人工审阅队列。
+- **扩展信任模型**：允许任意 Python 代码，但运行在独立 venv 子进程中。
+- **扩展来源**：通过中心化 Registry 发现和安装；Registry 可以记录任意远程 URL。
+- **资源访问**：默认开放网络和文件访问，主要依赖 AstrBot 插件隔离机制与管理员信任。
+- **扩展 API 边界**：扩展不直接拿主进程内部单例，只通过受控上下文、事件 payload 和 RPC 服务访问插件能力。
+- **扩展生命周期**：长期安装包，可被多个 feed 复用。
+- **扩展组合规则**：按显式配置顺序串行执行，上一个扩展的输出作为下一个扩展的输入。
+- **组件契约**：扩展输出平台无关组件，由插件转换为 AstrBot MessageChain。
+- **格式化优先级**：扩展返回组件时跳过内置文本格式化器；无组件结果时走基础格式化 fallback。
+- **Feed 级格式化**：AI formatter 绑定 Feed 级配置，不做会话级临时格式化规则。
+- **知识库边界**：插件只负责 RSSHub Routes KB 导入、同步、状态和 LLM 提示注入；检索与使用交给 AstrBot 内置 KB 工具和 route skill。
+
+## Current Cleanup Before New Architecture
+
+这些是实现新 runtime 前应先完成的收尾项。它们不属于扩展 runtime 本身，但会影响后续接口设计和测试稳定性。
+
+- 删除传统翻译路径：
+  - `_conf_schema.json` 不再暴露 `translation`。
+  - `ApplicationSettings`、config adapter、pipeline config 不再包含 translation behavior 字段。
+  - `TranslationFilter`、translator providers、translation cache repository/API/UI 从主代码移除。
+  - Plugin Pages 删除翻译配置、翻译缓存 tab、translation cache API 调用。
+  - 旧数据库列 `translate`、`translate_target_lang` 不再读写；如暂不迁移表结构，仅作为历史列保留。
+- 删除 RSSHub route stub：
+  - 移除 `rsshub_search_routes` 和 `rsshub_get_route_schema` 两个只返回迁移提示的 LLM tool。
+  - 保留 `rsshub_build_subscribe_url`，它仍是 Agent 构建订阅 URL 的原子工具。
+  - README 和测试同步删除 route stub 说明。
+- 清理旧内容过滤残留：
+  - `ContentFilterService` 只剩测试覆盖，已删除；去重行为直接归 `Feed` 与 `FeedPollingService` 所有。
+  - 当前 `MediaFingerprintService` port/adapter 已存在，不再作为未完成项。
+  - scheduler 已统一调用 `FeedPollingService`，不再作为未完成项。
 
 验收：
 
 ```bash
-pytest tests/unit/application tests/unit/domain -q
-pytest tests/integration/test_feed_push_simulation.py -q
-pytest tests/unit/application/test_import_export.py -q
+python -m json.tool _conf_schema.json >/private/tmp/rsshub_conf_schema_check.json
+pytest -q tests/unit/application/test_settings.py
+pytest -q tests/unit/interfaces/test_web_api.py
+pytest -q tests/unit/application/test_llmtools.py
+pytest -q tests/unit/application/test_content_processing_service.py
 ```
 
-### P1：核心体验增强
+## Stage 1：RSSHub Routes 知识库集成
 
-状态：`[ ]` 未开始。
+目标：将 RSSHub Routes 知识库导入 AstrBot，让 Agent 能查找路由、构建订阅 URL、再调用订阅工具。插件不提供 KB 搜索 LLM tool。
 
-目标：把已有的半成品能力接入主流程。
-
-- `[ ]` 接入 `pipeline/filters/`：去重之后、格式化/分发之前执行 `FilterChain.run()`。
-- `[ ]` 将插件配置映射为 `PipelineConfig`，至少支持关键词黑白名单、最小长度、最少媒体数、传统翻译开关。
-- `[ ]` 新增 `pipeline/processor.py` 或 application 层 `ContentProcessingService`，统一 AI 处理、传统翻译和透传 fallback。
-- `[ ]` 建立翻译管线：主引擎 → 回退引擎 → 原文，并保留错误标记用于调试。
-- `[ ]` WebUI 增加或完善过滤器/翻译配置、测试 URL、刷新、导入导出、统计信息入口。
+- 新增 Routes KB 同步服务：
+  - 读取远端 `metadata.json`。
+  - 读取本地 manifest，按 `path + sha256` 做增量 diff。
+  - 只下载新增/变更文件，清理远端已删除文件。
+  - 导入 `index/namespaces.md`、`index/*.md`、`docs/routes/**/*.md` 到 AstrBot KB。
+  - 同名文档先删后上传，使用 path 作为稳定 doc name。
+  - 后台任务同一时间只允许一个 running sync。
+- 新增 source adapter：
+  - `auto`：镜像优先，失败回退官方源。
+  - `mirror`：只使用镜像源，失败报错。
+  - `github`：只使用官方 GitHub/raw。
+  - `local`：从本地目录导入，支持离线部署。
+- 新增管理入口：
+  - Plugin Pages 展示 KB 状态、同步进度、最近错误和手动同步按钮。
+  - Chat command 保留最小集合：`/rsshub_kb_init`、`/rsshub_kb_sync`、`/rsshub_kb_status`、`/rsshub_kb_task`。
+  - 不恢复 `rsshub_search_routes` 和 `rsshub_get_route_schema` LLM tool。
+- LLM 注入与 skill：
+  - `@filter.on_llm_request()` 识别 RSSHub route 查询意图时注入 KB name 和使用提示。
+  - route skill 指导 Agent：先用 AstrBot KB 工具查 `RSSHub Routes`，再用 `rsshub_build_subscribe_url` 构建 URL，最后用 `rss_subscribe` 订阅。
 
 验收：
 
 ```bash
-pytest tests/unit/application -q
-pytest tests/integration -q
+pytest -q tests/unit/application/test_route_knowledge_service.py
+pytest -q tests/integration/test_route_knowledge_sync.py
+pytest -q tests/unit/interfaces/test_web_api.py
 ```
 
-### P2：调度与可观测性
+## Stage 2：组件契约与发送层收敛
 
-状态：`[ ]` 未开始。
+目标：让插件内部形成稳定的“结构化组件 → 平台 MessageChain”边界，为 AI/扩展输出提供统一落点。
 
-目标：让插件更容易运维和解释。
-
-- `[ ]` `Subscription` 增加可选 `cron_expression`，优先 cron，失败回退 interval。
-- `[ ]` 新增 `PollRecord` 或等价 read model，记录每次轮询的 feed、订阅数、抓取条目数、新条目数、推送成功/失败、耗时、错误摘要。
-- `[ ]` WebUI 展示 Feed 健康状态、最近轮询、最近错误、推送统计。
-- `[ ]` 调整 `RSSScheduler` 为调度 Adapter，只保留 due 查询、分组、触发和下次时间计算。
+- 新增平台无关组件模型：
+  - `ComponentDocument`
+  - `TextComponent`
+  - `ImageComponent`
+  - `VideoComponent`
+  - `AudioComponent`
+  - `FileComponent`
+  - `LinkComponent`
+  - `MetadataComponent`
+- 调整发送入口：
+  - Feed/entry 默认格式化结果也转换成 `ComponentDocument`。
+  - Notification dispatcher 和 message sender 先支持组件文档，再保留原文本 fallback。
+  - 组件结果优先于 RSStT/flowerss 文本格式化；未返回组件时才走基础格式化 fallback。
+- 保留发送兼容行为：
+  - 媒体下载失败时追加原始链接。
+  - Telegram caption 限制仍生效。
+  - OneBot merged-forward node name 继续优先 feed title，fallback `RSSHub`。
+  - 推送尾部仍保留 legacy `via <link> | <feed> (author: ...)` 风格，直到组件 formatter 明确替代。
 
 验收：
 
 ```bash
-pytest tests/integration -q
-python tests/run_tests.py --category unit
+pytest -q tests/unit/infrastructure/test_message_formatter.py
+pytest -q tests/unit/application/test_notification_dispatcher.py
+pytest -q tests/unit/application/test_feed_polling_service.py
+pytest -q tests/integration/test_feed_push_simulation.py
 ```
 
-### P3：新功能
+## Stage 3：子进程 Extension Runtime
 
-状态：`[ ]` 未开始。
+目标：把扩展从同进程 import 任意 Python，升级为独立环境、可观测、可重启的业务能力模块。
 
-目标：在核心同步路径稳定后再扩展能力。
-
-- `[ ]` Digest/日报：新增独立 `Digest` 实体、命令和调度 loop，从 `PushHistory` 或轮询记录按时间窗口取材，支持 text/image 输出。
-- `[ ]` RSSHub Routes 知识库：导入 `https://github.com/FlanChanXwO/rsshub-routes-knowledgebase`，提供路线检索、订阅辅助和 LLM 上下文注入。
-- `[ ]` AI 内容处理：接入 AstrBot `context.llm_generate`，但默认关闭；AI 筛选失败时放行，避免误杀。
-- `[ ]` 新数据源 Adapter：继续以 RSS 为核心，新增 Twitter/Nitter、网页发现、自定义 API 时统一输出 Entry-like 结构。
-- `[ ]` 消息模板系统：把当前 formatter 变成可配置模板，但先保持默认模板兼容。
-
-#### RSSHub Routes 知识库具体实现
-
-目标：让用户能在插件内查询 RSSHub 支持哪些路由、路由参数怎么填，并在订阅 URL 构建、测试订阅和 LLM 对话时自动参考知识库。
-
-参考实现：
-
-- 用户给出的 `YunMo-yanyu/astrbot-/main.py` 使用 `KBHelper`/`context.kb_manager` 创建知识库、加载已有文档、后台同步任务、状态查询、搜索命令、会话绑定和 `@filter.on_llm_request()` 注入检索结果。
-- 本插件不需要照搬网页爬取逻辑；RSSHub 知识库仓库已经生成了稳定 Markdown 和 `metadata.json`，应该直接做 manifest 增量同步。
-
-知识库源格式：
-
-- 仓库：`FlanChanXwO/rsshub-routes-knowledgebase`
-- 入口文件：`metadata.json`
-- 当前结构：
-  - `metadata.json`：`version/source/stats/files`
-  - `files[]`：`{"path": "...", "sha256": "..."}`
-  - `index/namespaces.md`：命名空间目录
-  - `index/<namespace>.md`：命名空间下路由目录
-  - `docs/routes/<namespace>/*.md`：单条路由完整文档
-- 当前规模约：`files=4794`、`documents=3207`、`namespaces=1586`。同步必须增量、后台执行、可恢复。
-
-建议模块划分：
-
-```text
-src/application/services/route_knowledge_service.py
-  -> use case: init/sync/status/search/bind/inject
-
-src/application/dto/route_knowledge_dto.py
-  -> KnowledgeSyncTask, KnowledgeSyncStatus, KnowledgeFileRecord
-
-src/infrastructure/knowledge/
-  github_source.py
-  mirror_source.py
-  manifest_store.py
-  kb_importer.py
-
-src/interfaces/route_knowledge_handlers.py
-  -> chat commands
-
-pages/rsshub/
-  -> 知识库状态、同步按钮、搜索入口
-```
-
-数据落点：
-
-- 远端文件缓存：`data/plugin_data/astrbot_plugin_rsshub/knowledge/rsshub-routes/`
-- 本地 manifest：`data/plugin_data/astrbot_plugin_rsshub/knowledge/rsshub-routes/manifest.json`
-- 同步状态：优先用 JSON state，后续需要查询统计时再入 SQLite。
-- AstrBot 知识库名称默认：`RSSHub Routes`
-
-同步算法：
-
-1. 读取远端 `metadata.json`。
-2. 读取本地 `manifest.json`，按 `path + sha256` 比较。
-3. 只下载新增或变更文件，删除远端已不存在的本地文件。
-4. 只导入以下文件到 AstrBot KB：
-   - `index/namespaces.md`
-   - `index/*.md`
-   - `docs/routes/**/*.md`
-5. 每个文件以 `path` 作为稳定 `doc_name`，导入前若已存在同名文档则删除再上传。
-6. 上传使用 `KBHelper.upload_document(file_type="txt", pre_chunked_text=chunks)`，chunking 由本插件预切分，避免大文件一次性入库。
-7. 任务后台运行，同一时间只允许一个同步任务；保留 task_id、当前文件、downloaded/imported/updated/deleted/failed、最近错误。
-
-国内加速镜像要求：
-
-- 必须支持可配置 `knowledge_source_mode`：
-  - `auto`：默认，按镜像列表依次尝试，失败回退 GitHub 官方地址。
-  - `mirror`：只使用国内/加速镜像，全部失败则报错。
-  - `github`：只使用官方 GitHub。
-  - `local`：从本地目录导入，适合离线部署。
-- 默认候选 base URL：
-  - 官方：`https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main/`
-  - GitHub API fallback：`https://api.github.com/repos/FlanChanXwO/rsshub-routes-knowledgebase/contents/{path}?ref=main`
-  - 加速镜像模板必须可配置，例如：
-    - `https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main/`
-    - `https://gh-proxy.com/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main/`
-    - `https://gh.llkk.cc/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main/`
-    - 用户自建镜像：`{base}/{path}`
-- 镜像健康检查：
-  - 先请求 `metadata.json`。
-  - 校验 JSON 可解析、`version` 存在、`files` 非空。
-  - 下载文件后校验 sha256，不匹配则换下一个镜像重试。
-- 不把某个公共镜像写死为唯一来源。公共代理稳定性不可控，插件必须允许用户替换为自建 mirror、GitHub Pages、Gitee、Cloudflare Worker、企业内网静态文件服务。
-
-配置项：
-
-```text
-knowledge.enabled: bool = false
-knowledge.kb_name: str = "RSSHub Routes"
-knowledge.source_mode: "auto" | "mirror" | "github" | "local" = "auto"
-knowledge.branch: str = "main"
-knowledge.official_base_url: str
-knowledge.mirror_base_urls: list[str]
-knowledge.local_dir: str
-knowledge.sync_on_startup: bool = false
-knowledge.sync_interval_hours: int = 24
-knowledge.max_files_per_sync: int = 0
-knowledge.download_concurrency: int = 4
-knowledge.upload_batch_size: int = 4
-knowledge.upload_tasks_limit: int = 1
-knowledge.chunk_max_chars: int = 1200
-knowledge.chunk_overlap: int = 120
-knowledge.inject_on_llm_request: bool = true
-knowledge.inject_top_k: int = 5
-```
-
-命令入口：
-
-- `/rsshub_kb_init [embedding_provider_id]`：创建或复用 AstrBot 知识库。
-- `/rsshub_kb_sync [limit]`：后台增量同步知识库。
-- `/rsshub_kb_status`：显示 KB id、文档数、chunk 数、source revision、最近任务。
-- `/rsshub_kb_task [task_id]`：显示同步进度和最近错误。
-- `/rsshub_kb_search <query>`：检索 route 文档，返回 doc name、score、摘要。
-- `/rsshub_kb_bind [top_k]` / `/rsshub_kb_unbind`：将当前会话绑定/解绑知识库。
-
-LLM 注入：
-
-- 在 `@filter.on_llm_request()` 中识别 RSSHub route 查询意图，例如“某网站有没有 RSSHub 路由”“怎么订阅 B站/知乎/Telegram”“RSSHub 参数怎么填”。
-- 命中时调用 `context.kb_manager.retrieve(query=..., kb_names=[kb_name])`，把结果以短上下文注入 system prompt。
-- 不移除其它工具；只追加知识库提示，避免影响现有 RSS 订阅命令。
-
-订阅辅助：
-
-- `SubscribeFeedCommand` 不直接依赖 KB。
-- 新增 route lookup use case，供 WebUI 和命令调用：
-  - 输入站点名/URL/namespace。
-  - 检索 `index/namespaces.md` 和对应 `index/<namespace>.md`。
-  - 返回候选 route、示例路径、参数说明。
-- WebUI 的“添加订阅”流程增加“查找 RSSHub 路由”面板，用户选择 route 后再拼接 RSSHub URL 并调用现有测试 URL。
+- 将现有同进程 `PluginManager` / event bus 标记为 legacy，或迁移成新 runtime 的兼容层。
+- 定义扩展包 manifest：
+  - name
+  - version
+  - entrypoint
+  - dependencies
+  - supported_hooks
+  - description
+- 每个扩展使用独立 venv，作为子进程运行。
+- 主进程与扩展通过 JSON-RPC 交换数据：
+  - `initialize`
+  - `handle_hook`
+  - `health_check`
+  - `shutdown`
+- 第一版支持 hook：
+  - `fetch`
+  - `parse`
+  - `entry_process`
+  - `dedup`
+  - `format`
+  - `before_send`
+  - `after_send`
+- 扩展可以取消、替换或完全接管结果。
+- 多扩展按 feed 配置中的显式顺序串行执行，上一个扩展的输出作为下一个扩展的输入。
+- 扩展异常、超时、非法组件输出、进程退出时记录错误，有限重试后 fallback 放行。
 
 验收：
 
 ```bash
-pytest tests/unit/application/test_route_knowledge_service.py -q
-pytest tests/integration/test_route_knowledge_sync.py -q
+pytest -q tests/unit/application tests/unit/infrastructure
+pytest -q tests/integration/test_plugin_integration.py
 ```
 
-测试覆盖：
+## Stage 4：Registry、Plugin Pages、Skill 与内置 AI Formatter
 
-- manifest diff：新增、更新、删除、无变化。
-- source fallback：镜像失败后换源；`mirror` 模式不回退官方。
-- sha256 校验失败时拒绝导入。
-- KB importer：同名 doc 删除后重新上传。
-- 后台任务：同一时间只允许一个 running task。
-- LLM 注入：只有 RSSHub route 意图才注入。
+目标：形成可被 AI 生成、安装、验证和长期复用的扩展生态雏形。
 
-### P4：代码瘦身
+- Plugin Pages 增加扩展管理：
+  - 安装
+  - 启停
+  - 排序
+  - 版本
+  - 依赖安装状态
+  - 运行日志
+  - 错误状态
+- Registry 元数据至少包含：
+  - 扩展名
+  - 版本
+  - 入口
+  - 依赖
+  - 远程 URL
+  - 校验信息
+  - 描述文档
+- 支持从 Registry 安装扩展、更新扩展、锁定版本和校验下载结果。
+- 第一版不做权限声明，也不做细粒度资源限制。
+- 新增作者辅助 skill：
+  - 生成扩展骨架。
+  - 生成 hook 示例和组件输出示例。
+  - 生成测试。
+  - 生成扩展 manifest 和打包产物。
+  - skill 只辅助开发/发布，不参与运行时推送链路。
+- 内置 Feed 级 AI formatter extension：
+  - 输入 feed、entry、raw XML 和当前 feed 配置。
+  - 调用 AstrBot LLM。
+  - 一次性完成深层 XML 解析、翻译、总结、改写和组件排版。
+  - 输出 `ComponentDocument`。
 
-状态：`[~]` 已部分完成。
-
-目标：删除已经被新路径替代的旧模块。
-
-- `[x]` 删除 `FeedSyncService` 旧 wrapper，调用方已直接使用 `FeedPollingService`。
-- `[x]` 删除 legacy config 全局读取点，`get_config_manager()` 只保留在 infrastructure config Adapter 和过渡层。
-- `[x]` 减少 `src/infrastructure/__init__.py`、`src/application/services/__init__.py` 的 eager exports。
-- `[ ]` 根据真实调用情况清理旧兼容别名和未使用 DTO。
-
-## `docs/llm` 删除建议
-
-可以删除，但建议按以下顺序处理：
-
-1. 保留本文档作为主计划，替代 `docs/llm/roadmap.md`、`decisions.md`、`current-state.md`、`architecture-refactor.md`。
-2. 将 `docs/llm/operations.md` 的热重载、数据目录、发布步骤迁移到 `README.md` 或新建 `docs/operations.md`。
-3. 删除已过时或已完成的历史记录：`status-report.md`、`optimization-summary.md`、`todo-fixes.md`、`v2.1.1-fixes.md`、WeChat 相关分析文档。
-4. 删除后运行一次 `rg "docs/llm|llm/"`，确认 README 或脚本没有失效引用。
-
-## 推荐 PR 顺序
-
-1. `docs(plan): preserve llm docs decisions before cleanup`
-2. `fix(config): align translation and baidu config fields`
-3. `test(feed): lock rss parsing dedup and toml roundtrip behavior`
-4. `refactor(config): introduce application settings and inject fetch settings`
-5. `refactor(application): add feed fetcher/parser/sender ports`
-6. `refactor(sync): introduce feed polling service`
-7. `refactor(schedule): make scheduler trigger feed polling use case`
-8. `feat(pipeline): connect filter chain to feed polling`
-9. `refactor(export): use export read model instead of Subscription.feed`
-10. `feat(schedule): add poll records and optional cron`
-11. `feat(knowledge): import and sync RSSHub routes knowledgebase`
-12. `chore(infrastructure): reduce package-level eager exports`
-
-## 每阶段通用验收
-
-每个 PR 至少运行：
+验收：
 
 ```bash
-pytest tests/unit/application tests/unit/domain -q
-pytest tests/unit/application/test_feed_parsing.py tests/integration/test_feed_push_simulation.py tests/unit/application/test_import_export.py -q
-uv run ruff check data/plugins/astrbot_plugin_rsshub
+pytest -q tests/unit/interfaces/test_web_api.py
+pytest -q tests/unit/application tests/unit/infrastructure
+pytest -q tests/integration
 ```
 
-涉及 scheduler、DB、通知发送时额外运行：
+## Test Focus
 
-```bash
-pytest tests/integration -q
-python tests/run_tests.py --category unit
-```
+- 翻译删除回归：
+  - `_conf_schema.json` 不再包含 `translation` 分组。
+  - Web API 不再返回或写入 translation behavior/cache。
+  - Plugin Pages 不再显示翻译配置和翻译缓存。
+  - FeedPollingService 不再调用传统 `TranslationFilter`。
+  - 旧 `translate` 字段不影响订阅创建、导入导出和推送。
+- 组件契约：
+  - `text`、`image`、`video`、`audio`、`file`、`link` 组件能转换成当前平台 MessageChain。
+  - 扩展组件优先，未返回组件时基础格式化 fallback。
+  - 媒体下载失败、Telegram caption、OneBot merged-forward、legacy via 尾部不回归。
+- 扩展 runtime：
+  - venv 创建、依赖安装、子进程启动、RPC 调用、超时、退出和重启。
+  - 多扩展显式顺序执行，输出可串接。
+  - 扩展接管 `format` / `before_send` 时仍记录推送历史和失败队列。
+  - 异常、超时、非法组件输出时有限重试，最终 fallback 放行。
+- RSSHub Routes KB：
+  - manifest diff 覆盖新增、更新、删除、无变化。
+  - 镜像失败可 fallback；`mirror` 模式不回退官方。
+  - sha256 校验失败拒绝导入。
+  - 同名 doc 删除后重新上传。
+  - 同一时间只允许一个同步任务。
+  - route 查询意图才注入 KB 使用提示。
+- AI formatter：
+  - Feed 级配置启用后，entry 通过扩展产出组件。
+  - LLM 返回非法 JSON、超时、异常时重试后放行。
+  - raw XML 深层字段解析结果能进入组件输出。
 
-## 非目标
+## Non-goals
 
-以下事项不要在第一轮重构中做：
+- 不再实现插件内置传统翻译管道。
+- 不再实现插件内置日报/Digest 模块。
+- 不再实现插件核心里的固定总结系统。
+- 第一版不做扩展权限声明和细粒度沙箱。
+- 第一版不做人工审阅队列。
+- 第一版不把扩展输出直接绑定到 Telegram/OneBot 等平台私有消息结构。
+- 不给插件新增 RSSHub route 搜索 LLM tool；检索走 AstrBot KB 工具。
+- 不把已完成的旧架构阶段重新列入计划，例如 scheduler 统一、FeedPollingService、MediaFingerprintService port。
 
-- 不要一次性重命名所有目录。
-- 不要一次性移动所有 infrastructure 文件。
-- 不要把所有东西都抽象成 port，只抽 application 正在直接依赖的 infrastructure。
-- 不要同时改 scheduler、config、notification、export 的行为。
-- 不要为了“DDD 纯度”删除现有兼容入口，先标记 legacy，再迁移调用方。
+## Assumptions
 
-## 第一刀建议
-
-从 config 开始：
-
-1. 修正 translation 和 baidu 配置字段不一致。
-2. 新增 `application/settings.py`。
-3. 让 `SubscribeFeedCommand` 停止读取全局 config。
-4. 在 `main.py` 注入 settings 或 fetcher Adapter。
-
-这一步风险低，能立刻减少 application 对 infrastructure config 的依赖，并为后续 ports 和 feed polling 重构铺路。
+- 接受破坏性删除传统翻译功能，不做旧翻译配置和缓存数据迁移。
+- 接受任意远程扩展和默认开放资源访问带来的安全风险。
+- AstrBot 插件隔离机制和管理员信任是第一版主要安全边界。
+- 扩展 runtime 的稳定性优先于极致性能；子进程 RPC 的开销可以接受。
+- AI/扩展失败不能阻断默认 RSS 推送。
+- 发送可靠性、推送历史、去重、订阅管理仍是插件核心职责。

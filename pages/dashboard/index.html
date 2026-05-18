@@ -40,6 +40,11 @@
     .status-dot.inactive { background: #ef4444; }
     .col-status { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
     .status-text { font-size: 13px; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 500; background: #e2e8f0; color: #475569; }
+    .status-badge.pending { background: #fef3c7; color: #92400e; }
+    .status-badge.success { background: #d1fae5; color: #065f46; }
+    .status-badge.failed { background: #fee2e2; color: #991b1b; }
+    .status-badge.stopped { background: #f1f5f9; color: #475569; }
     .feed-title { font-weight: 600; color: #1b1c1d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .feed-url { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
     .btn-action { padding: 4px 8px !important; height: auto !important; font-size: 12px !important; text-transform: none !important; letter-spacing: 0 !important; min-width: auto !important; color: #3c96ca !important; }
@@ -88,6 +93,11 @@
     [data-theme="dark"] .sub-table tbody tr.selected { background: rgba(60,150,202,0.12); }
     [data-theme="dark"] .feed-title { color: var(--text-primary); }
     [data-theme="dark"] .feed-url { color: var(--text-tertiary); }
+    [data-theme="dark"] .status-badge { background: var(--bg-secondary); color: var(--text-secondary); }
+    [data-theme="dark"] .status-badge.pending { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+    [data-theme="dark"] .status-badge.success { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+    [data-theme="dark"] .status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
+    [data-theme="dark"] .status-badge.stopped { background: var(--bg-secondary); color: var(--text-tertiary); }
     .tab-nav { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; }
     .tab-btn { padding: 10px 16px; font-size: 14px; font-weight: 500; color: #64748b; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
     .tab-btn.active { color: #3c96ca; border-bottom-color: #3c96ca; }
@@ -119,7 +129,8 @@
     <button class="tab-btn" :class="{ active: activeTab === 'subs' }" @click="activeTab = 'subs'">订阅列表</button>
     <button class="tab-btn" :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'; loadUsers()">用户</button>
     <button class="tab-btn" :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'; loadFeeds()">Feed 源</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'; loadSettings()">用户设置</button>
+    <button class="tab-btn" :class="{ active: activeTab === 'push-history' }" @click="activeTab = 'push-history'; loadPushHistory()">推送历史</button>
+    <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'; loadSettings()">设置</button>
   </div>
 
   <!-- Action Bar -->
@@ -207,14 +218,17 @@
     <div v-if="usersLoading" class="empty-state"><p>加载中...</p></div>
     <div v-else-if="users.length === 0" class="empty-state"><p>暂无用户数据</p></div>
     <table class="sub-table" v-else>
-      <thead><tr><th class="col-user">用户 ID</th><th class="col-interval">订阅数</th><th class="col-status">活跃数</th><th class="col-actions">操作</th></tr></thead>
+      <thead><tr><th class="col-user">用户 ID</th><th class="col-status">状态</th><th class="col-interval">订阅数</th><th class="col-session">默认推送目标</th><th class="col-actions">操作</th></tr></thead>
       <tbody>
         <tr v-for="u in users" :key="u.user_id">
           <td class="col-user" data-label="用户">{{ u.user_id }}</td>
-          <td class="col-interval" data-label="订阅数">{{ u.total }}</td>
-          <td class="col-status" data-label="活跃数"><span class="status-dot active"></span> {{ u.active }}</td>
+          <td class="col-status" data-label="状态"><span class="status-badge" :class="u.state >= 0 ? 'active' : 'inactive'">{{ u.state >= 0 ? '正常' : '封禁' }}</span></td>
+          <td class="col-interval" data-label="订阅数">-</td>
+          <td class="col-session" data-label="默认推送目标" :title="u.default_target_session">{{ u.default_target_session || '-' }}</td>
           <td class="col-actions" data-label="操作">
             <button class="btn btn-text btn-action" @click="selectUser(u.user_id)">查看订阅</button>
+            <button class="btn btn-text btn-action" @click="openUserEditPanel(u)">编辑</button>
+            <button class="btn btn-text btn-action" style="color:#ef4444 !important;" @click="handleDeleteUser(u.user_id)">删除</button>
           </td>
         </tr>
       </tbody>
@@ -244,12 +258,205 @@
     </table>
   </div>
 
-  <!-- User Settings -->
+  <!-- Push History -->
+  <div v-if="activeTab === 'push-history'" class="table-section">
+    <div class="section-header">
+      <h2>推送历史</h2>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select class="select-input" v-model="pushHistoryFilter.status" @change="pushHistoryFilter.page = 1; loadPushHistory()">
+          <option value="">全部状态</option>
+          <option value="pending">待推送</option>
+          <option value="success">成功</option>
+          <option value="failed">失败</option>
+          <option value="stopped">已停止</option>
+        </select>
+        <button class="btn btn-secondary btn-small" @click="cleanupPushHistory()">清理旧记录</button>
+      </div>
+    </div>
+    <div v-if="pushHistoryLoading" class="empty-state"><p>加载中...</p></div>
+    <div v-else-if="pushHistory.length === 0" class="empty-state"><p>暂无推送历史</p></div>
+    <table class="sub-table" v-else>
+      <thead><tr><th class="col-status">状态</th><th class="col-user">用户</th><th class="col-feed">条目</th><th class="col-session">目标会话</th><th class="col-interval">重试</th><th class="col-actions">操作</th></tr></thead>
+      <tbody>
+        <tr v-for="h in pushHistory" :key="h.id">
+          <td class="col-status" data-label="状态"><span class="status-badge" :class="h.status">{{ h.status }}</span></td>
+          <td class="col-user" data-label="用户">{{ h.user_id }}</td>
+          <td class="col-feed" data-label="条目">
+            <div class="feed-title">{{ h.entry_title || '无标题' }}</div>
+            <div class="feed-url" :title="h.entry_link">{{ h.feed_title || '' }}</div>
+          </td>
+          <td class="col-session" data-label="目标" :title="h.target_session">{{ h.target_session || '-' }}</td>
+          <td class="col-interval" data-label="重试">{{ h.retry_count }}/{{ h.max_retries }}</td>
+          <td class="col-actions" data-label="操作">
+            <button class="btn btn-text btn-action" style="color:#ef4444 !important;" @click="deletePushHistoryItem(h.id)">删除</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <div v-if="pushHistory.length > 0" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid #f1f5f9;">
+      <span style="font-size:13px;color:#94a3b8;">共 {{ pushHistoryTotal }} 条</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page <= 1" @click="pushHistoryPrevPage()">上一页</button>
+        <span style="font-size:13px;color:#64748b;line-height:32px;">{{ pushHistoryFilter.page }}</span>
+        <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page >= Math.ceil(pushHistoryTotal / pushHistoryFilter.pageSize)" @click="pushHistoryNextPage()">下一页</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
   <div v-if="activeTab === 'settings'" class="settings-form">
     <div v-if="settingsLoading" class="empty-state"><p>加载中...</p></div>
     <div v-else>
       <div class="panel-section">
-        <h4>推送设置</h4>
+        <h4>插件默认配置</h4>
+        <div class="setting-row">
+          <span class="setting-label">默认监控间隔（分钟）</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="subscriptionDefaults.interval" min="1" max="1440" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认通知</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="subscriptionDefaults.notify" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认发送模式</span>
+          <select class="select-input" v-model="subscriptionDefaults.send_mode">
+            <option value="仅链接">仅链接</option>
+            <option value="自动">自动</option>
+            <option value="直接消息">直接消息</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">内容长度限制</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="subscriptionDefaults.length_limit" min="0" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认链接预览</span>
+          <select class="select-input" v-model="subscriptionDefaults.link_preview">
+            <option value="自动">自动</option>
+            <option value="强制启用">强制启用</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认显示作者</span>
+          <select class="select-input" v-model="subscriptionDefaults.display_author">
+            <option value="禁用">禁用</option>
+            <option value="自动">自动</option>
+            <option value="强制">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认显示来源</span>
+          <select class="select-input" v-model="subscriptionDefaults.display_via">
+            <option value="完全禁用">完全禁用</option>
+            <option value="仅链接">仅链接</option>
+            <option value="自动">自动</option>
+            <option value="强制">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认显示标题</span>
+          <select class="select-input" v-model="subscriptionDefaults.display_title">
+            <option value="禁用">禁用</option>
+            <option value="自动">自动</option>
+            <option value="强制">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认显示标签</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="subscriptionDefaults.display_entry_tags" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认样式</span>
+          <select class="select-input" v-model="subscriptionDefaults.style">
+            <option value="RSStT">RSStT</option>
+            <option value="flowerss">flowerss</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">默认显示媒体</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="subscriptionDefaults.display_media" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>内容管线</h4>
+        <div class="setting-row">
+          <span class="setting-label">关键词黑名单</span>
+          <textarea class="select-input" style="width:280px;min-height:72px;" v-model="pipelineSettings.keyword_blacklist" placeholder="每行一个关键词"></textarea>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">关键词白名单</span>
+          <textarea class="select-input" style="width:280px;min-height:72px;" v-model="pipelineSettings.keyword_whitelist" placeholder="每行一个关键词，留空不限制"></textarea>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">最小正文长度</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="pipelineSettings.min_content_length" min="0" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">最少媒体数量</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="pipelineSettings.min_media_count" min="0" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">AI 筛选</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="pipelineSettings.ai_filter_enabled" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">AI 筛选提示词</span>
+          <textarea class="select-input" style="width:280px;min-height:72px;" v-model="pipelineSettings.ai_filter_prompt" placeholder="留空使用默认策略"></textarea>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">AI 增强</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="pipelineSettings.ai_enrich_enabled" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">AI 增强提示词</span>
+          <textarea class="select-input" style="width:280px;min-height:72px;" v-model="pipelineSettings.ai_enrich_prompt" placeholder="留空使用默认策略"></textarea>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">AI 超时（秒）</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="pipelineSettings.ai_timeout_seconds" min="1" max="300" />
+          </div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>导入订阅</h4>
+        <div class="setting-row">
+          <span class="setting-label">跳过已存在订阅</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="importForm.skipExisting" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <textarea class="select-input" style="width:100%;min-height:160px;box-sizing:border-box;" v-model="importForm.content" placeholder="粘贴 /sub_export 导出的 TOML 内容"></textarea>
+        <div class="form-actions">
+          <button class="btn btn-secondary" @click="handleImport()">导入 TOML</button>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>webadmin 用户默认配置</h4>
         <div class="setting-row">
           <span class="setting-label">推送间隔（分钟）</span>
           <div class="input-wrapper" style="max-width:120px;">
@@ -271,9 +478,12 @@
             <option :value="2">直接消息</option>
           </select>
         </div>
-      </div>
-      <div class="panel-section">
-        <h4>显示选项</h4>
+        <div class="setting-row">
+          <span class="setting-label">内容长度限制</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="settings.length_limit" min="0" max="10000" />
+          </div>
+        </div>
         <div class="setting-row">
           <span class="setting-label">链接预览</span>
           <select class="select-input" v-model.number="settings.link_preview">
@@ -307,15 +517,30 @@
           </select>
         </div>
         <div class="setting-row">
+          <span class="setting-label">显示标签</span>
+          <select class="select-input" v-model.number="settings.display_entry_tags">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
+          </select>
+        </div>
+        <div class="setting-row">
           <span class="setting-label">样式</span>
           <select class="select-input" v-model.number="settings.style">
             <option :value="0">RSStT</option>
             <option :value="1">flowerss</option>
           </select>
         </div>
+        <div class="setting-row">
+          <span class="setting-label">显示媒体</span>
+          <select class="select-input" v-model.number="settings.display_media">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
+          </select>
+        </div>
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" @click="saveSettings()">保存设置</button>
+        <button class="btn btn-secondary" @click="savePluginSettings()">保存插件设置</button>
+        <button class="btn btn-primary" @click="saveSettings()">保存用户设置</button>
       </div>
     </div>
   </div>
@@ -448,6 +673,12 @@
           </label>
         </div>
         <div class="setting-row">
+          <span class="setting-label">内容长度限制</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="editForm.length_limit" min="0" max="10000" />
+          </div>
+        </div>
+        <div class="setting-row">
           <span class="setting-label">链接预览</span>
           <select class="select-input" v-model.number="editForm.link_preview">
             <option :value="0">自动</option>
@@ -480,10 +711,24 @@
           </select>
         </div>
         <div class="setting-row">
+          <span class="setting-label">显示标签</span>
+          <select class="select-input" v-model.number="editForm.display_entry_tags">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
+          </select>
+        </div>
+        <div class="setting-row">
           <span class="setting-label">样式</span>
           <select class="select-input" v-model.number="editForm.style">
             <option :value="0">RSStT</option>
             <option :value="1">flowerss</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示媒体</span>
+          <select class="select-input" v-model.number="editForm.display_media">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
           </select>
         </div>
       </div>
@@ -530,6 +775,131 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- User Edit Panel -->
+  <div class="panel-overlay" :class="{ visible: userEditPanelVisible }" @click="closeUserEditPanel()"></div>
+  <section class="edit-panel" :class="{ 'panel-visible': userEditPanelVisible }">
+    <div class="panel-header">
+      <h3>编辑用户配置</h3>
+      <div class="panel-actions">
+        <button class="btn btn-icon" @click="closeUserEditPanel()">×</button>
+      </div>
+    </div>
+    <form class="form" @submit.prevent="handleSaveUserEdit()">
+      <div class="panel-section">
+        <h4>基本信息</h4>
+        <div class="detail-row"><span class="detail-label">用户 ID</span><span class="detail-value">{{ userEditForm.user_id }}</span></div>
+        <div class="setting-row">
+          <span class="setting-label">用户状态</span>
+          <select class="select-input" v-model.number="userEditForm.state">
+            <option :value="-1">封禁</option>
+            <option :value="0">访客</option>
+            <option :value="1">用户</option>
+            <option :value="100">管理员</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>默认推送目标</label>
+          <div class="input-wrapper">
+            <input type="text" v-model="userEditForm.default_target_session" placeholder="unified_msg_origin" />
+          </div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>推送设置</h4>
+        <div class="setting-row">
+          <span class="setting-label">推送间隔（分钟）</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="userEditForm.interval" min="1" max="1440" />
+          </div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">通知</span>
+          <label class="toggle-switch">
+            <input type="checkbox" v-model="userEditForm.notify" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">发送模式</span>
+          <select class="select-input" v-model.number="userEditForm.send_mode">
+            <option :value="-1">仅链接</option>
+            <option :value="0">自动</option>
+            <option :value="2">直接消息</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">内容长度限制</span>
+          <div class="input-wrapper" style="max-width:120px;">
+            <input type="number" v-model.number="userEditForm.length_limit" min="0" max="10000" />
+          </div>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>显示选项</h4>
+        <div class="setting-row">
+          <span class="setting-label">链接预览</span>
+          <select class="select-input" v-model.number="userEditForm.link_preview">
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示作者</span>
+          <select class="select-input" v-model.number="userEditForm.display_author">
+            <option :value="-1">禁用</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示来源</span>
+          <select class="select-input" v-model.number="userEditForm.display_via">
+            <option :value="-2">完全禁用</option>
+            <option :value="-1">仅链接</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示标题</span>
+          <select class="select-input" v-model.number="userEditForm.display_title">
+            <option :value="-1">禁用</option>
+            <option :value="0">自动</option>
+            <option :value="1">强制</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示标签</span>
+          <select class="select-input" v-model.number="userEditForm.display_entry_tags">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">样式</span>
+          <select class="select-input" v-model.number="userEditForm.style">
+            <option :value="0">RSStT</option>
+            <option :value="1">flowerss</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">显示媒体</span>
+          <select class="select-input" v-model.number="userEditForm.display_media">
+            <option :value="-1">禁用</option>
+            <option :value="0">启用</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-actions">
+        <div></div>
+        <div class="center-actions">
+          <button type="button" class="btn btn-text" @click="closeUserEditPanel()">取消</button>
+          <button type="submit" class="btn btn-primary">保存修改</button>
+        </div>
+      </div>
+    </form>
   </section>
 
   <!-- Toast -->

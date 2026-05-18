@@ -26,7 +26,5 @@ class UserDTO:
     display_entry_tags: int
     style: int
     display_media: int
-    translate: int
-    translate_target_lang: str | None
     created_at: datetime
     updated_at: datetime

@@ -14,16 +14,16 @@ import {
   getStats,
   checkUpdates,
   getExport,
+  importSubscriptions,
   getSettings,
   setSettings,
+  getPluginSettings,
+  setPluginSettings,
   getUsers,
   getFeeds,
   getPushHistory,
   deletePushHistory,
   cleanupPushHistory,
-  getTranslationCache,
-  deleteTranslationCache,
-  cleanupTranslationCache,
   getUserDetails,
   updateUser,
   deleteUser,
@@ -38,6 +38,13 @@ function formatDate(iso) {
     const d = new Date(iso);
     return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
   } catch { return iso; }
+}
+
+function splitLines(value) {
+  return String(value || '')
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 const store = PetiteVue.reactive({
@@ -63,8 +70,9 @@ const store = PetiteVue.reactive({
   editForm: {
     id: 0, feed_id: 0, feed_title: '', feed_link: '', user_id: '',
     title: '', tags: '', target_session: '', interval: 10,
-    notify_: true, state_: true, send_mode: 0, link_preview: 0,
-    display_author: 0, display_via: 0, display_title: 0, style: 0,
+    notify_: true, state_: true, send_mode: 0, length_limit: 0, link_preview: 0,
+    display_author: 0, display_via: 0, display_title: 0, display_entry_tags: -1,
+    style: 0, display_media: 0,
   },
 
   // Detail
@@ -83,25 +91,47 @@ const store = PetiteVue.reactive({
     interval: 10,
     notify: 1,
     send_mode: 0,
+    length_limit: 0,
     link_preview: 0,
     display_author: 0,
     display_via: 0,
     display_title: 0,
+    display_entry_tags: -1,
     style: 0,
+    display_media: 0,
   },
+  pluginSettingsLoading: false,
+  subscriptionDefaults: {
+    interval: 10,
+    notify: true,
+    send_mode: '自动',
+    length_limit: 0,
+    link_preview: '自动',
+    display_author: '自动',
+    display_via: '自动',
+    display_title: '自动',
+    display_entry_tags: false,
+    style: 'RSStT',
+    display_media: true,
+  },
+  pipelineSettings: {
+    keyword_blacklist: '',
+    keyword_whitelist: '',
+    min_content_length: 0,
+    min_media_count: 0,
+    ai_filter_enabled: false,
+    ai_filter_prompt: '',
+    ai_enrich_enabled: false,
+    ai_enrich_prompt: '',
+    ai_timeout_seconds: 15,
+  },
+  importForm: { content: '', skipExisting: true },
 
   // Push History
   pushHistory: [],
   pushHistoryLoading: false,
   pushHistoryFilter: { status: '', page: 1, pageSize: 20 },
   pushHistoryTotal: 0,
-
-  // Translation Cache
-  translationCache: [],
-  translationCacheLoading: false,
-  translationCachePage: 1,
-  translationCachePageSize: 20,
-  translationCacheTotal: 0,
 
   // User Edit Panel
   userEditPanelVisible: false,
@@ -111,11 +141,14 @@ const store = PetiteVue.reactive({
     interval: 10,
     notify: true,
     send_mode: 0,
+    length_limit: 0,
     link_preview: 0,
     display_author: 0,
     display_via: 0,
     display_title: 0,
+    display_entry_tags: -1,
     style: 0,
+    display_media: 0,
     default_target_session: '',
   },
 
@@ -145,7 +178,7 @@ const store = PetiteVue.reactive({
   async loadUsers() {
     this.usersLoading = true;
     try {
-      const result = await getUsers();
+      const result = await getUserDetails();
       this.users = result.items || [];
     } catch (err) {
       this.showToast('加载用户失败: ' + err.message, 'error');
@@ -174,24 +207,46 @@ const store = PetiteVue.reactive({
 
   async loadSettings() {
     this.settingsLoading = true;
+    this.pluginSettingsLoading = true;
     try {
-      const result = await getSettings('webadmin');
+      const [result, pluginResult] = await Promise.all([
+        getSettings('webadmin'),
+        getPluginSettings(),
+      ]);
       if (result.settings) {
         this.settings = {
           interval: result.settings.interval ?? 10,
           notify: !!result.settings.notify,
           send_mode: result.settings.send_mode ?? 0,
+          length_limit: result.settings.length_limit ?? 0,
           link_preview: result.settings.link_preview ?? 0,
           display_author: result.settings.display_author ?? 0,
           display_via: result.settings.display_via ?? 0,
           display_title: result.settings.display_title ?? 0,
+          display_entry_tags: result.settings.display_entry_tags ?? -1,
           style: result.settings.style ?? 0,
+          display_media: result.settings.display_media ?? 0,
+        };
+      }
+      if (pluginResult.pipeline) {
+        this.pipelineSettings = {
+          ...this.pipelineSettings,
+          ...pluginResult.pipeline,
+          keyword_blacklist: (pluginResult.pipeline.keyword_blacklist || []).join('\n'),
+          keyword_whitelist: (pluginResult.pipeline.keyword_whitelist || []).join('\n'),
+        };
+      }
+      if (pluginResult.subscription_defaults) {
+        this.subscriptionDefaults = {
+          ...this.subscriptionDefaults,
+          ...pluginResult.subscription_defaults,
         };
       }
     } catch (err) {
       this.showToast('加载设置失败: ' + err.message, 'error');
     } finally {
       this.settingsLoading = false;
+      this.pluginSettingsLoading = false;
     }
   },
 
@@ -202,6 +257,37 @@ const store = PetiteVue.reactive({
       this.showToast('设置已保存');
     } catch (err) {
       this.showToast('保存设置失败: ' + err.message, 'error');
+    }
+  },
+
+  async savePluginSettings() {
+    try {
+      const pipeline = {
+        ...this.pipelineSettings,
+        keyword_blacklist: splitLines(this.pipelineSettings.keyword_blacklist),
+        keyword_whitelist: splitLines(this.pipelineSettings.keyword_whitelist),
+      };
+      const result = await setPluginSettings({
+        subscription_defaults: this.subscriptionDefaults,
+        pipeline,
+      });
+      if (result.subscription_defaults) {
+        this.subscriptionDefaults = {
+          ...this.subscriptionDefaults,
+          ...result.subscription_defaults,
+        };
+      }
+      if (result.pipeline) {
+        this.pipelineSettings = {
+          ...this.pipelineSettings,
+          ...result.pipeline,
+          keyword_blacklist: (result.pipeline.keyword_blacklist || []).join('\n'),
+          keyword_whitelist: (result.pipeline.keyword_whitelist || []).join('\n'),
+        };
+      }
+      this.showToast(result.message || '插件设置已保存');
+    } catch (err) {
+      this.showToast('保存插件设置失败: ' + err.message, 'error');
     }
   },
 
@@ -339,11 +425,14 @@ const store = PetiteVue.reactive({
       state_: sub.state === 1,
       notify_: sub.notify === 1,
       send_mode: sub.send_mode ?? 0,
+      length_limit: sub.length_limit ?? 0,
       link_preview: sub.link_preview ?? 0,
       display_author: sub.display_author ?? 0,
       display_via: sub.display_via ?? 0,
       display_title: sub.display_title ?? 0,
+      display_entry_tags: sub.display_entry_tags ?? -1,
       style: sub.style ?? 0,
+      display_media: sub.display_media ?? 0,
     };
   },
 
@@ -386,6 +475,7 @@ const store = PetiteVue.reactive({
       if (this.editForm.tags !== undefined) options.tags = this.editForm.tags;
       if (this.editForm.interval !== undefined) options.interval = this.editForm.interval;
       if (this.editForm.target_session !== undefined) options.target_session = this.editForm.target_session;
+      if (this.editForm.length_limit !== undefined) options.length_limit = this.editForm.length_limit;
       options.state = this.editForm.state_ ? 1 : 0;
       options.notify = this.editForm.notify_ ? 1 : 0;
       options.send_mode = this.editForm.send_mode;
@@ -393,7 +483,9 @@ const store = PetiteVue.reactive({
       options.display_author = this.editForm.display_author;
       options.display_via = this.editForm.display_via;
       options.display_title = this.editForm.display_title;
+      options.display_entry_tags = this.editForm.display_entry_tags;
       options.style = this.editForm.style;
+      options.display_media = this.editForm.display_media;
 
       await updateSubscription(this.editForm.id, options);
       this.showToast('订阅已更新');
@@ -464,6 +556,152 @@ const store = PetiteVue.reactive({
       this.showToast(`已导出 ${result.data.count || 0} 个订阅`);
     } catch (err) {
       this.showToast('导出失败: ' + err.message, 'error');
+    }
+  },
+
+  async handleImport() {
+    if (!this.importForm.content.trim()) {
+      this.showToast('请粘贴 TOML 内容', 'error');
+      return;
+    }
+    try {
+      const result = await importSubscriptions({
+        content: this.importForm.content,
+        skipExisting: this.importForm.skipExisting,
+      });
+      this.showToast(result.message || '导入完成');
+      this.importForm.content = '';
+      await this.loadData();
+    } catch (err) {
+      this.showToast('导入失败: ' + err.message, 'error');
+    }
+  },
+
+  // ─── Push History ─────────────────────────────
+
+  async loadPushHistory() {
+    this.pushHistoryLoading = true;
+    try {
+      const result = await getPushHistory({
+        status: this.pushHistoryFilter.status,
+        page: this.pushHistoryFilter.page,
+        pageSize: this.pushHistoryFilter.pageSize,
+      });
+      this.pushHistory = result.items || [];
+      this.pushHistoryTotal = result.total || 0;
+    } catch (err) {
+      this.showToast('加载推送历史失败: ' + err.message, 'error');
+    } finally {
+      this.pushHistoryLoading = false;
+    }
+  },
+
+  async deletePushHistoryItem(id) {
+    const ok = await this.showConfirm('确定删除此记录？', '删除记录', '删除');
+    if (!ok) return;
+    try {
+      await deletePushHistory(id);
+      this.showToast('记录已删除');
+      await this.loadPushHistory();
+    } catch (err) {
+      this.showToast('删除失败: ' + err.message, 'error');
+    }
+  },
+
+  async cleanupPushHistory() {
+    const days = await this.showConfirm('确定清理 30 天前的推送历史？', '清理历史', '清理');
+    if (!days) return;
+    try {
+      await cleanupPushHistory(30);
+      this.showToast('历史记录已清理');
+      await this.loadPushHistory();
+    } catch (err) {
+      this.showToast('清理失败: ' + err.message, 'error');
+    }
+  },
+
+  pushHistoryPrevPage() {
+    if (this.pushHistoryFilter.page > 1) {
+      this.pushHistoryFilter.page--;
+      this.loadPushHistory();
+    }
+  },
+
+  pushHistoryNextPage() {
+    const maxPage = Math.ceil(this.pushHistoryTotal / this.pushHistoryFilter.pageSize);
+    if (this.pushHistoryFilter.page < maxPage) {
+      this.pushHistoryFilter.page++;
+      this.loadPushHistory();
+    }
+  },
+
+  // ─── User Management ────────────────────────────
+
+  openUserEditPanel(user) {
+    this.userEditForm = {
+      user_id: user.user_id,
+      state: user.state ?? 0,
+      interval: user.interval ?? 10,
+      notify: !!(user.notify ?? 1),
+      send_mode: user.send_mode ?? 0,
+      length_limit: user.length_limit ?? 0,
+      link_preview: user.link_preview ?? 0,
+      display_author: user.display_author ?? 0,
+      display_via: user.display_via ?? 0,
+      display_title: user.display_title ?? 0,
+      display_entry_tags: user.display_entry_tags ?? -1,
+      style: user.style ?? 0,
+      display_media: user.display_media ?? 0,
+      default_target_session: user.default_target_session || '',
+    };
+    this.userEditPanelVisible = true;
+  },
+
+  closeUserEditPanel() {
+    this.userEditPanelVisible = false;
+  },
+
+  async handleSaveUserEdit() {
+    try {
+      const settings = {
+        state: this.userEditForm.state,
+        interval: this.userEditForm.interval,
+        notify: this.userEditForm.notify ? 1 : 0,
+        send_mode: this.userEditForm.send_mode,
+        length_limit: this.userEditForm.length_limit,
+        link_preview: this.userEditForm.link_preview,
+        display_author: this.userEditForm.display_author,
+        display_via: this.userEditForm.display_via,
+        display_title: this.userEditForm.display_title,
+        display_entry_tags: this.userEditForm.display_entry_tags,
+        style: this.userEditForm.style,
+        display_media: this.userEditForm.display_media,
+      };
+      if (this.userEditForm.default_target_session) {
+        settings.default_target_session = this.userEditForm.default_target_session;
+      }
+      await updateUser(this.userEditForm.user_id, settings);
+      this.showToast('用户配置已更新');
+      this.closeUserEditPanel();
+      await this.loadUsers();
+    } catch (err) {
+      this.showToast('更新失败: ' + err.message, 'error');
+    }
+  },
+
+  async handleDeleteUser(userId) {
+    const ok = await this.showConfirm(
+      `确定删除用户 ${userId}？此操作将同时删除该用户的所有订阅，不可恢复。`,
+      '删除用户',
+      '删除'
+    );
+    if (!ok) return;
+    try {
+      await deleteUser(userId);
+      this.showToast('用户已删除');
+      await this.loadUsers();
+    } catch (err) {
+      this.showToast('删除失败: ' + err.message, 'error');
     }
   },
 

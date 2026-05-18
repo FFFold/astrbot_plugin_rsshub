@@ -306,3 +306,184 @@ async def test_dispatch_pending_retries_marks_cancelled_history_failed():
     assert history.max_retries == 0
     assert "Cancelled by /sub_stop" in (history.fail_reason or "")
     history_repo.save.assert_awaited_once_with(history)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_retries_marks_successful_retry_success():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    history = PushHistory(
+        id=100,
+        sub_id=1,
+        user_id="user-1",
+        feed_id=10,
+        content="retry content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        status="retrying",
+        retry_count=1,
+        max_retries=3,
+    )
+
+    sub_repo = AsyncMock()
+    sub_repo.get_by_id.return_value = sub
+    history_repo = AsyncMock()
+    history_repo.get_and_mark_retrying.return_value = [history]
+    history_repo.save.side_effect = lambda value: value
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_pending_retries(limit=5)
+
+    assert stats == {"success": 1, "failed": 0, "skipped": 0}
+    assert history.status == "success"
+    assert history.retry_count == 1
+    assert len(sender.requests) == 1
+    assert sender.requests[0][0].message == "retry content"
+    history_repo.get_and_mark_retrying.assert_awaited_once_with(5)
+    history_repo.save.assert_awaited_once_with(history)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_retries_records_recoverable_failure():
+    sender = FakeSender(SendResult(ok=False, transient=True, detail="timeout"))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    history = PushHistory(
+        id=101,
+        sub_id=1,
+        user_id="user-1",
+        feed_id=10,
+        content="retry content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        status="retrying",
+        retry_count=1,
+        max_retries=3,
+    )
+
+    sub_repo = AsyncMock()
+    sub_repo.get_by_id.return_value = sub
+    history_repo = AsyncMock()
+    history_repo.get_and_mark_retrying.return_value = [history]
+    history_repo.save.side_effect = lambda value: value
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_pending_retries(limit=5)
+
+    assert stats == {"success": 0, "failed": 1, "skipped": 0}
+    assert history.status == "failed"
+    assert history.retry_count == 2
+    assert history.max_retries == 3
+    assert history.fail_reason == "timeout"
+    history_repo.save.assert_awaited_once_with(history)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_retries_stops_unrecoverable_failure():
+    sender = FakeSender(SendResult(ok=False, detail="permission denied"))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    history = PushHistory(
+        id=102,
+        sub_id=1,
+        user_id="user-1",
+        feed_id=10,
+        content="retry content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        status="retrying",
+        retry_count=1,
+        max_retries=3,
+    )
+
+    sub_repo = AsyncMock()
+    sub_repo.get_by_id.return_value = sub
+    history_repo = AsyncMock()
+    history_repo.get_and_mark_retrying.return_value = [history]
+    history_repo.save.side_effect = lambda value: value
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_pending_retries(limit=5)
+
+    assert stats == {"success": 0, "failed": 1, "skipped": 0}
+    assert history.status == "failed"
+    assert history.retry_count == 1
+    assert history.max_retries == 0
+    assert history.fail_reason == "permission denied"
+    history_repo.save.assert_awaited_once_with(history)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_retries_skips_disabled_subscription():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        state=0,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    history = PushHistory(
+        id=103,
+        sub_id=1,
+        user_id="user-1",
+        feed_id=10,
+        content="retry content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        status="retrying",
+        retry_count=1,
+        max_retries=3,
+    )
+
+    sub_repo = AsyncMock()
+    sub_repo.get_by_id.return_value = sub
+    history_repo = AsyncMock()
+    history_repo.get_and_mark_retrying.return_value = [history]
+    history_repo.save.side_effect = lambda value: value
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_pending_retries(limit=5)
+
+    assert stats == {"success": 0, "failed": 0, "skipped": 1}
+    assert history.status == "failed"
+    assert history.fail_reason == "Subscription not available"
+    assert sender.requests == []
+    history_repo.save.assert_awaited_once_with(history)

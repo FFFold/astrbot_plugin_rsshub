@@ -23,8 +23,8 @@ VALID_SETTINGS = {
     "display_entry_tags": (-1, 1),
     "style": (0, 1),
     "display_media": (-1, 1),
-    "translate": (-100, 1),  # -100=继承, 0=禁用, 1=启用
 }
+REMOVED_TRANSLATION_SETTINGS = {"translate", "translate_target_lang"}
 
 
 class SetUserSettingsCommand:
@@ -67,7 +67,13 @@ class SetUserSettingsCommand:
             option_key = option_key.strip().lower()
             parsed_value: int | str
 
-            if option_key in {"title", "tags", "translate_target_lang"}:
+            if option_key in REMOVED_TRANSLATION_SETTINGS:
+                return CommandResult(
+                    success=False,
+                    message=f"选项 {option_key} 已移除，请使用 AI 内容管线或扩展处理翻译。",
+                )
+
+            if option_key in {"title", "tags"}:
                 parsed_value = str(raw_value).strip()
             else:
                 try:

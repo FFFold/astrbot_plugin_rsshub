@@ -75,10 +75,18 @@ tests/                      # unit/integration tests, fixtures, mocks
 - `bootstrap.py`: dependency graph and startup ownership.
 - Business rules in `domain`/`application`; platform and IO details in `infrastructure`/`interfaces`.
 
+### Runtime data paths
+
+- Use `src/infrastructure/utils/paths.py` for plugin-owned data, cache, and export paths.
+- Do not call `get_astrbot_plugin_data_path()` directly outside that helper.
+- Local debugging from the plugin directory must not create or use `<plugin>/data`; the path helper redirects to the AstrBot project root data directory when available, otherwise to the system temp directory.
+
 ## AstrBot integration notes
 
 - Use `@filter.command(...)` for commands.
 - Management UI is via Plugin Pages + `WebApiHandler` routes.
+- `_conf_schema.json` only exposes startup-level config, credentials, and platform strategies; subscription defaults and pipeline behavior belong in Plugin Pages.
+- Keep `src/application/settings.py` as application-layer dataclasses only; AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
 - Do not reintroduce removed admin chat entry (`/rsshub_admin`, `handle_admin_panel`).
 
 ## Dev commands
@@ -117,6 +125,12 @@ Recent regression recovery completed:
 - Added `/rsshelp` and pre-generated image help flow:
   - command sends `assets/help/rsshelp.png`
   - generator script: `scripts/generate_rsshelp_image.py`
+- Added centralized runtime path helper to prevent local debugging from writing plugin runtime data under the repository `data/` directory.
+- Completed P1 content pipeline integration:
+  - `FeedPollingService` now runs `ContentProcessingService` after dedup/HTML parsing and before dispatch.
+  - Pipeline config supports keyword black/white lists, minimum content/media thresholds, and AI filter/enrich toggles.
+  - Plugin Pages exposes subscription defaults, pipeline settings, TOML import/export, test URL, refresh, push history, and stats entry points.
+- Traditional translation pipeline, translation cache UI/API, RSSHub route stub LLM tools, and legacy `ContentFilterService` have been removed. Future translation/summarization work belongs in AI/extension paths.
 
 ## Maintenance
 
