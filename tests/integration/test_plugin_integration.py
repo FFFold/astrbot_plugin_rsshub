@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -147,3 +147,39 @@ class TestConfigurationIntegration:
 
         assert config is not None
         assert config.basic_config.timeout == 30
+
+
+class TestLLMToolLifecycle:
+    """LLM 工具生命周期测试."""
+
+    @pytest.mark.asyncio
+    async def test_terminate_unregisters_llm_tools(self, main_module, mock_context):
+        plugin = main_module.RSSHubPlugin(mock_context, {})
+        plugin._runtime = MagicMock()
+        plugin._runtime.stop = AsyncMock()
+        plugin._registered_llm_tools = ["rss_subscribe", "rss_unsubscribe"]
+
+        await plugin.terminate()
+
+        assert mock_context.unregister_llm_tool.call_count == 2
+        mock_context.unregister_llm_tool.assert_any_call("rss_subscribe")
+        mock_context.unregister_llm_tool.assert_any_call("rss_unsubscribe")
+        plugin._runtime.stop.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_terminate_unregister_fallback_remove_func(
+        self, main_module, mock_context
+    ):
+        plugin = main_module.RSSHubPlugin(mock_context, {})
+        plugin._runtime = None
+        plugin._push_job_queue.stop_all = AsyncMock()
+        plugin._registered_llm_tools = ["rss_subscribe"]
+
+        manager = MagicMock()
+        mock_context.get_llm_tool_manager.return_value = manager
+        mock_context.unregister_llm_tool.side_effect = RuntimeError("boom")
+
+        await plugin.terminate()
+
+        manager.remove_func.assert_called_once_with("rss_subscribe")
+        plugin._push_job_queue.stop_all.assert_awaited_once()

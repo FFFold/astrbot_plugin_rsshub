@@ -17,7 +17,7 @@ from astrbot_plugin_rsshub.src.application.commands.unsubscribe_feed_cmd import 
 )
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
-from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
+from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed
 
 
 @pytest.mark.asyncio

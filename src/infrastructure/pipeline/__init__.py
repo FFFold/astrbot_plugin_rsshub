@@ -1,6 +1,6 @@
 """内容处理管线
 
-提供内容过滤、翻译、格式化等管道能力。
+提供内容过滤、AI 增强、格式化等管道能力。
 """
 
 from .filters import (
@@ -12,7 +12,7 @@ from .filters import (
     LLMEnrichFilter,
     LLMFilter,
     PassThroughFilter,
-    TranslationFilter,
+    PipelineConfig,
     build_default_chain,
 )
 from .formatter import MessageFormatter
@@ -23,10 +23,10 @@ __all__ = [
     "FilterChain",
     "FilterContext",
     "FilterResult",
+    "PipelineConfig",
     "KeywordFilter",
     "LLMFilter",
     "LLMEnrichFilter",
-    "TranslationFilter",
     "PassThroughFilter",
     "build_default_chain",
     # 格式化器

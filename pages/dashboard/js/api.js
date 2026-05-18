@@ -67,6 +67,16 @@ export async function setSettings(userId, settings) {
   return await handleResponse(result);
 }
 
+export async function getPluginSettings() {
+  const result = await bridge.apiGet('plugin-settings');
+  return await handleResponse(result);
+}
+
+export async function setPluginSettings({ subscription_defaults = {}, pipeline = {} } = {}) {
+  const result = await bridge.apiPost('plugin-settings', { subscription_defaults, pipeline });
+  return await handleResponse(result);
+}
+
 export async function testSubscription(subId) {
   const result = await bridge.apiPost('test-subscription', { sub_id: subId });
   return await handleResponse(result);
@@ -102,6 +112,15 @@ export async function getExport(userId) {
   return await handleResponse(result);
 }
 
+export async function importSubscriptions({ content, userId = 'webadmin', skipExisting = true } = {}) {
+  const result = await bridge.apiPost('import', {
+    content,
+    user_id: userId,
+    skip_existing: skipExisting,
+  });
+  return await handleResponse(result);
+}
+
 let _prevCounter = 0;
 
 export async function getPushHistory({ status = '', page = 1, pageSize = 20 } = {}) {
@@ -119,22 +138,6 @@ export async function deletePushHistory(historyId) {
 
 export async function cleanupPushHistory(days = 30) {
   const result = await bridge.apiPost('push-history/cleanup', { days });
-  return await handleResponse(result);
-}
-
-export async function getTranslationCache({ page = 1, pageSize = 20 } = {}) {
-  const result = await bridge.apiGet('translation-cache', { page, page_size: pageSize });
-  const r = await handleResponse(result);
-  return { items: r.items || [], total: r.total || 0, page: r.page || 1, page_size: r.page_size || pageSize };
-}
-
-export async function deleteTranslationCache(cacheId) {
-  const result = await bridge.apiPost('translation-cache/delete', { cache_id: cacheId });
-  return await handleResponse(result);
-}
-
-export async function cleanupTranslationCache(days = 30) {
-  const result = await bridge.apiPost('translation-cache/cleanup', { days });
   return await handleResponse(result);
 }
 

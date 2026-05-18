@@ -14,9 +14,8 @@ from typing import Final
 
 import imageio_ffmpeg
 
-from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
-
 from .logger import get_logger
+from .paths import get_plugin_cache_dir
 
 logger = get_logger()
 
@@ -241,12 +240,7 @@ class FFmpegTool:
         except OSError:
             return None
 
-        cache_root = (
-            Path(get_astrbot_plugin_data_path())
-            / "astrbot_plugin_rsshub"
-            / "cache"
-            / "qq_video"
-        )
+        cache_root = get_plugin_cache_dir("qq_video")
         cache_root.mkdir(parents=True, exist_ok=True)
 
         digest = hashlib.sha256(
@@ -368,12 +362,7 @@ class FFmpegTool:
         except OSError:
             return None
 
-        cache_root = (
-            Path(get_astrbot_plugin_data_path())
-            / "astrbot_plugin_rsshub"
-            / "cache"
-            / "gif"
-        )
+        cache_root = get_plugin_cache_dir("gif")
         cache_root.mkdir(parents=True, exist_ok=True)
 
         digest = hashlib.sha256(

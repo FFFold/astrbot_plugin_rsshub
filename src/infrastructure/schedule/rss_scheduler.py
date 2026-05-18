@@ -9,6 +9,7 @@ FeedPollingService.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Protocol
@@ -27,6 +28,36 @@ if TYPE_CHECKING:
     from ...domain.entities.subscription import Subscription
 
 logger = get_logger()
+
+
+def _is_database_unavailable_error(exc: Exception) -> bool:
+    return isinstance(exc, RuntimeError) and "数据库未初始化" in str(exc)
+
+
+def _database_is_initialized(reason: str) -> bool:
+    db = get_database()
+    if db.is_initialized:
+        return True
+    logger.warning("数据库未初始化，跳过%s", reason)
+    return False
+
+
+@asynccontextmanager
+async def _safe_db_session(reason: str):
+    db = get_database()
+    if not db.is_initialized:
+        logger.warning("数据库未初始化，跳过%s", reason)
+        yield None
+        return
+    try:
+        async with db.get_session() as session:
+            yield session
+    except RuntimeError as ex:
+        if _is_database_unavailable_error(ex):
+            logger.warning("数据库会话不可用，跳过%s: %s", reason, ex)
+            yield None
+            return
+        raise
 
 
 class NotificationService(Protocol):
@@ -153,6 +184,9 @@ class RSSScheduler:
         self._stats.print_summary()
         self._stats.reset()
 
+        if not _database_is_initialized("本轮 RSS 调度"):
+            return
+
         now = datetime.now(timezone.utc)
         if now.minute == 0:
             await self._cleanup_old_records()
@@ -182,6 +216,9 @@ class RSSScheduler:
                     retry_stats.get("skipped", 0),
                 )
         except Exception as e:
+            if _is_database_unavailable_error(e):
+                logger.warning("数据库未初始化，跳过重试推送")
+                return
             logger.error("处理重试推送失败: %s", e, exc_info=True)
 
     async def _cleanup_old_records(self) -> None:
@@ -200,16 +237,20 @@ class RSSScheduler:
                     self._history_retention_days,
                 )
         except Exception as e:
+            if _is_database_unavailable_error(e):
+                logger.warning("数据库未初始化，跳过清理推送历史记录")
+                return
             logger.error("清理推送历史记录失败: %s", e, exc_info=True)
 
     async def _load_due_subscriptions(
         self,
         now: datetime,
     ) -> dict[int, list[DueSubscription]]:
-        db = get_database()
         due_by_feed: dict[int, list[DueSubscription]] = {}
 
-        async with db.get_session() as session:
+        async with _safe_db_session("本轮 RSS 调度") as session:
+            if session is None:
+                return {}
             stmt = (
                 select(SubORM)
                 .join(FeedORM)
@@ -284,8 +325,9 @@ class RSSScheduler:
             return
 
         now = datetime.now(timezone.utc)
-        db = get_database()
-        async with db.get_session() as session:
+        async with _safe_db_session("下次检查时间更新") as session:
+            if session is None:
+                return
             for due in due_subs:
                 db_sub = await session.get(SubORM, due.id)
                 if db_sub:

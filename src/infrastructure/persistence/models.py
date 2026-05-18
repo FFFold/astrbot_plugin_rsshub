@@ -34,8 +34,6 @@ EFFECTIVE_OPTION_KEYS = (
     "display_entry_tags",
     "style",
     "display_media",
-    "translate",
-    "translate_target_lang",
 )
 
 

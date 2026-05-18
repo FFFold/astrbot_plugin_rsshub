@@ -1,6 +1,6 @@
 """过滤器链 - 基础过滤器集合
 
-提供开箱即用的过滤器实现：关键词过滤、AI 筛选、翻译、透传。
+提供开箱即用的过滤器实现：关键词过滤、AI 筛选、AI 增强、透传。
 """
 
 from __future__ import annotations
@@ -228,60 +228,7 @@ class LLMEnrichFilter(BaseFilter):
         return None
 
 
-class TranslationFilter(BaseFilter):
-    """翻译过滤器
-
-    使用传统翻译引擎（Google / Baidu）。
-    """
-
-    name: str = "translation"
-
-    def __init__(self, translate_func=None):
-        self._translate = translate_func
-
-    async def process(
-        self, entry: dict[str, Any], context: FilterContext
-    ) -> FilterResult:
-        if not context.config.translate_enabled:
-            return FilterResult(entry=entry, engine="translation:disabled")
-
-        if self._translate is None:
-            return FilterResult(entry=entry, engine="translation:no-engine")
-
-        try:
-            title = str(entry.get("title", "") or "")
-            summary = str(entry.get("summary", "") or "")
-
-            translated = await self._translate(
-                texts=[title, summary] if summary else [title],
-                target_lang=context.config.translate_target_lang,
-            )
-
-            if not translated:
-                return FilterResult(entry=entry, engine="translation:empty-result")
-
-            enriched = dict(entry)
-            # 保留原文供 LLM 使用
-            enriched.setdefault("_source_title", title)
-            enriched.setdefault("_source_summary", summary)
-
-            if len(translated) >= 1:
-                enriched["title"] = translated[0]
-            if len(translated) >= 2:
-                enriched["summary"] = translated[1]
-
-            return FilterResult(
-                entry=enriched, engine=f"translation:{context.config.translate_engine}"
-            )
-        except Exception as e:
-            logger.warning("translation-filter: failed, passing through: %s", e)
-            return FilterResult(entry=entry, engine="translation:fallback")
-
-
-def build_default_chain(
-    llm_generate=None,
-    translate_func=None,
-) -> FilterChain:
+def build_default_chain(llm_generate=None) -> FilterChain:
     """构建默认过滤器链。"""
     from . import FilterChain
 
@@ -289,7 +236,6 @@ def build_default_chain(
         KeywordFilter(),
         LLMFilter(llm_generate_func=llm_generate),
         LLMEnrichFilter(llm_generate_func=llm_generate),
-        TranslationFilter(translate_func=translate_func),
         PassThroughFilter(),
     ]
     return FilterChain(filters)

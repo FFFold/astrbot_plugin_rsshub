@@ -9,13 +9,12 @@ from importlib import import_module
 from typing import Any
 
 _EXPORT_MAP = {
-    "RSSHubRadarAPI": ("api", "RSSHubRadarAPI"),
     "BasicConfig": ("config", "BasicConfig"),
     "FFmpegConfig": ("config", "FFmpegConfig"),
     "GlobalConfig": ("config", "GlobalConfig"),
     "RsshubPluginConfig": ("config", "RsshubPluginConfig"),
+    "PipelineFeatureConfig": ("config", "PipelineFeatureConfig"),
     "SenderStrategiesConfig": ("config", "SenderStrategiesConfig"),
-    "TranslationConfig": ("config", "TranslationConfig"),
     "HttpFetcher": ("fetcher", "HttpFetcher"),
     "WebFeed": ("fetcher", "WebFeed"),
     "RSSFeedFetcher": ("fetcher", "RSSFeedFetcher"),
@@ -63,7 +62,6 @@ _EXPORT_MAP = {
     "RSSHubBaseModel": ("persistence", "RSSHubBaseModel"),
     "SubORM": ("persistence", "SubORM"),
     "SubscriptionRepositoryImpl": ("persistence", "SubscriptionRepositoryImpl"),
-    "TranslationCacheORM": ("persistence", "TranslationCacheORM"),
     "UserORM": ("persistence", "UserORM"),
     "UserRepositoryImpl": ("persistence", "UserRepositoryImpl"),
     "get_database": ("persistence", "get_database"),

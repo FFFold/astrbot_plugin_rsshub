@@ -8,6 +8,9 @@ import pytest
 from astrbot_plugin_rsshub.src.application.services.feed_polling_service import (
     FeedPollingService,
 )
+from astrbot_plugin_rsshub.src.application.services.content_processing_service import (
+    ContentProcessingResult,
+)
 from astrbot_plugin_rsshub.src.application.settings import RSSSettings
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
@@ -231,6 +234,118 @@ async def test_poll_feed_dispatches_new_entries_when_enabled():
     assert (
         "via https://example.com/1 | https://example.com/rss.xml" in dispatched_content
     )
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_applies_content_processor_before_dispatch():
+    feed = Feed(id=1, link="https://example.com/rss.xml", title="Timeline")
+    entry = EntryParsed(
+        guid="guid-1",
+        title="Title",
+        link="https://example.com/1",
+        summary="Summary",
+        author="Author",
+    )
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock(side_effect=lambda value: value)
+
+    fetcher = AsyncMock()
+    fetcher.fetch.return_value = _web_feed()
+    fetcher.close = AsyncMock()
+
+    parser = MagicMock()
+    parser.parse.return_value = ([entry], None)
+
+    dispatcher = AsyncMock()
+    dispatcher.dispatch_to_feed_subscribers.return_value = {
+        "success": 1,
+        "failed": 0,
+        "pending": 0,
+    }
+
+    content_processor = MagicMock()
+    content_processor.process = AsyncMock(
+        return_value=ContentProcessingResult(
+            entry={
+                "title": "Processed",
+                "summary": "Processed body",
+                "media_urls": ["https://example.com/image.jpg"],
+                "author": "Author",
+            }
+        )
+    )
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=parser,
+        notification_dispatcher=dispatcher,
+        content_processor=content_processor,
+        rss_settings=RSSSettings(bootstrap_skip_history=False),
+    )
+
+    result = await service.poll_feed(1, notify_new_entries=True)
+
+    assert result.success is True
+    call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
+    assert call_kwargs["entry_title"] == "Processed"
+    assert "Processed body" in call_kwargs["content"]
+    assert (
+        "via https://example.com/1 | Timeline (author: Author)"
+        in call_kwargs["content"]
+    )
+    assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_skips_dispatch_when_content_processor_filters_entry():
+    feed = Feed(id=1, link="https://example.com/rss.xml")
+    entry = EntryParsed(
+        guid="guid-1",
+        title="Title",
+        link="https://example.com/1",
+        summary="Summary",
+    )
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock(side_effect=lambda value: value)
+
+    fetcher = AsyncMock()
+    fetcher.fetch.return_value = _web_feed()
+    fetcher.close = AsyncMock()
+
+    parser = MagicMock()
+    parser.parse.return_value = ([entry], None)
+
+    dispatcher = AsyncMock()
+
+    content_processor = MagicMock()
+    content_processor.process = AsyncMock(
+        return_value=ContentProcessingResult(
+            entry={"title": "Title"},
+            filtered_out=True,
+            engine="keyword",
+            error="blacklisted:spam",
+        )
+    )
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=parser,
+        notification_dispatcher=dispatcher,
+        content_processor=content_processor,
+        rss_settings=RSSSettings(bootstrap_skip_history=False),
+    )
+
+    result = await service.poll_feed(1, notify_new_entries=True)
+
+    assert result.success is True
+    assert result.dispatched == 0
+    dispatcher.dispatch_to_feed_subscribers.assert_not_awaited()
 
 
 @pytest.mark.asyncio

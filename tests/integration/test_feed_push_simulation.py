@@ -6,9 +6,6 @@ from pathlib import Path
 
 import pytest
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
-from astrbot_plugin_rsshub.src.domain.services.content_filter import (
-    ContentFilterService,
-)
 from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import (
     EntryParsed,
     RSSParser,
@@ -39,7 +36,6 @@ class TestFeedDedupSimulation:
     """Simulate three rounds of feed synchronization without persistence."""
 
     def test_round1_seed_and_new(self, rounds: list[list[EntryParsed]]) -> None:
-        service = ContentFilterService()
         feed = Feed(
             link="https://rsshub.example/twitter/home",
             entry_hashes=[[entry.guid] for entry in rounds[0]],
@@ -47,19 +43,16 @@ class TestFeedDedupSimulation:
 
         later_entries = rounds[1] + rounds[2]
         new_guids = [
-            entry.guid
-            for entry in later_entries
-            if not service.is_duplicate(feed, entry.guid)
+            entry.guid for entry in later_entries if not feed.has_entry(entry.guid)
         ]
 
         assert new_guids == [entry.guid for entry in later_entries]
         for guid in new_guids:
-            service.record_entry(feed, guid)
+            feed.add_entry_hash(guid)
 
-        assert all(service.is_duplicate(feed, guid) for guid in new_guids)
+        assert all(feed.has_entry(guid) for guid in new_guids)
 
     def test_round2_modified_content(self, rounds: list[list[EntryParsed]]) -> None:
-        service = ContentFilterService()
         seed_entries = rounds[0] + rounds[1]
         feed = Feed(
             link="https://rsshub.example/twitter/home",
@@ -70,23 +63,20 @@ class TestFeedDedupSimulation:
             f"{entry.guid}:modified-2026-05-15T12:00:00Z" for entry in rounds[1]
         ]
 
-        assert all(not service.is_duplicate(feed, guid) for guid in modified_guids)
+        assert all(not feed.has_entry(guid) for guid in modified_guids)
         for guid in modified_guids:
-            service.record_entry(feed, guid)
+            feed.add_entry_hash(guid)
 
-        assert all(service.is_duplicate(feed, guid) for guid in modified_guids)
+        assert all(feed.has_entry(guid) for guid in modified_guids)
 
     def test_round3_no_changes(self, rounds: list[list[EntryParsed]]) -> None:
-        service = ContentFilterService()
         all_entries = rounds[0] + rounds[1] + rounds[2]
         feed = Feed(
             link="https://rsshub.example/twitter/home",
             entry_hashes=[[entry.guid] for entry in all_entries],
         )
 
-        new_entries = [
-            entry for entry in all_entries if not service.is_duplicate(feed, entry.guid)
-        ]
+        new_entries = [entry for entry in all_entries if not feed.has_entry(entry.guid)]
 
         assert new_entries == []
 

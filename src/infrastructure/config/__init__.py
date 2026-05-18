@@ -4,29 +4,27 @@
 """
 
 from .config_manager import (
-    BaiduTranslateConfig,
     BasicConfig,
     FFmpegConfig,
     GlobalConfig,
-    GoogleTranslateConfig,
+    PipelineFeatureConfig,
     RsshubPluginConfig,
     SenderStrategiesConfig,
-    TranslationConfig,
     get_config,
     get_config_manager,
     set_config,
 )
+from .settings_adapter import build_application_settings
 
 __all__ = [
     "BasicConfig",
-    "BaiduTranslateConfig",
     "GlobalConfig",
-    "GoogleTranslateConfig",
+    "PipelineFeatureConfig",
     "FFmpegConfig",
-    "TranslationConfig",
     "SenderStrategiesConfig",
     "RsshubPluginConfig",
     "get_config",
     "get_config_manager",
     "set_config",
+    "build_application_settings",
 ]

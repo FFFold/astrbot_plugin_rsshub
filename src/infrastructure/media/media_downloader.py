@@ -15,9 +15,9 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 
-from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
 from astrbot.core.utils.http_ssl import build_tls_connector
 
+from ..utils import get_plugin_cache_dir
 from ..utils.ffmpeg_helper import FFmpegTool
 from ..utils.logger import get_logger
 
@@ -44,12 +44,7 @@ class MediaDownloader:
 
     def __init__(self, cache_dir: Path | None = None) -> None:
         if cache_dir is None:
-            cache_dir = (
-                Path(get_astrbot_plugin_data_path())
-                / "astrbot_plugin_rsshub"
-                / "cache"
-                / "media"
-            )
+            cache_dir = get_plugin_cache_dir("media")
         self._cache_dir = cache_dir
         self._cache_gc_lock = asyncio.Lock()
         self._cache_io_lock = asyncio.Lock()

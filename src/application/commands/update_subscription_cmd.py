@@ -8,6 +8,8 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 
+REMOVED_TRANSLATION_OPTIONS = {"translate", "translate_target_lang"}
+
 
 class UpdateSubscriptionCommand:
     """
@@ -36,6 +38,16 @@ class UpdateSubscriptionCommand:
         Returns:
             CommandResult: 命令执行结果
         """
+        removed = sorted(REMOVED_TRANSLATION_OPTIONS.intersection(options))
+        if removed:
+            return CommandResult(
+                success=False,
+                message=(
+                    "订阅翻译选项已移除，请使用 AI 内容管线或扩展处理翻译: "
+                    + ", ".join(removed)
+                ),
+            )
+
         subscription = await self._subscription_repo.update_options(
             sub_id, user_id, **options
         )

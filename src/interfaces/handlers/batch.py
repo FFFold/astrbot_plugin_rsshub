@@ -6,6 +6,8 @@ from pathlib import Path
 
 from astrbot.api.event import AstrMessageEvent
 
+from ...infrastructure.utils import get_plugin_export_dir
+
 _ONEBOT_PLATFORMS = {"aiocqhttp", "onebot", "onebot11", "onebotv11"}
 _INLINE_EXPORT_LIMIT = 5000
 
@@ -83,7 +85,6 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         return {"plain": f"当前{scope_desc}没有订阅"}
 
     # 导出备份
-
     export_result = await deps["export_cmd"].execute(user_id=user_id, is_admin=is_admin)
     result: dict = {}
 
@@ -125,14 +126,7 @@ async def handle_batch_unsub(event: AstrMessageEvent, sub_ids: str, deps: dict) 
 
 
 def _get_export_dir() -> Path:
-    try:
-        from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
-
-        export_dir = (
-            Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub" / "exports"
-        )
-    except Exception:
-        export_dir = Path("/tmp") / "astrbot_plugin_rsshub_exports"
+    export_dir = get_plugin_export_dir()
     export_dir.mkdir(parents=True, exist_ok=True)
     return export_dir
 

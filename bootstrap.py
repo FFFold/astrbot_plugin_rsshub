@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TypedDict
 
 from astrbot.api import AstrBotConfig
@@ -22,7 +21,6 @@ from .src.application.commands import (
     ExportSubscriptionsCommand,
     GetUserSettingsCommand,
     ImportSubscriptionsCommand,
-    RefreshFeedCommand,
     SetUserSettingsCommand,
     SubscribeFeedCommand,
     SubStateCommand,
@@ -36,6 +34,9 @@ from .src.application.queries import (
     GetSubscriptionsQuery,
     SearchFeedsQuery,
 )
+from .src.application.services.content_processing_service import (
+    ContentProcessingService,
+)
 from .src.application.services.feed_polling_service import FeedPollingService
 from .src.application.services.notification_dispatcher import NotificationDispatcher
 from .src.application.services.session_push_queue import SessionPushQueue
@@ -43,6 +44,7 @@ from .src.application.settings import ApplicationSettings
 from .src.domain.repositories.feed_repository import FeedRepository
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
 from .src.infrastructure.config import RsshubPluginConfig, set_config
+from .src.infrastructure.config.settings_adapter import build_application_settings
 from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.messaging import InfrastructureMessageSenderProvider
@@ -51,11 +53,10 @@ from .src.infrastructure.persistence import (
     get_feed_repository,
     get_push_history_repository,
     get_subscription_repository,
-    get_translation_cache_repository,
     get_user_repository,
 )
 from .src.infrastructure.schedule import RSSScheduler
-from .src.infrastructure.utils import get_logger
+from .src.infrastructure.utils import get_logger, get_plugin_data_dir
 from .src.interfaces import WebApiHandler
 
 logger = get_logger()
@@ -67,7 +68,6 @@ class PluginDeps(TypedDict, total=False):
     subscribe_cmd: SubscribeFeedCommand
     unsubscribe_cmd: UnsubscribeFeedCommand
     sub_state_cmd: SubStateCommand
-    refresh_cmd: RefreshFeedCommand
     update_sub_cmd: UpdateSubscriptionCommand
     list_query: GetFeedListQuery
     batch_activate_cmd: BatchActivateCommand
@@ -115,35 +115,53 @@ async def create_plugin_runtime(
 ) -> PluginRuntime:
     """Initialize the plugin runtime and register Web API endpoints."""
     logger.info("正在初始化 RSSHub 插件...")
-    plugin_config, app_settings = _init_config(config)
-    await _init_database(plugin_config)
+    runtime: PluginRuntime | None = None
+    scheduler: RSSScheduler | None = None
+    queue: SessionPushQueue | None = None
+    try:
+        plugin_config, app_settings = _init_config(config)
+        await _init_database(plugin_config)
 
-    queue = push_job_queue or SessionPushQueue()
-    sender_provider = InfrastructureMessageSenderProvider(
-        app_settings.sender_strategies
-    )
-    deps, notification_dispatcher = _build_dependencies(
-        app_settings=app_settings,
-        sender_provider=sender_provider,
-        push_job_queue=queue,
-    )
-    scheduler = await _start_scheduler(
-        app_settings=app_settings,
-        deps=deps,
-        notification_dispatcher=notification_dispatcher,
-    )
-    web_api = _register_web_api(context, plugin_config, deps)
+        queue = push_job_queue or SessionPushQueue()
+        sender_provider = InfrastructureMessageSenderProvider(
+            app_settings.sender_strategies
+        )
+        deps, notification_dispatcher = _build_dependencies(
+            app_settings=app_settings,
+            sender_provider=sender_provider,
+            push_job_queue=queue,
+            context=context,
+        )
+        web_api = _register_web_api(context, plugin_config, deps, config)
+        scheduler = await _start_scheduler(
+            app_settings=app_settings,
+            deps=deps,
+            notification_dispatcher=notification_dispatcher,
+        )
 
-    logger.info("RSSHub 插件初始化完成")
-    return PluginRuntime(
-        app_settings=app_settings,
-        deps=deps,
-        scheduler=scheduler,
-        web_api=web_api,
-        push_job_queue=queue,
-        notification_dispatcher=notification_dispatcher,
-        db_initialized=True,
-    )
+        runtime = PluginRuntime(
+            app_settings=app_settings,
+            deps=deps,
+            scheduler=scheduler,
+            web_api=web_api,
+            push_job_queue=queue,
+            notification_dispatcher=notification_dispatcher,
+            db_initialized=True,
+        )
+        logger.info("RSSHub 插件初始化完成")
+        return runtime
+    except Exception:
+        if runtime is not None:
+            await runtime.stop()
+        else:
+            if scheduler is not None:
+                await scheduler.stop()
+            if queue is not None:
+                await queue.stop_all()
+            db = get_database()
+            if db.is_initialized:
+                await db.close()
+        raise
 
 
 def _init_config(
@@ -152,15 +170,13 @@ def _init_config(
     raw_config = dict(config) if config else {}
     plugin_config = RsshubPluginConfig.from_astrbot_config(raw_config)
     set_config(plugin_config)
-    app_settings = ApplicationSettings.from_config(plugin_config)
+    app_settings = build_application_settings(plugin_config)
     logger.debug("配置已加载")
     return plugin_config, app_settings
 
 
 async def _init_database(config: RsshubPluginConfig) -> None:
-    from astrbot.core.utils.astrbot_path import get_astrbot_plugin_data_path
-
-    data_dir = Path(get_astrbot_plugin_data_path()) / "astrbot_plugin_rsshub"
+    data_dir = get_plugin_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = str(data_dir / config.db_file)
 
@@ -174,6 +190,7 @@ def _build_dependencies(
     app_settings: ApplicationSettings,
     sender_provider: InfrastructureMessageSenderProvider,
     push_job_queue: SessionPushQueue,
+    context: Context | None = None,
 ) -> tuple[PluginDeps, NotificationDispatcher]:
     feed_repo = get_feed_repository()
     sub_repo = get_subscription_repository()
@@ -186,6 +203,10 @@ def _build_dependencies(
         sender_provider=sender_provider,
         push_job_queue=push_job_queue,
     )
+    content_processor = ContentProcessingService(
+        app_settings.pipeline,
+        llm_generate_func=_build_llm_generate(context, app_settings),
+    )
     polling_service = FeedPollingService(
         feed_repo=feed_repo,
         subscription_repo=sub_repo,
@@ -194,6 +215,7 @@ def _build_dependencies(
         fetcher_factory=RSSFeedFetcher,
         parser=RSSParser(),
         notification_dispatcher=notification_dispatcher,
+        content_processor=content_processor,
         history_entry_limit=app_settings.scheduler.history_entry_limit,
     )
 
@@ -209,13 +231,6 @@ def _build_dependencies(
             feed_repo=feed_repo,
         ),
         sub_state_cmd=SubStateCommand(subscription_repo=sub_repo),
-        refresh_cmd=RefreshFeedCommand(
-            feed_repo=feed_repo,
-            subscription_repo=sub_repo,
-            fetch_settings=app_settings.fetch,
-            fetcher_factory=RSSFeedFetcher,
-            polling_service=polling_service,
-        ),
         update_sub_cmd=UpdateSubscriptionCommand(subscription_repo=sub_repo),
         list_query=GetFeedListQuery(subscription_repo=sub_repo, feed_repo=feed_repo),
         batch_activate_cmd=BatchActivateCommand(subscription_repo=sub_repo),
@@ -245,6 +260,35 @@ def _build_dependencies(
         subscription_repo=sub_repo,
     )
     return deps, notification_dispatcher
+
+
+def _build_llm_generate(
+    context: Context | None,
+    app_settings: ApplicationSettings,
+):
+    if not (
+        app_settings.pipeline.ai_filter_enabled
+        or app_settings.pipeline.ai_enrich_enabled
+    ):
+        return None
+
+    async def _generate(*, prompt: str) -> str:
+        if context is None:
+            return ""
+        provider = context.get_using_provider()
+        if provider is None or not hasattr(provider, "text_chat"):
+            return ""
+        response = await asyncio.wait_for(
+            provider.text_chat(
+                prompt=prompt,
+                session_id="rsshub-content-pipeline",
+                persist=False,
+            ),
+            timeout=app_settings.pipeline.ai_timeout_seconds,
+        )
+        return str(getattr(response, "completion_text", response) or "")
+
+    return _generate
 
 
 async def _start_scheduler(
@@ -279,6 +323,7 @@ def _register_web_api(
     context: Context,
     config: RsshubPluginConfig,
     deps: PluginDeps,
+    raw_config: AstrBotConfig | None = None,
 ) -> WebApiHandler:
     web_api = WebApiHandler(
         subscribe_cmd=deps["subscribe_cmd"],
@@ -288,6 +333,7 @@ def _register_web_api(
         batch_deactivate_cmd=deps["batch_deactivate_cmd"],
         batch_unsub_cmd=deps["batch_unsub_cmd"],
         export_cmd=deps["export_cmd"],
+        import_cmd=deps["import_cmd"],
         get_user_settings_cmd=deps["get_user_settings_cmd"],
         set_user_settings_cmd=deps["set_user_settings_cmd"],
         test_sub_cmd=deps["test_sub_cmd"],
@@ -297,8 +343,8 @@ def _register_web_api(
         sub_repo=deps["subscription_repo"],
         user_repo=get_user_repository(),
         push_history_repo=get_push_history_repository(),
-        translation_cache_repo=get_translation_cache_repository(),
         config=config,
+        raw_config=raw_config,
     )
     web_api.register_all(context)
     logger.info("Web API 已注册")

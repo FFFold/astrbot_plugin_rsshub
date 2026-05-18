@@ -12,6 +12,8 @@ _EXPORT_MAP = {
     "FeedPollingService": "feed_polling_service",
     "FeedPollingResult": "feed_polling_service",
     "FeedReadResult": "feed_polling_service",
+    "ContentProcessingService": "content_processing_service",
+    "ContentProcessingResult": "content_processing_service",
     "NotificationDispatcher": "notification_dispatcher",
     "SessionPushQueue": "session_push_queue",
     "PushJob": "session_push_queue",

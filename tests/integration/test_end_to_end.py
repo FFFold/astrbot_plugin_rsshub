@@ -50,7 +50,7 @@ class TestEndToEndFlow:
         assert subscription["target_session"] == target_session
 
         # 2. 模拟抓取 RSS
-        from astrbot_plugin_rsshub.src.infrastructure.rss import RSSParser
+        from astrbot_plugin_rsshub.src.infrastructure.fetcher import RSSParser
 
         parser = RSSParser()
         entries, error = parser.parse(mock_rss_content)
@@ -167,7 +167,7 @@ class TestEndToEndFlow:
     @pytest.mark.asyncio
     async def test_error_handling_in_fetch(self):
         """测试抓取错误处理"""
-        from astrbot_plugin_rsshub.src.infrastructure.rss import RSSParser
+        from astrbot_plugin_rsshub.src.infrastructure.fetcher import RSSParser
 
         parser = RSSParser()
         entries, error = parser.parse("invalid xml content")

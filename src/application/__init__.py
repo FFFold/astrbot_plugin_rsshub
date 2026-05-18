@@ -1,7 +1,6 @@
 """应用层包"""
 
 from .commands import (
-    RefreshFeedCommand,
     SubscribeFeedCommand,
     UnsubscribeFeedCommand,
     UpdateSubscriptionCommand,
@@ -18,6 +17,8 @@ from .queries import (
     SubscriptionsResult,
 )
 from .services import (
+    ContentProcessingResult,
+    ContentProcessingService,
     FeedPollingResult,
     FeedPollingService,
     NotificationDispatcher,
@@ -25,7 +26,6 @@ from .services import (
 
 __all__ = [
     # Commands
-    "RefreshFeedCommand",
     "SubscribeFeedCommand",
     "UnsubscribeFeedCommand",
     "UpdateSubscriptionCommand",
@@ -45,6 +45,8 @@ __all__ = [
     "ItemDTO",
     "SubscriptionDTO",
     # Services
+    "ContentProcessingResult",
+    "ContentProcessingService",
     "FeedPollingResult",
     "FeedPollingService",
     "NotificationDispatcher",

@@ -2,54 +2,54 @@
   "basic_config": {
     "type": "object",
     "description": "基础设施配置",
-    "hint": "插件运行的基础设置，包括网络、去重、队列等系统级配置",
+    "hint": "启动级网络、去重、队列与下载策略配置",
     "items": {
       "proxy": {
         "type": "string",
         "description": "代理地址",
-        "hint": "HTTP/SOCKS 代理地址，留空则不使用代理。例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
+        "hint": "HTTP/SOCKS 代理地址，留空表示直连",
         "default": ""
       },
       "rsshub_base_url": {
         "type": "string",
         "description": "默认 RSSHub 域名",
-        "hint": "用于 RSSHub 路由检索与订阅链接拼接的默认域名。支持在 LLM 工具调用时通过 base_url 临时覆盖",
+        "hint": "用于相对路由拼接的默认域名",
         "default": "https://rsshub.app"
       },
       "timeout": {
         "type": "int",
         "description": "请求超时（秒）",
-        "hint": "获取 RSS 源时的 HTTP 请求超时时间",
+        "hint": "拉取 RSS 源的 HTTP 超时",
         "default": 30
       },
       "minimal_interval": {
         "type": "int",
         "description": "订阅最小监控间隔（分钟）",
-        "hint": "限制用户通过 /sub_set 命令设置单个订阅监控间隔的最小值，防止过于频繁抓取对RSS源服务器造成压力",
+        "hint": "限制单个订阅监控间隔的最小值",
         "default": 1
       },
       "hash_history_min": {
         "type": "int",
         "description": "去重历史最小保留数量",
-        "hint": "每个 Feed 至少保留多少条去重哈希记录，值越大越能避免历史回流重复推送，但会增加存储与比对开销",
-        "default": 500
+        "hint": "单个 Feed 的去重哈希最小保留数",
+        "default": 200
       },
       "hash_history_multiplier": {
         "type": "int",
         "description": "去重历史增长倍数",
-        "hint": "按当前抓取条目数动态扩展历史窗口，实际窗口≈entries * 该倍数（再受最小值与硬上限约束）",
+        "hint": "按抓取条目数扩展去重窗口的倍数",
         "default": 2
       },
       "hash_history_hard_limit": {
         "type": "int",
         "description": "去重历史硬上限",
-        "hint": "每个 Feed 最多保留的去重哈希数量，用于限制数据库行体积与监控循环内存/CPU开销",
+        "hint": "单个 Feed 的去重哈希上限",
         "default": 5000
       },
       "tracking_query_params": {
         "type": "list",
         "description": "链接去重时忽略的查询参数",
-        "hint": "用于清理常见追踪参数（如 utm_source/gclid/fbclid）。仅建议填写明确的追踪参数名，避免误删业务语义参数",
+        "hint": "用于清理常见追踪参数",
         "default": [
           "utm_source",
           "utm_medium",
@@ -69,419 +69,112 @@
       "failed_queue_capacity": {
         "type": "int",
         "description": "失败队列容量",
-        "hint": "当推送因平台连接失败时，消息会进入失败队列等待重试。每个订阅最多保留多少条失败消息。0=禁用失败队列",
+        "hint": "平台发送失败时的队列容量",
         "default": 50
       },
       "failed_queue_max_retries": {
         "type": "int",
         "description": "失败队列最大重试次数",
-        "hint": "失败消息的最大重试次数，超过此次数的消息将被视为已耗尽",
+        "hint": "失败消息的最大重试次数",
         "default": 3
       },
       "deduplicate_multi_bot": {
         "type": "bool",
         "description": "单会话多 BOT 去重",
-        "hint": "开启后，当同一会话中有多个 BOT 订阅了相同的 RSS 源，只有最早订阅的 BOT 会推送消息，避免重复推送",
+        "hint": "同会话多 BOT 订阅相同源时是否去重",
         "default": true
       },
       "bootstrap_skip_history": {
         "type": "bool",
         "description": "首轮跳过历史条目",
-        "hint": "开启后，首次监控仅建立去重历史不推送旧条目；关闭后首次监控会按抓取结果推送历史条目",
+        "hint": "首次监控是否跳过历史条目",
         "default": true
       },
       "debug_payload": {
         "type": "bool",
         "description": "推送调试字段",
-        "hint": "开启后，会在每条推送末尾附加调试信息，便于观察 guid/id/link/published/updated 等原始字段",
+        "hint": "是否在推送中附加调试字段",
         "default": false
       },
       "history_entry_limit": {
         "type": "int",
         "description": "历史条目推送限制",
-        "hint": "限制每次推送时最多发送多少条历史条目，按发布时间降序取最新N条。0=不限制，建议保持0以避免漏推",
+        "hint": "单次推送的历史条目上限",
         "default": 0
       },
       "download_media_before_send": {
         "type": "bool",
         "description": "先下载媒体后发送",
-        "hint": "开启后会先下载媒体到本地再推送。支持普通图片、视频和 m3u8/HLS 流媒体格式（会自动合并为 mp4）。注意：在 docker 环境下需要共享数据卷",
+        "hint": "发送前是否先下载媒体",
         "default": false
       },
       "download_media_timeout": {
         "type": "int",
         "description": "媒体下载超时（秒）",
-        "hint": "仅当「先下载媒体后发送」开启时有效。控制媒体下载的最大等待时间，包括 m3u8/HLS 流媒体。默认 30 秒，m3u8 建议 60-180 秒",
+        "hint": "媒体下载的最大等待时间",
         "default": 30
-      }
-    }
-  },
-  "global_config": {
-    "type": "object",
-    "description": "订阅全局默认配置",
-    "hint": "新订阅的默认配置值。可被用户配置(/sub_set_user)和订阅配置(/sub_set)覆盖",
-    "items": {
-      "interval": {
-        "type": "int",
-        "description": "默认监控间隔（分钟）",
-        "hint": "订阅未设置监控间隔时使用的默认值",
-        "default": 5
-      },
-      "notify": {
-        "type": "bool",
-        "description": "启用通知",
-        "hint": "是否发送 RSS 更新通知",
-        "default": true
-      },
-      "send_mode": {
-        "type": "string",
-        "description": "发送模式",
-        "default": "自动",
-        "options": ["仅链接", "自动", "直接消息"],
-        "hint": "仅链接=只发送链接；自动=根据内容智能选择；直接消息=总是直接发送"
-      },
-      "length_limit": {
-        "type": "int",
-        "description": "内容长度限制",
-        "hint": "0=不限制，正数=限制字符数",
-        "default": 0
-      },
-      "link_preview": {
-        "type": "string",
-        "description": "链接预览",
-        "default": "自动",
-        "options": ["自动", "强制启用"],
-        "hint": "自动=由平台决定；强制启用=总是生成预览"
-      },
-      "display_author": {
-        "type": "string",
-        "description": "显示作者",
-        "default": "自动",
-        "options": ["禁用", "自动", "强制"],
-        "hint": "是否在推送中显示 RSS 条目作者"
-      },
-      "display_via": {
-        "type": "string",
-        "description": "显示来源",
-        "default": "自动",
-        "options": ["完全禁用", "仅链接", "自动", "强制"],
-        "hint": "完全禁用=不显示；仅链接=只显示链接；自动=根据内容决定；强制=总是显示"
-      },
-      "display_title": {
-        "type": "string",
-        "description": "显示标题",
-        "default": "自动",
-        "options": ["禁用", "自动", "强制"],
-        "hint": "是否在推送中显示 RSS 标题"
-      },
-      "display_entry_tags": {
-        "type": "bool",
-        "description": "显示标签",
-        "hint": "是否在推送中显示 RSS 条目标签",
-        "default": false
-      },
-      "style": {
-        "type": "string",
-        "description": "推送样式",
-        "default": "RSStT",
-        "options": ["RSStT", "flowerss"],
-        "hint": "RSStT=详细格式；flowerss=简洁格式"
-      },
-      "display_media": {
-        "type": "bool",
-        "description": "显示媒体",
-        "hint": "是否在推送中显示图片、视频等媒体",
-        "default": true
-      },
-      "translate": {
-        "type": "bool",
-        "description": "启用翻译",
-        "hint": "是否自动翻译 RSS 内容",
-        "default": false
-      },
-      "translate_target_lang": {
-        "type": "string",
-        "description": "翻译目标语言",
-        "default": "zh-CN",
-        "options": ["zh-CN", "zh-TW", "en", "ja"],
-        "hint": "翻译后的目标语言"
       }
     }
   },
   "ffmpeg": {
     "type": "object",
     "description": "FFmpeg 配置",
-    "hint": "用于控制视频转码、无声视频GIF转换及 FFmpeg 自动准备行为",
+    "hint": "控制视频转码和 GIF 转换的底层策略",
     "items": {
       "video_transcode": {
         "type": "bool",
         "description": "视频发送前自动转码",
-        "hint": "开启后，所有平台发送视频前会统一转码为兼容的 H264/AAC MP4 格式。默认false，适合QQ官方等需要特定编码的平台。注意：转码会消耗CPU且耗时",
+        "hint": "发送视频前是否自动转码为兼容 MP4",
         "default": false
       },
       "video_transcode_timeout": {
         "type": "int",
         "description": "视频转码超时（秒）",
-        "hint": "视频转码的最大允许时间。转换耗时取决于视频长度和分辨率，建议120-300秒",
+        "hint": "视频转码的最大允许时间",
         "default": 120
       },
       "gif_transcode": {
         "type": "bool",
-        "description": "无声视频自动转GIF",
-        "hint": "开启后，检测到无音频流的视频时会自动转换为高质量GIF。适合Bilibili等平台的动图/无声短视频。注意：转换可能耗时较长",
-        "default": true
+        "description": "无声视频自动转 GIF",
+        "hint": "无声视频是否自动转 GIF",
+        "default": false
       },
       "gif_transcode_timeout": {
         "type": "int",
         "description": "GIF转换超时（秒）",
-        "hint": "视频转GIF的最大允许时间。转换耗时取决于视频长度和分辨率，建议60-120秒",
+        "hint": "视频转 GIF 的最大允许时间",
         "default": 60
-      }
-    }
-  },
-  "translation": {
-    "type": "object",
-    "description": "RSS 内容翻译配置",
-    "hint": "支持自动或手动翻译 RSS 条目内容",
-    "items": {
-      "provider": {
-        "type": "string",
-        "description": "翻译服务提供商",
-        "hint": "支持: google(免费)、baidu",
-        "default": "google",
-        "options": ["google", "baidu"]
-      },
-      "target_lang": {
-        "type": "string",
-        "description": "目标语言代码",
-        "hint": "zh-CN(简体中文)、zh-TW(繁体中文)、en(英文)、ja(日文)",
-        "default": "zh-CN",
-        "options": ["zh-CN", "zh-TW", "en", "ja"]
-      },
-      "auto_translate": {
-        "type": "bool",
-        "description": "自动翻译条目",
-        "hint": "开启后，RSS 推送时将自动翻译内容",
-        "default": false
-      },
-      "force_translate": {
-        "type": "bool",
-        "description": "强制翻译",
-        "hint": "开启后，无论该语言是不是目标语言都会进行翻译；未开启时，会进行语言检测避免无意义翻译",
-        "default": false
-      },
-      "translate_title": {
-        "type": "bool",
-        "description": "翻译标题",
-        "hint": "是否自动翻译条目标题",
-        "default": true
-      },
-      "translate_content": {
-        "type": "bool",
-        "description": "翻译正文",
-        "hint": "是否自动翻译正文内容",
-        "default": true
-      },
-      "display_orignal_content": {
-        "type": "bool",
-        "description": "是否显示原文",
-        "hint": "是否显示翻译前的原文，显示方式：原文 + 换行 + 分隔线 + 译文",
-        "default": false
-      },
-      "cache_translations": {
-        "type": "bool",
-        "description": "缓存翻译结果",
-        "hint": "开启后可减少重复翻译，节省 API 调用",
-        "default": true
-      },
-      "translation_template": {
-        "description": "翻译器",
-        "type": "template_list",
-        "hint": "配置各个需要认证信息的翻译器，请勿添加相同的翻译器",
-        "templates": {
-          "baidu": {
-            "name": "百度翻译",
-            "items": {
-              "baidu_appid": {
-                "type": "string",
-                "description": "百度翻译 AppID",
-                "hint": "使用百度翻译时必填",
-                "default": ""
-              },
-              "baidu_key": {
-                "type": "string",
-                "description": "百度翻译密钥",
-                "hint": "使用百度翻译时必填",
-                "default": ""
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "translation": {
-    "type": "object",
-    "description": "RSS 内容翻译配置",
-    "hint": "支持自动或手动翻译 RSS 条目内容",
-    "default": {
-      "provider": "google",
-      "target_lang": "zh-CN",
-      "auto_translate": false,
-      "force_translate": false,
-      "translate_title": true,
-      "translate_content": true,
-      "display_orignal_content": false,
-      "cache_translations": true
-    },
-    "items": {
-      "provider": {
-        "type": "string",
-        "description": "翻译服务提供商",
-        "hint": "支持: google(免费)、baidu",
-        "default": "google",
-        "options": [
-          "google",
-          "baidu"
-        ]
-      },
-      "target_lang": {
-        "type": "string",
-        "description": "目标语言代码",
-        "hint": "zh-CN(简体中文)、zh-TW(繁体中文)、en(英文)、ja(日文)",
-        "default": "zh-CN",
-        "options": [
-          "zh-CN",
-          "zh-TW",
-          "en",
-          "ja"
-        ]
-      },
-      "auto_translate": {
-        "type": "bool",
-        "description": "自动翻译条目",
-        "hint": "开启后，RSS 推送时将自动翻译内容",
-        "default": false
-      },
-      "force_translate": {
-        "type": "bool",
-        "description": "强制翻译",
-        "hint": "开启后，无论该语言是不是目标语言都会进行翻译；未开启时，会进行语言检测避免无意义翻译",
-        "default": false
-      },
-      "translate_title": {
-        "type": "bool",
-        "description": "翻译标题",
-        "hint": "是否自动翻译条目标题",
-        "default": true
-      },
-      "translate_content": {
-        "type": "bool",
-        "description": "翻译正文",
-        "hint": "是否自动翻译正文内容",
-        "default": true
-      },
-      "display_orignal_content": {
-        "type": "bool",
-        "description": "是否显示原文",
-        "hint": "是否显示翻译前的原文，显示方式：原文 + 换行 + 分隔线 + 译文",
-        "default": false
-      },
-      "cache_translations": {
-        "type": "bool",
-        "description": "缓存翻译结果",
-        "hint": "开启后可减少重复翻译，节省 API 调用",
-        "default": true
-      },
-      "translation_template": {
-        "description": "翻译器",
-        "type": "template_list",
-        "hint": "配置各个需要认证信息的翻译器，请勿添加相同的翻译器",
-        "templates": {
-          "baidu": {
-            "name": "百度翻译",
-            "items": {
-              "baidu_appid": {
-                "type": "string",
-                "description": "百度翻译 AppID",
-                "hint": "使用百度翻译时必填",
-                "default": ""
-              },
-              "baidu_key": {
-                "type": "string",
-                "description": "百度翻译密钥",
-                "hint": "使用百度翻译时必填",
-                "default": ""
-              }
-            }
-          }
-        }
       }
     }
   },
   "sender_strategies": {
     "type": "object",
     "description": "平台发送策略配置",
-    "hint": "配置各平台使用的发送策略。关闭特定平台策略后将使用默认发送策略",
+    "hint": "控制各平台的发送适配策略",
     "items": {
       "telegram": {
         "type": "bool",
         "description": "启用 Telegram 专用发送策略",
-        "hint": "启用后将使用 Telegram 优化策略（媒体优先、大小限制处理）。关闭则使用默认策略",
+        "hint": "启用后使用 Telegram 优化策略",
         "default": true
       },
       "aiocqhttp": {
         "type": "bool",
         "description": "启用 OneBot 专用发送策略",
-        "hint": "启用后将使用 OneBot 优化策略（合并转发节点）。关闭则使用默认策略",
+        "hint": "启用后使用 OneBot 优化策略",
+        "default": true
+      },
+      "qq_official": {
+        "type": "bool",
+        "description": "启用 QQ 官方专用发送策略",
+        "hint": "启用后使用 QQ 官方适配策略",
         "default": true
       },
       "weixin_oc": {
         "type": "bool",
         "description": "启用微信个人号专用发送策略",
-        "hint": "启用后将使用微信个人号优化策略（单组件顺序发送）。关闭则使用默认策略",
+        "hint": "启用后使用微信个人号优化策略",
         "default": true
-      }
-    }
-  },
-  "webui": {
-    "description": "WebUI 管理界面配置",
-    "type": "object",
-    "items": {
-      "enabled": {
-        "description": "启用 WebUI",
-        "type": "bool",
-        "default": false,
-        "hint": "⚠️ 开启后会启动 Web 服务器，如果与其他插件端口冲突请修改或关闭"
-      },
-      "host": {
-        "description": "监听地址",
-        "type": "string",
-        "default": "0.0.0.0",
-        "hint": "0.0.0.0=允许外部访问，127.0.0.1=仅本地访问"
-      },
-      "port": {
-        "description": "监听端口",
-        "type": "int",
-        "default": 9191
-      },
-      "auth_enabled": {
-        "description": "启用登录验证",
-        "type": "bool",
-        "default": true,
-        "hint": "✅ 开启：访问需登录（推荐）\n❌ 关闭：无需登录（仅建议内网使用）"
-      },
-      "password": {
-        "description": "访问密码",
-        "type": "string",
-        "default": "",
-        "hint": "仅在登录验证开启时生效。留空将自动生成 6 位随机密码"
-      },
-      "session_timeout": {
-        "description": "会话超时时间/秒",
-        "type": "int",
-        "default": 3600,
-        "hint": "登录会话有效时长，超时需重新登录"
       }
     }
   }

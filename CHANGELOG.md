@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0] - 2026-05-18
+
+### Removed
+
+- 移除 `src/infrastructure/api`（`RSSHubRadarAPI`）及相关导出；该 AI 增强订阅辅助接口在当前版本中无实际收益，避免继续维护无效模块。
+- 收敛 `_conf_schema.json`：仅保留 `basic_config`、`ffmpeg` 和 `sender_strategies`，订阅默认值与内容管线配置改由 AstrBot Plugin Pages 承载。
+- 移除传统翻译管道、翻译提供商、翻译缓存仓库/API/UI；后续翻译、总结和改写交由 AI 内容管线或扩展完成。
+- 移除 `rsshub_search_routes` 和 `rsshub_get_route_schema` LLM tool；RSSHub 路由检索后续走 AstrBot 知识库和 route skill。
+- 移除只包裹 `Feed` 去重方法的旧 `ContentFilterService`，避免与当前 `FeedPollingService` 去重路径重复。
+
+### Changed
+
+- 将 LLM 工具注册模块从 `src/application/commands/llmtools.py` 调整为 `src/application/llmtools.py`，避免把非命令模块放在命令包下。
+- 拆分配置职责：`src/application/settings.py` 仅保留应用层 settings dataclass，AstrBot 配置解析与兼容读取迁移到 `src/infrastructure/config/settings_adapter.py`。
+- Plugin Pages 设置页补齐订阅默认值和内容管线配置入口。
+
+### Fixed
+
+- 修正 `_conf_schema.json` 与运行时配置类不一致的问题：`hash_history_min`、`global_config.interval`、`ffmpeg.gif_transcode` 默认值现在与代码一致。
+- 补充 `sender_strategies.qq_official` 配置项，避免 QQ 官方平台发送策略只能使用隐式默认值。
+
 ## [1.1.3] - 2026-04-28
 
 ### Fixed

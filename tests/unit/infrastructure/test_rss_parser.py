@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed, RSSParser
+from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed, RSSParser
 from astrbot_plugin_rsshub.src.infrastructure.utils import get_lock_manager
 
 

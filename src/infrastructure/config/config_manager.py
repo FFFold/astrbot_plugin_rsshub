@@ -73,8 +73,6 @@ class GlobalConfig(BaseModel):
     display_entry_tags: bool = Field(default=False, description="显示标签")
     style: str = Field(default="RSStT", description="样式")
     display_media: bool = Field(default=True, description="显示媒体")
-    translate: bool = Field(default=False, description="翻译")
-    translate_target_lang: str = Field(default="zh-CN", description="翻译目标语言")
 
     _SEND_MODE_MAP: dict[str, int] = {"仅链接": -1, "自动": 0, "直接消息": 2}
     _LINK_PREVIEW_MAP: dict[str, int] = {"自动": 0, "强制启用": 1}
@@ -114,8 +112,6 @@ class GlobalConfig(BaseModel):
             "display_entry_tags": -1 if not self.display_entry_tags else 0,
             "style": self._STYLE_MAP.get(self.style, 0),
             "display_media": -1 if not self.display_media else 0,
-            "translate": 1 if self.translate else 0,
-            "translate_target_lang": self.translate_target_lang,
         }
 
     @classmethod
@@ -139,8 +135,6 @@ class GlobalConfig(BaseModel):
             display_entry_tags=values.get("display_entry_tags", -1) != -1,
             style=cls._STYLE_RMAP.get(values.get("style", 0), "RSStT"),
             display_media=values.get("display_media", 0) != -1,
-            translate=values.get("translate", 0) == 1,
-            translate_target_lang=values.get("translate_target_lang", "zh-CN"),
         )
 
     @classmethod
@@ -166,185 +160,28 @@ class FFmpegConfig(BaseModel):
         return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
-def _extract_translation_template_credentials(raw: Any) -> dict[str, str]:
-    """Extract known translator credentials from AstrBot template_list values."""
-    result: dict[str, str] = {}
+class PipelineFeatureConfig(BaseModel):
+    """内容处理管线配置"""
 
-    def visit(value: Any) -> None:
-        if isinstance(value, dict):
-            lowered = {str(k).lower(): v for k, v in value.items()}
-
-            google_key = lowered.get("google_translate_api_key") or lowered.get(
-                "google_api_key"
-            )
-            if google_key and not result.get("google_translate_api_key"):
-                result["google_translate_api_key"] = str(google_key)
-
-            app_id = (
-                lowered.get("baidu_translate_app_id")
-                or lowered.get("baidu_translate_appid")
-                or lowered.get("baidu_appid")
-                or lowered.get("appid")
-                or lowered.get("app_id")
-            )
-            if app_id and not result.get("baidu_translate_app_id"):
-                result["baidu_translate_app_id"] = str(app_id)
-
-            secret_key = (
-                lowered.get("baidu_translate_secret_key")
-                or lowered.get("baidu_translate_key")
-                or lowered.get("baidu_key")
-                or lowered.get("secret_key")
-                or lowered.get("key")
-            )
-            if secret_key and not result.get("baidu_translate_secret_key"):
-                result["baidu_translate_secret_key"] = str(secret_key)
-
-            for nested in value.values():
-                visit(nested)
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                visit(item)
-
-    visit(raw)
-    return result
-
-
-class TranslationConfig(BaseModel):
-    """翻译配置"""
-
-    provider: str = Field(default="google", description="翻译提供商")
-    target_lang: str = Field(default="zh-CN", description="目标语言")
-    auto_translate: bool = Field(default=False, description="自动翻译")
-    force_translate: bool = Field(default=False, description="强制翻译")
-    translate_title: bool = Field(default=True, description="翻译标题")
-    translate_content: bool = Field(default=True, description="翻译内容")
-    display_original_content: bool = Field(default=False, description="显示原文")
-    cache_translations: bool = Field(default=True, description="缓存翻译")
-    google_translate_api_key: str = Field(default="", description="Google 翻译 API Key")
-    baidu_translate_app_id: str = Field(default="", description="百度翻译 AppID")
-    baidu_translate_secret_key: str = Field(default="", description="百度翻译密钥")
-    translation_template: list[dict[str, Any]] = Field(
-        default_factory=list, description="翻译模板"
+    keyword_blacklist: list[str] = Field(
+        default_factory=list, description="关键词黑名单"
     )
+    keyword_whitelist: list[str] = Field(
+        default_factory=list, description="关键词白名单"
+    )
+    min_content_length: int = Field(default=0, description="最小正文长度")
+    min_media_count: int = Field(default=0, description="最少媒体数量")
+    ai_filter_enabled: bool = Field(default=False, description="启用 AI 筛选")
+    ai_filter_prompt: str = Field(default="", description="AI 筛选提示词")
+    ai_enrich_enabled: bool = Field(default=False, description="启用 AI 增强")
+    ai_enrich_prompt: str = Field(default="", description="AI 增强提示词")
+    ai_timeout_seconds: int = Field(default=15, description="AI 处理超时")
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> TranslationConfig:
+    def from_dict(cls, data: dict[str, Any] | None) -> PipelineFeatureConfig:
         if not data:
             return cls()
-        normalized = dict(data or {})
-
-        # Historical schema typo and older runtime names.
-        if (
-            "display_orignal_content" in normalized
-            and "display_original_content" not in normalized
-        ):
-            normalized["display_original_content"] = normalized[
-                "display_orignal_content"
-            ]
-        if (
-            "display_original" in normalized
-            and "display_original_content" not in normalized
-        ):
-            normalized["display_original_content"] = normalized["display_original"]
-        if "cache_enabled" in normalized and "cache_translations" not in normalized:
-            normalized["cache_translations"] = normalized["cache_enabled"]
-
-        template_creds = _extract_translation_template_credentials(
-            normalized.get("translation_template")
-        )
-        for key, value in template_creds.items():
-            normalized.setdefault(key, value)
-
-        return cls.model_validate({**cls().model_dump(), **normalized})
-
-    @property
-    def display_original(self) -> bool:
-        """Backward-compatible runtime name."""
-        return self.display_original_content
-
-    @property
-    def cache_enabled(self) -> bool:
-        """Backward-compatible runtime name."""
-        return self.cache_translations
-
-    @property
-    def baidu_appid(self) -> str:
-        """Backward-compatible schema name."""
-        return self.baidu_translate_app_id
-
-    @property
-    def baidu_key(self) -> str:
-        """Backward-compatible schema name."""
-        return self.baidu_translate_secret_key
-
-
-class BaiduTranslateConfig(BaseModel):
-    """百度翻译凭据配置"""
-
-    app_id: str = Field(default="", description="百度翻译 AppID")
-    secret_key: str = Field(default="", description="百度翻译密钥")
-
-    @classmethod
-    def from_dict(
-        cls,
-        data: dict[str, Any] | None,
-        *,
-        translation: TranslationConfig | None = None,
-        root: dict[str, Any] | None = None,
-    ) -> BaiduTranslateConfig:
-        raw = dict(data or {})
-        root = root or {}
-
-        candidates = {
-            "app_id": (
-                raw.get("app_id")
-                or raw.get("appid")
-                or raw.get("baidu_appid")
-                or raw.get("baidu_translate_app_id")
-                or raw.get("baidu_translate_appid")
-                or root.get("baidu_translate_app_id")
-                or root.get("baidu_translate_appid")
-                or root.get("baidu_appid")
-                or (translation.baidu_translate_app_id if translation else "")
-            ),
-            "secret_key": (
-                raw.get("secret_key")
-                or raw.get("key")
-                or raw.get("baidu_key")
-                or raw.get("baidu_translate_secret_key")
-                or raw.get("baidu_translate_key")
-                or root.get("baidu_translate_secret_key")
-                or root.get("baidu_translate_key")
-                or root.get("baidu_key")
-                or (translation.baidu_translate_secret_key if translation else "")
-            ),
-        }
-        return cls.model_validate({**cls().model_dump(), **candidates})
-
-
-class GoogleTranslateConfig(BaseModel):
-    """Google 翻译凭据配置"""
-
-    api_key: str = Field(default="", description="Google 翻译 API Key")
-
-    @classmethod
-    def from_dict(
-        cls,
-        data: dict[str, Any] | None,
-        *,
-        translation: TranslationConfig | None = None,
-        root: dict[str, Any] | None = None,
-    ) -> GoogleTranslateConfig:
-        raw = dict(data or {})
-        root = root or {}
-        api_key = (
-            raw.get("api_key")
-            or raw.get("google_translate_api_key")
-            or root.get("google_translate_api_key")
-            or (translation.google_translate_api_key if translation else "")
-        )
-        return cls(api_key=str(api_key or ""))
+        return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
 class SenderStrategiesConfig(BaseModel):
@@ -352,6 +189,7 @@ class SenderStrategiesConfig(BaseModel):
 
     telegram: bool = Field(default=True, description="Telegram策略")
     aiocqhttp: bool = Field(default=True, description="QQ策略")
+    qq_official: bool = Field(default=True, description="QQ官方策略")
     weixin_oc: bool = Field(default=True, description="微信策略")
 
     @classmethod
@@ -370,11 +208,7 @@ class RsshubPluginConfig(BaseModel):
     sender_strategies: SenderStrategiesConfig = Field(
         default_factory=SenderStrategiesConfig
     )
-    translation: TranslationConfig = Field(default_factory=TranslationConfig)
-    baidu_translate: BaiduTranslateConfig = Field(default_factory=BaiduTranslateConfig)
-    google_translate: GoogleTranslateConfig = Field(
-        default_factory=GoogleTranslateConfig
-    )
+    pipeline: PipelineFeatureConfig = Field(default_factory=PipelineFeatureConfig)
     db_file: str = Field(default="rsshub.db", description="数据库文件名")
 
     @classmethod
@@ -405,31 +239,14 @@ class RsshubPluginConfig(BaseModel):
         global_cfg = astrbot_config.get("global_config", {})
         ffmpeg_cfg = astrbot_config.get("ffmpeg", {})
         sender_strategies_cfg = astrbot_config.get("sender_strategies", {})
-        translation_cfg = astrbot_config.get("translation", {})
-        translation = TranslationConfig.from_dict(translation_cfg)
-        baidu_cfg = (
-            astrbot_config.get("baidu_translate")
-            or astrbot_config.get("baidu_aip")
-            or {}
-        )
-        google_cfg = astrbot_config.get("google_translate") or {}
+        pipeline_cfg = astrbot_config.get("pipeline", {})
 
         return cls(
             basic_config=BasicConfig.from_dict(basic_cfg),
             global_config=GlobalConfig.from_dict(global_cfg),
             ffmpeg=FFmpegConfig.from_dict(ffmpeg_cfg),
             sender_strategies=SenderStrategiesConfig.from_dict(sender_strategies_cfg),
-            translation=translation,
-            baidu_translate=BaiduTranslateConfig.from_dict(
-                baidu_cfg,
-                translation=translation,
-                root=astrbot_config,
-            ),
-            google_translate=GoogleTranslateConfig.from_dict(
-                google_cfg,
-                translation=translation,
-                root=astrbot_config,
-            ),
+            pipeline=PipelineFeatureConfig.from_dict(pipeline_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),
         )
 
@@ -515,12 +332,6 @@ class RsshubPluginConfig(BaseModel):
     def download_image_before_send(self) -> bool:
         """向后兼容旧名称"""
         return self.basic_config.download_media_before_send
-
-    @property
-    def google_translate_api_key(self) -> str:
-        return (
-            self.google_translate.api_key or self.translation.google_translate_api_key
-        )
 
 
 _config: RsshubPluginConfig | None = None

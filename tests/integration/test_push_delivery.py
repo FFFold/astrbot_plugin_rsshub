@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from astrbot_plugin_rsshub.src.infrastructure.rss import EntryParsed
+from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed
 
 
 class TestMessageFormatting:
@@ -195,7 +195,7 @@ class TestPushDeliveryEffects:
 
     def test_push_with_media(self):
         """测试带媒体的推送"""
-        from astrbot_plugin_rsshub.src.infrastructure.rss import Enclosure
+        from astrbot_plugin_rsshub.src.infrastructure.fetcher import Enclosure
 
         enclosure = Enclosure(
             url="https://example.com/image.jpg",

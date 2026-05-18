@@ -141,7 +141,10 @@ class SubscribeFeedCommand:
         # 应用会话默认设置
         if session_defaults:
             update_payload = {}
+            removed_translation_keys = {"translate", "translate_target_lang"}
             for key, raw_value in session_defaults.items():
+                if key in removed_translation_keys:
+                    continue
                 if key in {"title", "tags"}:
                     update_payload[key] = str(raw_value)
                 else:
