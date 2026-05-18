@@ -193,7 +193,9 @@ class TestSubscriptionCommand:
         else:
             parsed = urlparse(target)
             if parsed.scheme not in {"http", "https"}:
-                return CommandResult(success=False, message="目标必须是订阅 ID 或 http/https URL")
+                return CommandResult(
+                    success=False, message="目标必须是订阅 ID 或 http/https URL"
+                )
             feed_url = target
 
         read_result = await self._fetch_entries(feed_url)

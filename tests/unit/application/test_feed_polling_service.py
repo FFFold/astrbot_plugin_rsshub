@@ -231,7 +231,9 @@ async def test_poll_feed_dispatches_new_entries_when_enabled():
     dispatched_content = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs[
         "content"
     ]
-    assert "via https://example.com/1 | https://example.com/rss.xml" in dispatched_content
+    assert (
+        "via https://example.com/1 | https://example.com/rss.xml" in dispatched_content
+    )
 
 
 @pytest.mark.asyncio
@@ -392,9 +394,10 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
     assert "<br" not in call_kwargs["content"]
     assert "<img" not in call_kwargs["content"]
     assert "Body" in call_kwargs["content"]
-    assert "via https://example.com/1 | Timeline (author: Author)" in call_kwargs[
-        "content"
-    ]
+    assert (
+        "via https://example.com/1 | Timeline (author: Author)"
+        in call_kwargs["content"]
+    )
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
 
 

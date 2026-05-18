@@ -9,7 +9,10 @@ import pytest
 
 from astrbot_plugin_rsshub.src.interfaces.handlers import data as data_handlers
 from astrbot_plugin_rsshub.src.interfaces.handlers.admin import handle_test_sub
-from astrbot_plugin_rsshub.src.interfaces.handlers.data import handle_export, handle_import
+from astrbot_plugin_rsshub.src.interfaces.handlers.data import (
+    handle_export,
+    handle_import,
+)
 from astrbot_plugin_rsshub.src.interfaces.handlers.config import (
     handle_sub_profile_get,
     handle_sub_profile_set,
@@ -97,7 +100,9 @@ async def test_handle_export_scope_and_permission():
     event.is_admin.return_value = True
 
     export_cmd = MagicMock()
-    export_cmd.execute = AsyncMock(return_value=SimpleNamespace(message="ok", data=None))
+    export_cmd.execute = AsyncMock(
+        return_value=SimpleNamespace(message="ok", data=None)
+    )
     result = await handle_export(event, "all", {"export_cmd": export_cmd})
     assert result["plain"] == "ok"
 
@@ -118,7 +123,9 @@ async def test_handle_export_onebot_fallback_inline(monkeypatch, tmp_path):
     monkeypatch.setattr(data_handlers, "_has_callback_file_service", lambda: False)
     monkeypatch.setattr(data_handlers, "get_plugin_export_dir", lambda: tmp_path)
     export_cmd = MagicMock()
-    export_cmd.execute = AsyncMock(return_value=SimpleNamespace(message="ok", data=data))
+    export_cmd.execute = AsyncMock(
+        return_value=SimpleNamespace(message="ok", data=data)
+    )
     result = await handle_export(event, "all", {"export_cmd": export_cmd})
     assert "```toml" in result["plain"]
     assert "chain" not in result
@@ -140,7 +147,9 @@ async def test_handle_export_onebot_send_file_when_callback_available(monkeypatc
     monkeypatch.setattr(data_handlers, "_has_callback_file_service", lambda: True)
     monkeypatch.setattr(data_handlers, "get_plugin_export_dir", lambda: tmp_path)
     export_cmd = MagicMock()
-    export_cmd.execute = AsyncMock(return_value=SimpleNamespace(message="ok", data=data))
+    export_cmd.execute = AsyncMock(
+        return_value=SimpleNamespace(message="ok", data=data)
+    )
     result = await handle_export(event, "all", {"export_cmd": export_cmd})
     assert result["plain"] == "ok"
     assert "chain" in result
@@ -347,8 +356,23 @@ def test_main_command_signature_uses_greedy(monkeypatch):
     monkeypatch.delitem(sys.modules, "astrbot_plugin_rsshub.main", raising=False)
     main = importlib.import_module("astrbot_plugin_rsshub.main")
 
-    assert main.RSSHubPlugin.sub_feed.__annotations__["args"] in (FakeGreedyStr, "GreedyStr")
-    assert main.RSSHubPlugin.unsub_feed.__annotations__["args"] in (FakeGreedyStr, "GreedyStr")
-    assert main.RSSHubPlugin.sub_list.__annotations__["args"] in (FakeGreedyStr, "GreedyStr")
-    assert main.RSSHubPlugin.import_subs.__annotations__["args"] in (FakeGreedyStr, "GreedyStr")
-    assert main.RSSHubPlugin.test_sub.__annotations__["args"] in (FakeGreedyStr, "GreedyStr")
+    assert main.RSSHubPlugin.sub_feed.__annotations__["args"] in (
+        FakeGreedyStr,
+        "GreedyStr",
+    )
+    assert main.RSSHubPlugin.unsub_feed.__annotations__["args"] in (
+        FakeGreedyStr,
+        "GreedyStr",
+    )
+    assert main.RSSHubPlugin.sub_list.__annotations__["args"] in (
+        FakeGreedyStr,
+        "GreedyStr",
+    )
+    assert main.RSSHubPlugin.import_subs.__annotations__["args"] in (
+        FakeGreedyStr,
+        "GreedyStr",
+    )
+    assert main.RSSHubPlugin.test_sub.__annotations__["args"] in (
+        FakeGreedyStr,
+        "GreedyStr",
+    )

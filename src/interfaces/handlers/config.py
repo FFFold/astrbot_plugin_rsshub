@@ -69,7 +69,9 @@ async def handle_sub_get_user(event: AstrMessageEvent, key: str, deps: dict) -> 
     return {"plain": result.message}
 
 
-async def handle_sub_profile_set(event: AstrMessageEvent, args: str, deps: dict) -> dict:
+async def handle_sub_profile_set(
+    event: AstrMessageEvent, args: str, deps: dict
+) -> dict:
     """统一配置写入入口。
 
     用法:
@@ -89,9 +91,7 @@ async def handle_sub_profile_set(event: AstrMessageEvent, args: str, deps: dict)
     scope = parts[0].lower()
     if scope in {"sub", "subscription"}:
         if len(parts) < 4:
-            return {
-                "plain": "用法: /sub_profile set sub <sub_id> <option> <value>"
-            }
+            return {"plain": "用法: /sub_profile set sub <sub_id> <option> <value>"}
         try:
             sub_id = int(parts[1])
         except ValueError:
@@ -110,7 +110,9 @@ async def handle_sub_profile_set(event: AstrMessageEvent, args: str, deps: dict)
     return {"plain": f"未知配置域: {scope}（支持: sub/user）"}
 
 
-async def handle_sub_profile_get(event: AstrMessageEvent, args: str, deps: dict) -> dict:
+async def handle_sub_profile_get(
+    event: AstrMessageEvent, args: str, deps: dict
+) -> dict:
     """统一配置查询入口。
 
     用法:

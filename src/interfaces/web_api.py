@@ -137,8 +137,18 @@ class WebApiHandler:
             ("POST", "/import", self.handle_import, "导入订阅"),
             ("GET", "/stats", self.handle_stats, "插件统计"),
             ("GET", "/push-history", self.handle_push_history, "推送历史"),
-            ("POST", "/push-history/delete", self.handle_delete_push_history, "删除推送历史"),
-            ("POST", "/push-history/cleanup", self.handle_cleanup_push_history, "清理推送历史"),
+            (
+                "POST",
+                "/push-history/delete",
+                self.handle_delete_push_history,
+                "删除推送历史",
+            ),
+            (
+                "POST",
+                "/push-history/cleanup",
+                self.handle_cleanup_push_history,
+                "清理推送历史",
+            ),
             ("GET", "/users/detail", self.handle_user_details, "用户详情列表"),
             ("POST", "/users/update", self.handle_update_user, "更新用户配置"),
             ("POST", "/users/delete", self.handle_delete_user, "删除用户"),
@@ -267,7 +277,9 @@ class WebApiHandler:
             user_map[uid]["total"] += 1
             if s.state == 1:
                 user_map[uid]["active"] += 1
-        return jsonify({"ok": True, "items": list(user_map.values()), "total": len(user_map)})
+        return jsonify(
+            {"ok": True, "items": list(user_map.values()), "total": len(user_map)}
+        )
 
     async def handle_user_details(self):
         """列出所有用户详情（从 UserRepository）"""
@@ -351,7 +363,9 @@ class WebApiHandler:
                     "title": f.title or "",
                     "link": f.link or "",
                     "state": f.state,
-                    "last_modified": f.last_modified.isoformat() if f.last_modified else None,
+                    "last_modified": f.last_modified.isoformat()
+                    if f.last_modified
+                    else None,
                     "updated_at": f.updated_at.isoformat() if f.updated_at else None,
                     "subscription_count": sub_counts.get(f.id, 0),
                 }
@@ -779,7 +793,9 @@ class WebApiHandler:
                     "fail_reason": h.fail_reason,
                     "created_at": h.created_at.isoformat() if h.created_at else None,
                     "updated_at": h.updated_at.isoformat() if h.updated_at else None,
-                    "completed_at": h.completed_at.isoformat() if h.completed_at else None,
+                    "completed_at": h.completed_at.isoformat()
+                    if h.completed_at
+                    else None,
                 }
             )
 
@@ -809,6 +825,7 @@ class WebApiHandler:
         count = await self._push_history_repo.delete_old_records(int(days))
         self._bump_counter()
         return jsonify({"ok": True, "message": f"已清理 {count} 条记录"})
+
 
 def _dump_dataclass_like(value: Any) -> dict[str, Any]:
     return {

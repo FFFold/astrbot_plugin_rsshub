@@ -84,6 +84,7 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
     if not to_delete:
         return {"plain": f"当前{scope_desc}没有订阅"}
 
+    # 导出备份
     export_result = await deps["export_cmd"].execute(user_id=user_id, is_admin=is_admin)
     result: dict = {}
 
