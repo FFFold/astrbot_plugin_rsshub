@@ -10,7 +10,9 @@ def test_plugin_data_dir_avoids_plugin_local_astrbot_data(monkeypatch):
     astrbot_root = plugin_root.parents[2]
     plugin_local_data = plugin_root / "data" / "plugin_data"
 
-    monkeypatch.setattr(paths, "_resolve_explicit_astrbot_data_dir", lambda: plugin_local_data)
+    monkeypatch.setattr(
+        paths, "_resolve_explicit_astrbot_data_dir", lambda: plugin_local_data
+    )
 
     data_dir = paths.get_plugin_data_dir()
 
@@ -21,7 +23,9 @@ def test_plugin_data_dir_avoids_plugin_local_astrbot_data(monkeypatch):
 def test_plugin_data_dir_keeps_normal_astrbot_data(monkeypatch, tmp_path):
     astrbot_data = tmp_path / "astrbot" / "data" / "plugin_data"
 
-    monkeypatch.setattr(paths, "_resolve_explicit_astrbot_data_dir", lambda: astrbot_data)
+    monkeypatch.setattr(
+        paths, "_resolve_explicit_astrbot_data_dir", lambda: astrbot_data
+    )
 
     assert paths.get_plugin_data_dir("cache") == (
         astrbot_data / paths.PLUGIN_NAME / "cache"
@@ -43,7 +47,9 @@ def test_plugin_data_dir_uses_temp_when_only_polluted_path_exists(
 ):
     plugin_local_data = paths.PLUGIN_ROOT / "data" / "plugin_data"
 
-    monkeypatch.setattr(paths, "_resolve_explicit_astrbot_data_dir", lambda: plugin_local_data)
+    monkeypatch.setattr(
+        paths, "_resolve_explicit_astrbot_data_dir", lambda: plugin_local_data
+    )
     monkeypatch.setattr(paths, "_find_astrbot_project_root", lambda _start: None)
     monkeypatch.setattr(paths.tempfile, "gettempdir", lambda: str(tmp_path))
 
