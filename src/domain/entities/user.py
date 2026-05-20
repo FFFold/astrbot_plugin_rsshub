@@ -78,9 +78,7 @@ class User(BaseModel):
         if isinstance(value, dict):
             payload = dict(value)
             raw_handlers = payload.get("handlers", payload.get("handler_specs"))
-            payload["handler_specs"] = dump_handlers(
-                normalize_handlers(raw_handlers)
-            )
+            payload["handler_specs"] = dump_handlers(normalize_handlers(raw_handlers))
             return payload
         return value
 

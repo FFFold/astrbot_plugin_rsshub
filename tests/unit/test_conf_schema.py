@@ -18,7 +18,9 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     route_knowledge_items = schema["route_knowledge"]["items"]
     assert route_knowledge_items["kb_name"]["default"] == "RSSHub Routes"
     assert route_knowledge_items["embedding_provider_id"]["default"] == ""
-    assert route_knowledge_items["embedding_provider_id"]["_special"] == "select_provider"
+    assert (
+        route_knowledge_items["embedding_provider_id"]["_special"] == "select_provider"
+    )
     assert route_knowledge_items["rerank_provider_id"]["default"] == ""
     assert route_knowledge_items["rerank_provider_id"]["_special"] == "select_provider"
     assert route_knowledge_items["source_mode"]["default"] == "mirror"
@@ -32,10 +34,7 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase",
         "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase",
     ]
-    assert (
-        route_knowledge_items["source_base_url"]["default"]
-        == source_options[0]
-    )
+    assert route_knowledge_items["source_base_url"]["default"] == source_options[0]
     assert route_knowledge_items["source_base_url"]["options"] == source_options
     assert route_knowledge_items["fallback_base_url"]["options"] == source_options
     assert route_knowledge_items["timeout"]["slider"] == {

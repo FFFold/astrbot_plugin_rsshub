@@ -210,7 +210,9 @@ class NotificationDispatcher:
         self._push_history_repo = push_history_repo
         self._sender_provider = sender_provider
         self._push_job_queue = push_job_queue or SessionPushQueue()
-        self._content_handler_runtime = content_handler_runtime or ContentHandlerRuntime()
+        self._content_handler_runtime = (
+            content_handler_runtime or ContentHandlerRuntime()
+        )
 
     @staticmethod
     def _target_from_subscription(subscription) -> SendTarget:
@@ -306,7 +308,9 @@ class NotificationDispatcher:
                     )
 
                 effective_title = (
-                    processed_entry.title if processed_entry is not None else entry_title
+                    processed_entry.title
+                    if processed_entry is not None
+                    else entry_title
                 )
                 effective_link = (
                     processed_entry.link if processed_entry is not None else entry_link

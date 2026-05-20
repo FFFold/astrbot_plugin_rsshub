@@ -42,7 +42,9 @@ class _Video:
 
 
 @pytest.mark.asyncio
-async def test_onebot_sender_fallback_text_includes_all_original_media_urls(monkeypatch):
+async def test_onebot_sender_fallback_text_includes_all_original_media_urls(
+    monkeypatch,
+):
     sender = OneBotMessageSender()
     calls: list[tuple[str, list]] = []
 

@@ -82,12 +82,12 @@ class Subscription(BaseModel):
         if isinstance(value, dict):
             payload = dict(value)
             raw_handlers = payload.get("handlers", payload.get("handler_specs"))
-            payload["handler_specs"] = dump_handlers(
-                normalize_handlers(raw_handlers)
+            payload["handler_specs"] = dump_handlers(normalize_handlers(raw_handlers))
+            handlers_mode = (
+                str(payload.get("handlers_mode", HANDLERS_MODE_INHERIT) or "")
+                .strip()
+                .lower()
             )
-            handlers_mode = str(
-                payload.get("handlers_mode", HANDLERS_MODE_INHERIT) or ""
-            ).strip().lower()
             payload["handlers_mode"] = (
                 handlers_mode
                 if handlers_mode in SUPPORTED_HANDLERS_MODES

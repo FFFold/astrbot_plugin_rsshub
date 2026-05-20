@@ -9,8 +9,10 @@ from typing import Any
 try:
     from astrbot.core.provider.provider import Provider
 except Exception:  # pragma: no cover - lightweight test fallback
+
     class Provider:  # type: ignore[no-redef]
         pass
+
 
 from ...domain.entities.handlers import (
     HandlerSpec,
@@ -65,11 +67,15 @@ class ContentHandlerRuntime:
             active = subscription.handlers
         else:
             active = user.handlers if user else []
-            if mode not in {
-                HANDLERS_MODE_INHERIT,
-                HANDLERS_MODE_OVERRIDE,
-                HANDLERS_MODE_DISABLED,
-            } and subscription.handlers:
+            if (
+                mode
+                not in {
+                    HANDLERS_MODE_INHERIT,
+                    HANDLERS_MODE_OVERRIDE,
+                    HANDLERS_MODE_DISABLED,
+                }
+                and subscription.handlers
+            ):
                 active = subscription.handlers
         return normalize_handlers(active)
 

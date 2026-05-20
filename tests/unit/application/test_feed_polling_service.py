@@ -277,9 +277,10 @@ async def test_poll_feed_dispatches_parsed_entry_without_content_processing():
     call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
     assert call_kwargs["entry_title"] == "Title"
     assert "Summary" in call_kwargs["content"]
-    assert "via https://example.com/1 | Timeline (author: Author)" in call_kwargs[
-        "content"
-    ]
+    assert (
+        "via https://example.com/1 | Timeline (author: Author)"
+        in call_kwargs["content"]
+    )
     assert call_kwargs["media_urls"] == []
     assert call_kwargs["raw_entry"].raw_xml == entry.raw_xml
 
