@@ -6,16 +6,15 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from astrbot_plugin_rsshub.src.interfaces.handlers import data as data_handlers
 from astrbot_plugin_rsshub.src.interfaces.handlers.admin import handle_test_sub
-from astrbot_plugin_rsshub.src.interfaces.handlers.data import (
-    handle_export,
-    handle_import,
-)
 from astrbot_plugin_rsshub.src.interfaces.handlers.config import (
     handle_sub_profile_get,
     handle_sub_profile_set,
+)
+from astrbot_plugin_rsshub.src.interfaces.handlers.data import (
+    handle_export,
+    handle_import,
 )
 from astrbot_plugin_rsshub.src.interfaces.handlers.subscription import (
     handle_rss_stop,
@@ -241,7 +240,11 @@ async def test_handle_sub_profile_set_get_routes():
     r1 = await handle_sub_profile_set(event, "sub 12 interval 30", deps)
     assert r1["plain"] == "sub-ok"
 
-    r2 = await handle_sub_profile_set(event, "user use_user_config true", deps)
+    r2 = await handle_sub_profile_set(
+        event,
+        'user handlers [{"id":"builtin.ai_transform.default","type":"builtin","name":"ai_transform","status":1,"config":{"prompt":"summarize"}}]',
+        deps,
+    )
     assert r2["plain"] == "user-set-ok"
 
     r3 = await handle_sub_profile_get(event, "user", deps)

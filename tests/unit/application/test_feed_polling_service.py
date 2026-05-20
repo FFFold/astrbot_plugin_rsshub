@@ -8,9 +8,6 @@ import pytest
 from astrbot_plugin_rsshub.src.application.services.feed_polling_service import (
     FeedPollingService,
 )
-from astrbot_plugin_rsshub.src.application.services.content_processing_service import (
-    ContentProcessingResult,
-)
 from astrbot_plugin_rsshub.src.application.settings import RSSSettings
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
@@ -237,7 +234,7 @@ async def test_poll_feed_dispatches_new_entries_when_enabled():
 
 
 @pytest.mark.asyncio
-async def test_poll_feed_applies_content_processor_before_dispatch():
+async def test_poll_feed_dispatches_parsed_entry_without_content_processing():
     feed = Feed(id=1, link="https://example.com/rss.xml", title="Timeline")
     entry = EntryParsed(
         guid="guid-1",
@@ -245,6 +242,7 @@ async def test_poll_feed_applies_content_processor_before_dispatch():
         link="https://example.com/1",
         summary="Summary",
         author="Author",
+        raw_xml="<item><title>Title</title><link>https://example.com/1</link></item>",
     )
     feed_repo = MagicMock()
     feed_repo.get_by_id = AsyncMock(return_value=feed)
@@ -264,25 +262,12 @@ async def test_poll_feed_applies_content_processor_before_dispatch():
         "pending": 0,
     }
 
-    content_processor = MagicMock()
-    content_processor.process = AsyncMock(
-        return_value=ContentProcessingResult(
-            entry={
-                "title": "Processed",
-                "summary": "Processed body",
-                "media_urls": ["https://example.com/image.jpg"],
-                "author": "Author",
-            }
-        )
-    )
-
     service = FeedPollingService(
         feed_repo=feed_repo,
         subscription_repo=MagicMock(),
         fetcher_factory=MagicMock(return_value=fetcher),
         parser=parser,
         notification_dispatcher=dispatcher,
-        content_processor=content_processor,
         rss_settings=RSSSettings(bootstrap_skip_history=False),
     )
 
@@ -290,61 +275,13 @@ async def test_poll_feed_applies_content_processor_before_dispatch():
 
     assert result.success is True
     call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
-    assert call_kwargs["entry_title"] == "Processed"
-    assert "Processed body" in call_kwargs["content"]
+    assert call_kwargs["entry_title"] == "Title"
+    assert "Summary" in call_kwargs["content"]
     assert "via https://example.com/1 | Timeline (author: Author)" in call_kwargs[
         "content"
     ]
-    assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
-
-
-@pytest.mark.asyncio
-async def test_poll_feed_skips_dispatch_when_content_processor_filters_entry():
-    feed = Feed(id=1, link="https://example.com/rss.xml")
-    entry = EntryParsed(
-        guid="guid-1",
-        title="Title",
-        link="https://example.com/1",
-        summary="Summary",
-    )
-    feed_repo = MagicMock()
-    feed_repo.get_by_id = AsyncMock(return_value=feed)
-    feed_repo.save = AsyncMock(side_effect=lambda value: value)
-
-    fetcher = AsyncMock()
-    fetcher.fetch.return_value = _web_feed()
-    fetcher.close = AsyncMock()
-
-    parser = MagicMock()
-    parser.parse.return_value = ([entry], None)
-
-    dispatcher = AsyncMock()
-
-    content_processor = MagicMock()
-    content_processor.process = AsyncMock(
-        return_value=ContentProcessingResult(
-            entry={"title": "Title"},
-            filtered_out=True,
-            engine="keyword",
-            error="blacklisted:spam",
-        )
-    )
-
-    service = FeedPollingService(
-        feed_repo=feed_repo,
-        subscription_repo=MagicMock(),
-        fetcher_factory=MagicMock(return_value=fetcher),
-        parser=parser,
-        notification_dispatcher=dispatcher,
-        content_processor=content_processor,
-        rss_settings=RSSSettings(bootstrap_skip_history=False),
-    )
-
-    result = await service.poll_feed(1, notify_new_entries=True)
-
-    assert result.success is True
-    assert result.dispatched == 0
-    dispatcher.dispatch_to_feed_subscribers.assert_not_awaited()
+    assert call_kwargs["media_urls"] == []
+    assert call_kwargs["raw_entry"].raw_xml == entry.raw_xml
 
 
 @pytest.mark.asyncio
@@ -399,6 +336,58 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
         in call_kwargs["content"]
     )
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_dispatch_preserves_video_media_without_text_placeholder():
+    feed = Feed(id=1, link="https://example.com/rss.xml", title="Timeline")
+    video_url = "https://example.com/media/play?id=123"
+    entry = EntryParsed(
+        guid="guid-1",
+        title="Title",
+        link="https://example.com/1",
+        summary=f'Body<br /><video src="{video_url}" controls="controls"></video>',
+        author="Author",
+    )
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock(side_effect=lambda value: value)
+
+    fetcher = AsyncMock()
+    fetcher.fetch.return_value = _web_feed()
+    fetcher.close = AsyncMock()
+
+    parser = MagicMock()
+    parser.parse.return_value = ([entry], None)
+
+    dispatcher = AsyncMock()
+    dispatcher.dispatch_to_feed_subscribers.return_value = {
+        "success": 1,
+        "failed": 0,
+        "pending": 0,
+    }
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=parser,
+        notification_dispatcher=dispatcher,
+        rss_settings=RSSSettings(bootstrap_skip_history=False),
+    )
+
+    result = await service.poll_feed(1, notify_new_entries=True)
+
+    assert result.success is True
+    call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
+    assert "Body" in call_kwargs["content"]
+    assert "[视频]" not in call_kwargs["content"]
+    assert (
+        "via https://example.com/1 | Timeline (author: Author)"
+        in call_kwargs["content"]
+    )
+    assert call_kwargs["media_urls"] == [video_url]
+    assert call_kwargs["media_items"] == [("video", video_url)]
 
 
 @pytest.mark.asyncio

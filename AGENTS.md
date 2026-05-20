@@ -16,7 +16,7 @@ Repository guide for agent work on this plugin.
 
 - `src/domain/`: entities, value objects, repository protocols.
 - `src/application/`: commands, queries, DTOs, orchestration services.
-- `src/infrastructure/`: adapters for config/persistence/fetch/messaging/scheduling.
+- `src/infrastructure/`: adapters for config/persistence/fetch/messaging/scheduling/knowledge.
 - `src/interfaces/`: command handlers and `web_api.py`.
 - `pages/`: Plugin Pages frontend.
 - `tests/`: unit/integration suites and fixtures.
@@ -43,11 +43,21 @@ Behavior invariants:
 - `/sub_status` lists running/queued jobs for current session.
 - `/sub_stop [job_id|feed_id|all]` supports precise/批量 stop; no arg stops current running job.
 - `/rsshelp` sends pre-generated help image (`assets/help/rsshelp.png`).
+- `/rsshub_kb_init`, `/rsshub_kb_sync`, `/rsshub_kb_status`, `/rsshub_kb_task` manage RSSHub Routes KB sync; do not restore route-search LLM tools.
 
 ## Push compatibility invariants
 
 - OneBot merged-forward node name: prefer feed title; fallback `RSSHub`.
 - Push tail formatting should include legacy `via <link> | <feed> (author: ...)` style.
+- Only append all original media URLs when a send failure falls back to text or when recording failure-facing history; successful push content should stay free of extra raw media-link suffixes.
+- `PushHistory.fail_reason` and sender exception detail must stay within the 512-character model/database limit; repository reads must tolerate and truncate legacy overlong values.
+
+## Subscription profile invariants
+
+- `rsshub_sub` and `rsshub_user` do not use `use_sub_config` / `use_user_config`; do not reintroduce those columns or API fields.
+- `-100` is the sole inheritance marker for subscription/user profile options. Subscription options inherit from user profile; user profile options inherit from global defaults.
+- `rsshub_sub.ai_prompt` and `rsshub_user.ai_prompt` store optional AI content-processing prompts; import/export and Web API should preserve them.
+- Legacy translation columns (`translate`, `translate_target_lang`) must stay removed from `rsshub_sub` and `rsshub_user`.
 
 ## Do-not-regress rules
 
@@ -56,7 +66,12 @@ Behavior invariants:
 - Do not move startup ownership out of `bootstrap.py`.
 - Do not call `get_astrbot_plugin_data_path()` directly outside `src/infrastructure/utils/paths.py`.
 - Local debugging from this plugin directory must not create/use `<plugin>/data` for runtime state; use `get_plugin_data_dir()`, `get_plugin_cache_dir()`, or `get_plugin_export_dir()`.
-- `_conf_schema.json` only exposes startup-level config, credentials, and platform strategies; subscription defaults and pipeline behavior belong in Plugin Pages.
+- `_conf_schema.json` only exposes startup-level config, Routes KB provider/source settings, credentials, and platform strategies; subscription defaults belong in Plugin Pages.
+- Fixed-choice `_conf_schema.json` fields should use `options`; bounded numeric fields should use `slider` instead of free-form numbers.
+- `sender_strategies.enabled_platforms` is a list-style platform multi-select in `_conf_schema.json`; keep the `sender_strategies` object container available for future platform-specific settings and keep runtime compatibility for old bool-map configs in infrastructure adapters.
+- Plugin Pages may manage existing subscriptions, users, push history, subscription defaults, and Routes KB tasks, but must not provide new subscription creation or subscription TOML import/export entry points. Use chat commands or AI agent tools for those user-owned flows.
+- Do not add or use a `webadmin` fallback user. Web API endpoints that mutate or export user-owned resources must receive an explicit real `user_id`.
+- Do not restore built-in content-processing, translation, AI filter, or AI enrich pipeline settings; future content processing belongs in extension paths.
 - Keep `src/application/settings.py` as application dataclasses only; AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
 
 ## Dev and test commands
@@ -97,11 +112,34 @@ Recently completed regression fixes include:
   - `assets/help/rsshelp_template.html`
   - `assets/help/rsshelp.png` (committed pre-generated image)
 - Centralized runtime data/cache/export paths in `src/infrastructure/utils/paths.py` to avoid plugin-repo `data/` pollution during local debugging.
-- Completed P1 content pipeline integration:
-  - `FeedPollingService` now runs `ContentProcessingService` after dedup/HTML parsing and before dispatch.
-  - Pipeline config supports keyword black/white lists, minimum content/media thresholds, and AI filter/enrich toggles.
-  - Plugin Pages exposes subscription defaults, pipeline settings, TOML import/export, test URL, refresh, push history, and stats entry points.
-- Traditional translation pipeline, translation cache UI/API, RSSHub route stub LLM tools, and legacy `ContentFilterService` have been removed. Future translation/summarization work belongs in AI/extension paths.
+- Removed built-in content-processing pipeline:
+  - `FeedPollingService` dispatches parsed/deduplicated entries without `ContentProcessingService`.
+  - Plugin Pages exposes existing subscription management, user management, subscription defaults, refresh/test actions, push history, stats, and Routes KB entry points; it does not expose content pipeline settings or subscription import/export.
+  - Traditional translation pipeline, translation cache model/UI/API, AI filter/enrich settings, RSSHub route stub LLM tools, and legacy `ContentFilterService` are removed. Future translation/summarization work belongs in AstrBot LLM or extension paths.
+- Simplified plugin user states to `用户` and `已封禁`; legacy non-negative states are treated as normal users and no plugin-owned admin/guest role should be reintroduced.
+- Removed Plugin Pages `webadmin` fallback behavior; user-owned Web API writes now require explicit `user_id` and front-end actions pass the existing subscription owner.
+- `sender_strategies.enabled_platforms` is rendered as a compact platform multi-select and saves inside the `sender_strategies` object while still reading legacy bool-map configs.
+- `_conf_schema.json` uses dropdowns for Routes KB source mode/source URLs and sliders for bounded numeric settings; Route KB raw URL joining preserves proxy prefixes such as `https://ghfast.top/https://raw...`.
+- Added RSSHub Routes KB sync runtime:
+  - Application service handles manifest diff, sha256 validation, single running sync task, and prompt-injection intent guard.
+  - Infrastructure adapters support mirror/auto/github/local sources, fallback document fetch in auto mode, and AstrBot KB upload/delete by stable doc name.
+  - `/rsshub_kb_init` can create an empty AstrBot KB using configured or default embedding/rerank providers.
+  - The knowledgebase workflow consumes the independent `FlanChanXwO/rsshub-routes-knowledgebase` repository published at `main`.
+  - Chat commands, Web API, and Plugin Pages expose init/sync/status/task; route lookup stays on AstrBot KB configuration/tooling and direct URL reasoning, not custom route-search/build LLM tools.
+- Hardened media failure fallback and push history stability:
+  - first-send history now persists `media_urls`, retry dispatch reuses them instead of dropping media on retry
+  - OneBot merged-forward fallback text includes all original media URLs when media send fails
+  - push history failure reasons and sender exception details are truncated to 512 chars, and repository reads truncate legacy dirty values before entity construction
+- Rebuilt subscription/user profile schema:
+  - `rsshub_sub` and `rsshub_user` now include `ai_prompt`
+  - legacy `use_sub_config`, `use_user_config`, `translate`, and `translate_target_lang` columns are removed by migration/self-heal
+  - profile inheritance is represented only by `-100`; user profile options default to `-100` to inherit global defaults
+  - TOML import/export and Plugin Pages preserve editable `ai_prompt`
+- Added agent XML instant-push path:
+  - `rss_push_xml_entry` validates XML/HTML payloads, rejects malformed / oversized / DOCTYPE input, and parses tags into message content + media
+  - agent pushes are tracked in `push_history` with `source_type=agent` and `source_key`, without exposing or depending on `sub_id`
+  - agent deduplication uses success-only scope `(source_type, source_key, user_id, target_session, entry_guid)` and retries reuse history target/media directly
+  - XML agent push history persists `raw_xml`, and `rss_list_push_history` exposes current-session JSON history without `sub_id`
 
 ## Update policy
 

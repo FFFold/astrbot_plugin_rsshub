@@ -11,7 +11,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func
 from sqlmodel import asc, desc, select
 
-from ...domain.entities.push_history import PushHistory
+from ...domain.entities.push_history import (
+    PushHistory,
+    normalize_fail_reason,
+    normalize_fail_reason_for_status,
+)
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ..utils import get_logger
 from .database import get_database
@@ -45,6 +49,32 @@ class PushHistoryRepositoryImpl:
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
+
+    async def exists_success_by_scope_and_guid(
+        self,
+        *,
+        source_type: str,
+        user_id: str,
+        target_session: str,
+        entry_guid: str,
+        source_key: str | None = None,
+    ) -> bool:
+        """检查指定作用域内是否存在成功的相同 GUID 推送记录。"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(PushHistoryORM.id).where(
+                PushHistoryORM.source_type == source_type,
+                PushHistoryORM.user_id == user_id,
+                PushHistoryORM.target_session == target_session,
+                PushHistoryORM.entry_guid == entry_guid,
+                PushHistoryORM.status == "success",
+            )
+            if source_key is None:
+                stmt = stmt.where(PushHistoryORM.source_key.is_(None))
+            else:
+                stmt = stmt.where(PushHistoryORM.source_key == source_key)
+            result = await session.execute(stmt.limit(1))
+            return result.scalar_one_or_none() is not None
 
     async def get_pending_for_retry(self, limit: int = 100) -> list[PushHistory]:
         """获取需要重试的推送记录（已标记为 failed 且未超限）"""
@@ -156,21 +186,50 @@ class PushHistoryRepositoryImpl:
             return [self._to_entity(orm) for orm in orms]
 
     async def get_by_user(
-        self, user_id: str, limit: int = 100, offset: int = 0
+        self,
+        user_id: str,
+        limit: int = 100,
+        offset: int = 0,
+        target_session: str | None = None,
+        status: str | None = None,
     ) -> list[PushHistory]:
         """获取用户的推送历史"""
         db = get_database()
         async with db.get_session() as session:
+            stmt = select(PushHistoryORM).where(PushHistoryORM.user_id == user_id)
+            if target_session is not None:
+                stmt = stmt.where(PushHistoryORM.target_session == target_session)
+            if status:
+                stmt = stmt.where(PushHistoryORM.status == status)
             stmt = (
-                select(PushHistoryORM)
-                .where(PushHistoryORM.user_id == user_id)
-                .order_by(desc(PushHistoryORM.created_at))
+                stmt.order_by(desc(PushHistoryORM.created_at))
                 .offset(offset)
                 .limit(limit)
             )
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
+
+    async def count_by_user(
+        self,
+        user_id: str,
+        target_session: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        """统计用户推送历史数量，可按目标会话和状态过滤。"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                select(func.count())
+                .select_from(PushHistoryORM)
+                .where(PushHistoryORM.user_id == user_id)
+            )
+            if target_session is not None:
+                stmt = stmt.where(PushHistoryORM.target_session == target_session)
+            if status:
+                stmt = stmt.where(PushHistoryORM.status == status)
+            result = await session.execute(stmt)
+            return int(result.scalar_one() or 0)
 
     async def delete(self, history_id: int) -> bool:
         """删除推送历史"""
@@ -213,7 +272,10 @@ class PushHistoryRepositoryImpl:
             sub_id=orm.sub_id,
             user_id=orm.user_id,
             feed_id=orm.feed_id,
+            source_type=orm.source_type or "feed",
+            source_key=orm.source_key,
             content=orm.content,
+            raw_xml=orm.raw_xml,
             media_urls=orm.media_urls,
             entry_title=orm.entry_title,
             entry_link=orm.entry_link,
@@ -225,7 +287,7 @@ class PushHistoryRepositoryImpl:
             status=orm.status,
             retry_count=orm.retry_count,
             max_retries=orm.max_retries,
-            fail_reason=orm.fail_reason,
+            fail_reason=normalize_fail_reason_for_status(orm.status, orm.fail_reason),
             created_at=orm.created_at,
             updated_at=orm.updated_at,
             completed_at=orm.completed_at,
@@ -239,7 +301,10 @@ class PushHistoryRepositoryImpl:
             sub_id=history.sub_id,
             user_id=history.user_id,
             feed_id=history.feed_id,
+            source_type=history.source_type or "feed",
+            source_key=history.source_key,
             content=history.content,
+            raw_xml=history.raw_xml,
             media_urls=history.media_urls,
             entry_title=history.entry_title,
             entry_link=history.entry_link,
@@ -251,7 +316,7 @@ class PushHistoryRepositoryImpl:
             status=history.status,
             retry_count=history.retry_count,
             max_retries=history.max_retries,
-            fail_reason=history.fail_reason,
+            fail_reason=normalize_fail_reason(history.fail_reason),
             created_at=history.created_at,
             updated_at=history.updated_at,
             completed_at=history.completed_at,

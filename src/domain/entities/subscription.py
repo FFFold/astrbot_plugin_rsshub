@@ -6,10 +6,21 @@
 """
 
 from datetime import datetime, timezone
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..constants import INHERIT_VALUE
+from .handlers import dump_handlers, normalize_handlers
+
+HANDLERS_MODE_INHERIT = "inherit"
+HANDLERS_MODE_OVERRIDE = "override"
+HANDLERS_MODE_DISABLED = "disabled"
+SUPPORTED_HANDLERS_MODES = {
+    HANDLERS_MODE_INHERIT,
+    HANDLERS_MODE_OVERRIDE,
+    HANDLERS_MODE_DISABLED,
+}
 
 
 class Subscription(BaseModel):
@@ -18,6 +29,8 @@ class Subscription(BaseModel):
 
     代表用户与Feed之间的订阅关系，包含推送配置选项。
     """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     id: int | None = Field(default=None, description="数据库ID")
     state: int = Field(default=1, description="订阅状态: 0=停用, 1=启用")
@@ -34,7 +47,7 @@ class Subscription(BaseModel):
         default=None, max_length=64, description="平台类型名(如 telegram, aiocqhttp)"
     )
 
-    interval: int | None = Field(default=None, description="监控间隔（分钟）")
+    interval: int = Field(default=INHERIT_VALUE, description="监控间隔（分钟）")
     next_check_time: datetime | None = Field(default=None, description="下次检查时间")
 
     notify: int = Field(default=INHERIT_VALUE, description="是否通知")
@@ -47,14 +60,14 @@ class Subscription(BaseModel):
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
     style: int = Field(default=INHERIT_VALUE, description="样式")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
-    translate: int = Field(default=INHERIT_VALUE, description="翻译")
-    translate_target_lang: str | None = Field(
-        default=None, max_length=16, description="翻译目标语言"
+    handlers_mode: str = Field(
+        default=HANDLERS_MODE_INHERIT,
+        description="handlers 继承模式: inherit/override/disabled",
     )
-
-    use_sub_config: bool = Field(
-        default=False,
-        description="是否使用订阅自身配置: true=使用Sub表, false=继承上层",
+    handler_specs: Any = Field(
+        default_factory=list,
+        alias="handlers",
+        description="内容处理 handlers",
     )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
@@ -62,6 +75,34 @@ class Subscription(BaseModel):
     updated_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_handlers_field(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            payload = dict(value)
+            raw_handlers = payload.get("handlers", payload.get("handler_specs"))
+            payload["handler_specs"] = dump_handlers(
+                normalize_handlers(raw_handlers)
+            )
+            handlers_mode = str(
+                payload.get("handlers_mode", HANDLERS_MODE_INHERIT) or ""
+            ).strip().lower()
+            payload["handlers_mode"] = (
+                handlers_mode
+                if handlers_mode in SUPPORTED_HANDLERS_MODES
+                else HANDLERS_MODE_INHERIT
+            )
+            return payload
+        return value
+
+    @property
+    def handlers(self) -> list[dict[str, Any]]:
+        return dump_handlers(self.handler_specs)
+
+    @handlers.setter
+    def handlers(self, value: Any) -> None:
+        self.handler_specs = dump_handlers(normalize_handlers(value))
 
     def is_active(self) -> bool:
         """检查订阅是否启用"""
@@ -103,3 +144,7 @@ class Subscription(BaseModel):
         if value == INHERIT_VALUE:
             return None
         return value
+
+    def get_effective_handlers(self) -> list[dict[str, Any]]:
+        """获取规范化后的 handlers。"""
+        return dump_handlers(self.handler_specs)

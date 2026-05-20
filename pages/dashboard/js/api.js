@@ -32,18 +32,17 @@ export async function getFeeds() {
   return { items: r.items || [], total: r.total || 0 };
 }
 
-export async function subscribe(data) {
-  const result = await bridge.apiPost('subscribe', data);
+export async function unsubscribe(subId, userId) {
+  const payload = { sub_id: subId };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('unsubscribe', payload);
   return await handleResponse(result);
 }
 
-export async function unsubscribe(subId) {
-  const result = await bridge.apiPost('unsubscribe', { sub_id: subId });
-  return await handleResponse(result);
-}
-
-export async function updateSubscription(subId, options) {
-  const result = await bridge.apiPost('subscriptions/update', { sub_id: subId, options });
+export async function updateSubscription(subId, options, userId) {
+  const payload = { sub_id: subId, options };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('subscriptions/update', payload);
   return await handleResponse(result);
 }
 
@@ -57,67 +56,46 @@ export async function refreshFeed(feedId) {
   return await handleResponse(result);
 }
 
-export async function getSettings(userId) {
-  const result = await bridge.apiGet('settings', { user_id: userId });
-  return await handleResponse(result);
-}
-
-export async function setSettings(userId, settings) {
-  const result = await bridge.apiPost('settings', { user_id: userId, settings });
-  return await handleResponse(result);
-}
-
 export async function getPluginSettings() {
   const result = await bridge.apiGet('plugin-settings');
   return await handleResponse(result);
 }
 
-export async function setPluginSettings({ subscription_defaults = {}, pipeline = {} } = {}) {
-  const result = await bridge.apiPost('plugin-settings', { subscription_defaults, pipeline });
+export async function setPluginSettings({ subscription_defaults = {} } = {}) {
+  const result = await bridge.apiPost('plugin-settings', { subscription_defaults });
   return await handleResponse(result);
 }
 
-export async function testSubscription(subId) {
-  const result = await bridge.apiPost('test-subscription', { sub_id: subId });
+export async function testSubscription(subId, userId) {
+  const payload = { sub_id: subId };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('test-subscription', payload);
   return await handleResponse(result);
 }
 
-export async function testUrl(url) {
-  const result = await bridge.apiPost('test-url', { url });
+export async function batchActivate(subIds, userId) {
+  const payload = { sub_ids: subIds };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('batch/activate', payload);
   return await handleResponse(result);
 }
 
-export async function batchActivate(subIds) {
-  const result = await bridge.apiPost('batch/activate', { sub_ids: subIds });
+export async function batchDeactivate(subIds, userId) {
+  const payload = { sub_ids: subIds };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('batch/deactivate', payload);
   return await handleResponse(result);
 }
 
-export async function batchDeactivate(subIds) {
-  const result = await bridge.apiPost('batch/deactivate', { sub_ids: subIds });
-  return await handleResponse(result);
-}
-
-export async function batchUnsubscribe(subIds) {
-  const result = await bridge.apiPost('batch/unsubscribe', { sub_ids: subIds });
+export async function batchUnsubscribe(subIds, userId) {
+  const payload = { sub_ids: subIds };
+  if (userId) payload.user_id = userId;
+  const result = await bridge.apiPost('batch/unsubscribe', payload);
   return await handleResponse(result);
 }
 
 export async function getStats() {
   const result = await bridge.apiGet('stats');
-  return await handleResponse(result);
-}
-
-export async function getExport(userId) {
-  const result = await bridge.apiPost('export', { user_id: userId });
-  return await handleResponse(result);
-}
-
-export async function importSubscriptions({ content, userId = 'webadmin', skipExisting = true } = {}) {
-  const result = await bridge.apiPost('import', {
-    content,
-    user_id: userId,
-    skip_existing: skipExisting,
-  });
   return await handleResponse(result);
 }
 
@@ -129,6 +107,21 @@ export async function getPushHistory({ status = '', page = 1, pageSize = 20 } = 
   const result = await bridge.apiGet('push-history', params);
   const r = await handleResponse(result);
   return { items: r.items || [], total: r.total || 0, page: r.page || 1, page_size: r.page_size || pageSize };
+}
+
+export async function getRouteKbStatus() {
+  const result = await bridge.apiGet('route-kb/status');
+  return await handleResponse(result);
+}
+
+export async function syncRouteKb() {
+  const result = await bridge.apiPost('route-kb/sync', {});
+  return await handleResponse(result);
+}
+
+export async function getRouteKbTask() {
+  const result = await bridge.apiGet('route-kb/task');
+  return await handleResponse(result);
 }
 
 export async function deletePushHistory(historyId) {

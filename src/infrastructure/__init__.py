@@ -13,7 +13,6 @@ _EXPORT_MAP = {
     "FFmpegConfig": ("config", "FFmpegConfig"),
     "GlobalConfig": ("config", "GlobalConfig"),
     "RsshubPluginConfig": ("config", "RsshubPluginConfig"),
-    "PipelineFeatureConfig": ("config", "PipelineFeatureConfig"),
     "SenderStrategiesConfig": ("config", "SenderStrategiesConfig"),
     "HttpFetcher": ("fetcher", "HttpFetcher"),
     "WebFeed": ("fetcher", "WebFeed"),

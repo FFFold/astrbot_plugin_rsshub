@@ -7,7 +7,6 @@ from .config_manager import (
     BasicConfig,
     FFmpegConfig,
     GlobalConfig,
-    PipelineFeatureConfig,
     RsshubPluginConfig,
     SenderStrategiesConfig,
     get_config,
@@ -19,7 +18,6 @@ from .settings_adapter import build_application_settings
 __all__ = [
     "BasicConfig",
     "GlobalConfig",
-    "PipelineFeatureConfig",
     "FFmpegConfig",
     "SenderStrategiesConfig",
     "RsshubPluginConfig",

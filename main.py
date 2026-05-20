@@ -11,6 +11,11 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
 try:
+    from astrbot.api.provider import ProviderRequest
+except Exception:  # pragma: no cover - fallback for test/mocking env
+    ProviderRequest = object  # type: ignore
+
+try:
     from astrbot.core.star.filter import GreedyStr
 except Exception:  # pragma: no cover - fallback for test/mocking env
     GreedyStr = str
@@ -19,6 +24,10 @@ from astrbot.api.message_components import Image
 
 from .bootstrap import PluginDeps, PluginRuntime, create_plugin_runtime
 from .src.application.llmtools import LLM_TOOL_NAMES, build_llm_tools
+from .src.application.services.route_knowledge_service import (
+    build_route_knowledge_prompt,
+    should_inject_route_knowledge_prompt,
+)
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.application.settings import ApplicationSettings
 from .src.infrastructure.schedule import RSSScheduler
@@ -30,6 +39,9 @@ logger = get_logger()
 _HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
 _HELP_GENERATOR = (
     Path(__file__).resolve().parent / "scripts" / "generate_rsshelp_image.py"
+)
+_on_llm_request = getattr(
+    filter, "on_llm_request", lambda *_args, **_kwargs: lambda fn: fn
 )
 
 
@@ -70,9 +82,22 @@ class RSSHubPlugin(Star):
                     plugin_context=self.context,
                 )
             )
+            self._bind_llm_tool_origin()
             self._registered_llm_tools = list(LLM_TOOL_NAMES)
         except Exception as e:
             logger.exception("RSSHub 插件初始化失败: %s", e)
+
+    @_on_llm_request()
+    async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+        """Inject route-KB usage instructions only for RSSHub route lookup intent."""
+        prompt = str(getattr(req, "prompt", "") or "")
+        if not should_inject_route_knowledge_prompt(prompt):
+            return
+        current = str(getattr(req, "system_prompt", "") or "")
+        hint = build_route_knowledge_prompt(self._app_settings.route_knowledge.kb_name)
+        if hint in current:
+            return
+        req.system_prompt = f"{current}\n\n{hint}" if current else hint
 
     async def terminate(self):
         logger.info("正在停止 RSSHub 插件...")
@@ -95,6 +120,14 @@ class RSSHubPlugin(Star):
                 except Exception:
                     logger.warning("卸载 LLM 工具失败: %s", tool_name)
         self._registered_llm_tools = []
+
+    def _bind_llm_tool_origin(self) -> None:
+        """Rebind tool module path to this plugin so dashboard shows plugin origin."""
+        manager = self.context.get_llm_tool_manager()
+        plugin_module = self.__class__.__module__
+        for tool in getattr(manager, "func_list", []):
+            if tool.name in LLM_TOOL_NAMES:
+                tool.handler_module_path = plugin_module
 
     # ── 命令方法（装饰器留在插件入口类，委托到纯函数） ───────────────────────
 
@@ -310,6 +343,36 @@ class RSSHubPlugin(Star):
             yield event.chain_result([Image(file=str(_HELP_IMAGE_PATH.resolve()))])
             return
         yield event.plain_result("帮助图片未生成成功，请稍后重试。")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("rsshub_kb_init")
+    async def rsshub_kb_init(self, event: AstrMessageEvent):
+        """初始化 RSSHub Routes 知识库。"""
+        result = await _h.handle_rsshub_kb_init(self._deps)
+        if result.get("plain"):
+            yield event.plain_result(result["plain"])
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("rsshub_kb_sync")
+    async def rsshub_kb_sync(self, event: AstrMessageEvent):
+        """启动 RSSHub Routes 知识库同步任务。"""
+        result = await _h.handle_rsshub_kb_sync(self._deps)
+        if result.get("plain"):
+            yield event.plain_result(result["plain"])
+
+    @filter.command("rsshub_kb_status")
+    async def rsshub_kb_status(self, event: AstrMessageEvent):
+        """查看 RSSHub Routes 知识库状态。"""
+        result = await _h.handle_rsshub_kb_status(self._deps)
+        if result.get("plain"):
+            yield event.plain_result(result["plain"])
+
+    @filter.command("rsshub_kb_task")
+    async def rsshub_kb_task(self, event: AstrMessageEvent):
+        """查看最近 RSSHub Routes 知识库同步任务。"""
+        result = _h.handle_rsshub_kb_task(self._deps)
+        if result.get("plain"):
+            yield event.plain_result(result["plain"])
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("sub_test", alias={"测试订阅"})

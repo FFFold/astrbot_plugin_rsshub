@@ -6,10 +6,12 @@
 """
 
 from datetime import datetime, timezone
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..constants import INHERIT_VALUE
+from ..constants import INHERIT_VALUE, USER_STATE_BANNED, USER_STATE_USER
+from .handlers import dump_handlers, normalize_handlers
 
 
 class User(BaseModel):
@@ -19,46 +21,49 @@ class User(BaseModel):
     代表系统中的一个用户，包含用户状态、默认订阅选项和推送配置。
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     """用户ID（主键）"""
 
     state: int = Field(
-        default=0, description="用户状态: -1=封禁, 0=访客, 1=用户, 100=管理员"
+        default=USER_STATE_USER, description="用户状态: -1=已封禁, 1=用户"
     )
 
-    interval: int | None = Field(default=None, description="监控间隔（分钟）")
-    notify: int = Field(default=1, description="是否通知: 0=禁用, 1=启用")
+    interval: int = Field(default=INHERIT_VALUE, description="监控间隔（分钟）")
+    notify: int = Field(default=INHERIT_VALUE, description="是否通知: 0=禁用, 1=启用")
     send_mode: int = Field(
-        default=0, description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息"
+        default=INHERIT_VALUE,
+        description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息",
     )
-    length_limit: int = Field(default=0, description="长度限制")
-    link_preview: int = Field(default=0, description="链接预览: 0=自动, 1=强制启用")
+    handler_specs: Any = Field(
+        default_factory=list,
+        alias="handlers",
+        description="内容处理 handlers",
+    )
+    length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
+    link_preview: int = Field(
+        default=INHERIT_VALUE, description="链接预览: 0=自动, 1=强制启用"
+    )
     display_author: int = Field(
-        default=0, description="显示作者: -1=禁用, 0=自动, 1=强制"
+        default=INHERIT_VALUE, description="显示作者: -1=禁用, 0=自动, 1=强制"
     )
     display_via: int = Field(
-        default=0, description="显示来源: -2=完全禁用, -1=仅链接, 0=自动, 1=强制"
+        default=INHERIT_VALUE,
+        description="显示来源: -2=完全禁用, -1=仅链接, 0=自动, 1=强制",
     )
     display_title: int = Field(
-        default=0, description="显示标题: -1=禁用, 0=自动, 1=强制"
+        default=INHERIT_VALUE, description="显示标题: -1=禁用, 0=自动, 1=强制"
     )
-    display_entry_tags: int = Field(default=-1, description="显示标签")
-    style: int = Field(default=0, description="样式: 0=RSStT, 1=flowerss")
-    display_media: int = Field(default=0, description="显示媒体: -1=禁用, 0=启用")
-    translate: int = Field(
-        default=INHERIT_VALUE, description="翻译: -100=继承, 0=禁用, 1=启用"
-    )
-    translate_target_lang: str | None = Field(
-        default=None, max_length=16, description="翻译目标语言"
+    display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
+    style: int = Field(default=INHERIT_VALUE, description="样式: 0=RSStT, 1=flowerss")
+    display_media: int = Field(
+        default=INHERIT_VALUE, description="显示媒体: -1=禁用, 0=启用"
     )
     default_target_session: str | None = Field(
         default=None, max_length=255, description="默认推送目标会话(unified_msg_origin)"
     )
     needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
-    use_user_config: bool = Field(
-        default=False,
-        description="是否使用用户自身配置: true=使用User表, false=继承全局配置",
-    )
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), description="创建时间"
@@ -67,23 +72,43 @@ class User(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc), description="更新时间"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_handlers_field(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            payload = dict(value)
+            raw_handlers = payload.get("handlers", payload.get("handler_specs"))
+            payload["handler_specs"] = dump_handlers(
+                normalize_handlers(raw_handlers)
+            )
+            return payload
+        return value
+
+    @property
+    def handlers(self) -> list[dict[str, Any]]:
+        return dump_handlers(self.handler_specs)
+
+    @handlers.setter
+    def handlers(self, value: Any) -> None:
+        self.handler_specs = dump_handlers(normalize_handlers(value))
+
     def is_active(self) -> bool:
         """检查用户是否处于启用状态（非封禁）"""
-        return self.state >= 0
+        return self.state != USER_STATE_BANNED
 
     def is_admin(self) -> bool:
-        """检查用户是否为管理员"""
-        return self.state >= 100
+        """兼容旧调用；插件不再维护用户管理员状态。"""
+        return False
 
     def activate(self) -> "User":
         """将用户状态设为启用"""
-        self.state = 1
+        self.state = USER_STATE_USER
         self.updated_at = datetime.now(timezone.utc)
         return self
 
     def deactivate(self) -> "User":
-        """将用户状态设为停用"""
-        self.state = 0
+        """将用户状态设为封禁"""
+        self.state = USER_STATE_BANNED
         self.updated_at = datetime.now(timezone.utc)
         return self
 
@@ -123,3 +148,7 @@ class User(BaseModel):
             if value != INHERIT_VALUE:
                 return value
         return None
+
+    def get_effective_handlers(self) -> list[dict[str, Any]]:
+        """获取规范化后的 handlers。"""
+        return dump_handlers(self.handler_specs)

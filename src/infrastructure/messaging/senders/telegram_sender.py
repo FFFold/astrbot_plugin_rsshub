@@ -76,5 +76,5 @@ class TelegramMessageSender(DefaultMessageSender):
             return SendResult(
                 ok=False,
                 transient=self._is_transient_network_error(err),
-                detail=str(err),
+                detail=self._normalize_error_detail(str(err)),
             )

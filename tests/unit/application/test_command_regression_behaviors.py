@@ -65,6 +65,52 @@ async def test_sub_test_execute_target_dispatches_messages():
 
 
 @pytest.mark.asyncio
+async def test_sub_test_execute_target_preserves_video_media_item():
+    sub_repo = MagicMock()
+    feed_repo = MagicMock()
+    dispatcher = MagicMock()
+    dispatcher.send_to_session = AsyncMock(return_value={"ok": True})
+
+    entry = EntryParsed(
+        title="t1",
+        link="l1",
+        summary='body<video src="https://example.com/media/play?id=1"></video>',
+        published=datetime.now(timezone.utc),
+    )
+    polling = MagicMock()
+    polling.fetch_feed_entries = AsyncMock(
+        return_value=SimpleNamespace(
+            success=True,
+            entries=[entry],
+            message="ok",
+            web_feed=SimpleNamespace(rss_d=SimpleNamespace(feed={"title": "timeline"})),
+        )
+    )
+
+    cmd = TestSubscriptionCommand(
+        subscription_repo=sub_repo,
+        feed_repo=feed_repo,
+        polling_service=polling,
+        notification_dispatcher=dispatcher,
+    )
+
+    result = await cmd.execute_target(
+        target="https://a.com/rss",
+        user_id="u1",
+        target_session="sess",
+        platform_name="telegram",
+        start=1,
+        end=1,
+    )
+
+    assert result.success is True
+    call = dispatcher.send_to_session.await_args.kwargs
+    assert "[视频]" not in call["content"]
+    assert call["media_urls"] == ["https://example.com/media/play?id=1"]
+    assert call["media_items"] == [("video", "https://example.com/media/play?id=1")]
+
+
+@pytest.mark.asyncio
 async def test_unsubscribe_by_url_checks_and_deletes():
     sub_repo = MagicMock()
     feed_repo = MagicMock()

@@ -70,21 +70,6 @@ class SubscriptionDefaults:
 
 
 @dataclass(frozen=True)
-class PipelineSettings:
-    """Content filtering and enrichment pipeline settings."""
-
-    keyword_blacklist: tuple[str, ...] = field(default_factory=tuple)
-    keyword_whitelist: tuple[str, ...] = field(default_factory=tuple)
-    min_content_length: int = 0
-    min_media_count: int = 0
-    ai_filter_enabled: bool = False
-    ai_filter_prompt: str = ""
-    ai_enrich_enabled: bool = False
-    ai_enrich_prompt: str = ""
-    ai_timeout_seconds: int = 15
-
-
-@dataclass(frozen=True)
 class SenderStrategySettings:
     """Per-platform sender strategy toggles."""
 
@@ -92,6 +77,27 @@ class SenderStrategySettings:
     aiocqhttp: bool = True
     qq_official: bool = True
     weixin_oc: bool = True
+
+
+@dataclass(frozen=True)
+class RouteKnowledgeSettings:
+    """RSSHub Routes knowledge-base sync settings."""
+
+    kb_name: str = "RSSHub Routes"
+    embedding_provider_id: str = ""
+    rerank_provider_id: str = ""
+    source_mode: str = "mirror"
+    source_base_url: str = (
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
+    )
+    fallback_base_url: str = (
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
+    )
+    local_source_dir: str = ""
+    timeout: int = 30
+    batch_size: int = 32
+    tasks_limit: int = 3
+    max_retries: int = 3
 
 
 @dataclass(frozen=True)
@@ -105,7 +111,9 @@ class ApplicationSettings:
     subscription_defaults: SubscriptionDefaults = field(
         default_factory=SubscriptionDefaults
     )
-    pipeline: PipelineSettings = field(default_factory=PipelineSettings)
     sender_strategies: SenderStrategySettings = field(
         default_factory=SenderStrategySettings
+    )
+    route_knowledge: RouteKnowledgeSettings = field(
+        default_factory=RouteKnowledgeSettings
     )

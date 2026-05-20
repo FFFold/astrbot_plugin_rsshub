@@ -15,7 +15,7 @@ class UserDTO:
 
     id: str
     state: int
-    interval: int | None
+    interval: int
     notify: int
     send_mode: int
     length_limit: int

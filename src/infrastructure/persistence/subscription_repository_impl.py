@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlmodel import asc, select
 
+from ...domain.entities.handlers import dump_handlers, handlers_json
 from ...domain.entities.subscription import Subscription
 from ..utils import get_logger
 from .database import get_database
@@ -148,6 +149,8 @@ class SubscriptionRepositoryImpl:
             next_check_time=orm.next_check_time,
             notify=orm.notify,
             send_mode=orm.send_mode,
+            handlers_mode=orm.handlers_mode,
+            handlers=dump_handlers(orm.handlers),
             length_limit=orm.length_limit,
             link_preview=orm.link_preview,
             display_author=orm.display_author,
@@ -156,7 +159,6 @@ class SubscriptionRepositoryImpl:
             display_entry_tags=orm.display_entry_tags,
             style=orm.style,
             display_media=orm.display_media,
-            use_sub_config=orm.use_sub_config,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -177,6 +179,8 @@ class SubscriptionRepositoryImpl:
             next_check_time=sub.next_check_time,
             notify=sub.notify,
             send_mode=sub.send_mode,
+            handlers_mode=sub.handlers_mode,
+            handlers=handlers_json(sub.handlers),
             length_limit=sub.length_limit,
             link_preview=sub.link_preview,
             display_author=sub.display_author,
@@ -185,7 +189,6 @@ class SubscriptionRepositoryImpl:
             display_entry_tags=sub.display_entry_tags,
             style=sub.style,
             display_media=sub.display_media,
-            use_sub_config=sub.use_sub_config,
             created_at=sub.created_at,
             updated_at=sub.updated_at,
         )

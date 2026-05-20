@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from astrbot_plugin_rsshub.src.infrastructure.fetcher import EntryParsed, RSSParser
 from astrbot_plugin_rsshub.src.infrastructure.utils import get_lock_manager
+from feedparser import FeedParserDict
 
 
 class TestRSSParser:
@@ -31,6 +34,10 @@ class TestRSSParser:
         assert entry.link == "https://example.com/article1"
         assert entry.id == "https://example.com/article1"
         assert entry.published is not None
+        assert "<title>Test Article 1</title>" in entry.raw_xml
+        assert entry.raw_xml.startswith("<item>")
+        assert "<title>Test Article 1</title>" in entry.raw_xml
+        assert "<link>https://example.com/article1</link>" in entry.raw_xml
 
     def test_parse_atom_feed(self, sample_atom_feed):
         """测试解析 Atom feed"""
@@ -43,6 +50,8 @@ class TestRSSParser:
         entry = entries[0]
         assert entry.title == "Atom Entry 1"
         assert entry.link == "https://example.com/entry1"
+        assert "entry" in entry.raw_xml.split(">", 1)[0]
+        assert "Atom Entry 1" in entry.raw_xml
 
     def test_parse_with_media(self, sample_media_feed):
         """测试解析带媒体的 RSS"""
@@ -56,6 +65,41 @@ class TestRSSParser:
         entry1 = entries[0]
         assert len(entry1.enclosures) >= 1
         assert entry1.enclosures[0].url == "https://example.com/image1.jpg"
+
+    def test_parse_content_encoded_from_juya_ai_daily_fixture(
+        self, fixtures_dir: Path
+    ):
+        """测试解析 content:encoded 中的完整正文。"""
+        xml = (
+            fixtures_dir / "feeds" / "juya_ai_daily_minimal.xml"
+        ).read_text(encoding="utf-8")
+
+        parser = RSSParser()
+        entries, error = parser.parse(xml)
+
+        assert error is None
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.summary.startswith("AI 早报 2026-05-19")
+        assert "<h1>AI 早报 2026-05-19</h1>" in entry.content
+        assert "Qwen3.7 Max Preview" in entry.content
+        assert len(entry.content) > len(entry.summary)
+
+    def test_parse_entry_reads_feedparser_content_encoded_compat_field(self):
+        """测试 feedparser 兼容字段 content_encoded 也能作为正文。"""
+        entry = FeedParserDict(
+            {
+                "title": "compat",
+                "link": "https://example.com/compat",
+                "summary": "short summary",
+                "content_encoded": "<p>full compat content</p>",
+            }
+        )
+
+        parsed = RSSParser.parse_entry(entry)
+
+        assert parsed.content == "<p>full compat content</p>"
+        assert parsed.summary == "short summary"
 
     def test_parse_invalid_xml(self):
         """测试解析无效 XML"""

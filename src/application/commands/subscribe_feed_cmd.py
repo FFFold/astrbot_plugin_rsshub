@@ -5,6 +5,8 @@
 """
 
 from ...domain.entities.feed import Feed
+from ...domain.entities.handlers import parse_handlers_input
+from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.value_objects.feed_url import FeedUrl
@@ -141,12 +143,26 @@ class SubscribeFeedCommand:
         # 应用会话默认设置
         if session_defaults:
             update_payload = {}
-            removed_translation_keys = {"translate", "translate_target_lang"}
+            removed_keys = {
+                "translate",
+                "translate_target_lang",
+                "use_sub_config",
+                "use_user_config",
+            }
             for key, raw_value in session_defaults.items():
-                if key in removed_translation_keys:
+                if key in removed_keys:
                     continue
                 if key in {"title", "tags"}:
                     update_payload[key] = str(raw_value)
+                elif key == "handlers_mode":
+                    normalized = str(raw_value or "").strip().lower()
+                    if normalized in SUPPORTED_HANDLERS_MODES:
+                        update_payload[key] = normalized
+                elif key == "handlers":
+                    try:
+                        update_payload[key] = parse_handlers_input(raw_value)
+                    except ValueError:
+                        pass
                 else:
                     try:
                         update_payload[key] = int(raw_value)

@@ -4,8 +4,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 from astrbot_plugin_rsshub.src.application.ports import SendResult
+from astrbot_plugin_rsshub.src.application.services.content_handlers import (
+    ContentHandlerRuntime,
+    EntryContentContext,
+)
 from astrbot_plugin_rsshub.src.application.services.notification_dispatcher import (
     NotificationDispatcher,
+    SendTarget,
+    append_media_links_to_text,
+    infer_media_type,
+    normalize_media_items,
+    strip_appended_media_links_from_text,
 )
 from astrbot_plugin_rsshub.src.application.services.session_push_queue import (
     PushJobResult,
@@ -13,6 +22,7 @@ from astrbot_plugin_rsshub.src.application.services.session_push_queue import (
 )
 from astrbot_plugin_rsshub.src.domain.entities.push_history import PushHistory
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+from astrbot_plugin_rsshub.src.domain.entities.user import User
 
 
 class FakeSender:
@@ -33,6 +43,75 @@ class FakeSenderProvider:
         return self.sender
 
 
+def test_content_handler_runtime_resolves_handlers_mode_semantics():
+    runtime = ContentHandlerRuntime()
+    user = User(
+        id="user-1",
+        handlers=[
+            {
+                "id": "builtin.xml_parse.default",
+                "type": "builtin",
+                "name": "xml_parse",
+                "status": 1,
+                "config": {},
+            }
+        ],
+    )
+    inherit_sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="inherit",
+        handlers=[
+            {
+                "id": "builtin.ai_transform.default",
+                "type": "builtin",
+                "name": "ai_transform",
+                "status": 1,
+                "config": {"prompt": "ignored"},
+            }
+        ],
+    )
+    override_sub = Subscription(
+        id=2,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_transform.default",
+                "type": "builtin",
+                "name": "ai_transform",
+                "status": 1,
+                "config": {"prompt": "used"},
+            }
+        ],
+    )
+    disabled_sub = Subscription(
+        id=3,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="disabled",
+        handlers=[
+            {
+                "id": "builtin.ai_transform.default",
+                "type": "builtin",
+                "name": "ai_transform",
+                "status": 1,
+                "config": {"prompt": "ignored"},
+            }
+        ],
+    )
+
+    inherit = runtime.resolve_handlers(subscription=inherit_sub, user=user)
+    override = runtime.resolve_handlers(subscription=override_sub, user=user)
+    disabled = runtime.resolve_handlers(subscription=disabled_sub, user=user)
+
+    assert [spec.name for spec in inherit] == ["xml_parse"]
+    assert [spec.name for spec in override] == ["ai_transform"]
+    assert disabled == []
+
+
 @pytest.mark.asyncio
 async def test_dispatch_sends_via_injected_sender_provider():
     sender = FakeSender()
@@ -47,7 +126,7 @@ async def test_dispatch_sends_via_injected_sender_provider():
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
     history_repo = AsyncMock()
-    history_repo.get_by_sub.return_value = []
+    history_repo.exists_success_by_scope_and_guid.return_value = False
     history_repo.save.side_effect = lambda history: history
 
     dispatcher = NotificationDispatcher(
@@ -71,6 +150,8 @@ async def test_dispatch_sends_via_injected_sender_provider():
     assert request.message == "content"
     assert context.platform_name == "telegram"
     assert history_repo.save.await_count == 2
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert first_saved.media_urls is None
 
 
 @pytest.mark.asyncio
@@ -83,21 +164,10 @@ async def test_dispatch_guard_skips_already_successful_entry_guid():
         platform_name="telegram",
         target_session="telegram:Group:1",
     )
-    existing = PushHistory(
-        sub_id=1,
-        user_id="user-1",
-        feed_id=10,
-        content="old",
-        entry_title="old",
-        entry_link="https://example.com/entry",
-        entry_guid="guid-1",
-        status="success",
-    )
-
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = [sub]
     history_repo = AsyncMock()
-    history_repo.get_by_sub.return_value = [existing]
+    history_repo.exists_success_by_scope_and_guid.return_value = True
 
     dispatcher = NotificationDispatcher(
         subscription_repo=sub_repo,
@@ -141,7 +211,7 @@ async def test_dispatch_can_limit_to_selected_subscription_ids():
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = subs
     history_repo = AsyncMock()
-    history_repo.get_by_sub.return_value = []
+    history_repo.exists_success_by_scope_and_guid.return_value = False
     history_repo.save.side_effect = lambda history: history
 
     dispatcher = NotificationDispatcher(
@@ -188,7 +258,7 @@ async def test_dispatch_uses_session_queue_for_same_session():
     sub_repo = AsyncMock()
     sub_repo.get_active_by_feed_id.return_value = subs
     history_repo = AsyncMock()
-    history_repo.get_by_sub.return_value = []
+    history_repo.exists_success_by_scope_and_guid.return_value = False
     history_repo.save.side_effect = lambda history: history
 
     dispatcher = NotificationDispatcher(
@@ -240,7 +310,12 @@ async def test_send_to_session_returns_cancelled_result_from_queue():
     )
 
     result = await dispatcher.send_to_session(
-        subscription=sub,
+        target=SendTarget(
+            user_id=sub.user_id,
+            platform_name=sub.platform_name,
+            target_session=sub.target_session,
+            sub_id=sub.id,
+        ),
         content="content",
         media_urls=None,
     )
@@ -250,6 +325,207 @@ async def test_send_to_session_returns_cancelled_result_from_queue():
     assert result["job_id"] == "rss-000123"
     assert "Cancelled by /sub_stop" in result["error"]
     assert sender.requests == []
+
+
+def test_infer_media_type_detects_rsshub_wrapped_video_url():
+    url = (
+        "https://proxy.example/?url=https%3A%2F%2Fvideo.twimg.com%2Fext_tw_video"
+        "%2F123%2Fpu%2Fvid%2Favc1%2F720x1280%2Fclip.mp4%3Ftag%3D14"
+    )
+
+    assert infer_media_type(url) == "video"
+
+
+def test_normalize_media_items_preserves_explicit_video_type_without_extension():
+    url = "https://example.com/media/play?id=123"
+
+    assert normalize_media_items(media_items=[("video", url)]) == [("video", url)]
+
+
+def test_append_media_links_to_text_is_idempotent():
+    text = "hello\n媒体原始链接:\nhttps://example.com/a.mp4"
+
+    result = append_media_links_to_text(
+        text,
+        media_urls=["https://example.com/a.mp4"],
+    )
+
+    assert result == text
+
+
+def test_strip_appended_media_links_from_text_removes_failure_suffix():
+    text = "hello\n媒体原始链接:\nhttps://example.com/a.mp4"
+
+    result = strip_appended_media_links_from_text(
+        text,
+        media_urls=["https://example.com/a.mp4"],
+    )
+
+    assert result == "hello"
+
+
+def test_strip_appended_media_links_from_text_keeps_unrelated_suffix():
+    text = "hello\n媒体原始链接:\nhttps://example.com/a.mp4\nhttps://example.com/extra"
+
+    result = strip_appended_media_links_from_text(
+        text,
+        media_urls=["https://example.com/a.mp4"],
+    )
+
+    assert result == text
+
+
+@pytest.mark.asyncio
+async def test_send_to_session_preserves_video_media_type():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    dispatcher = NotificationDispatcher(
+        subscription_repo=AsyncMock(),
+        push_history_repo=AsyncMock(),
+        sender_provider=FakeSenderProvider(sender),
+    )
+    video_url = "https://example.com/video.mp4?tag=14"
+
+    result = await dispatcher.send_to_session(
+        target=SendTarget(
+            user_id=sub.user_id,
+            platform_name=sub.platform_name,
+            target_session=sub.target_session,
+            sub_id=sub.id,
+        ),
+        content="content",
+        media_urls=[video_url],
+    )
+
+    assert result["ok"] is True
+    request, _context = sender.requests[0]
+    assert request.media == [("video", video_url)]
+
+
+@pytest.mark.asyncio
+async def test_send_to_session_preserves_explicit_video_media_item():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    dispatcher = NotificationDispatcher(
+        subscription_repo=AsyncMock(),
+        push_history_repo=AsyncMock(),
+        sender_provider=FakeSenderProvider(sender),
+    )
+    video_url = "https://example.com/media/play?id=123"
+
+    result = await dispatcher.send_to_session(
+        target=SendTarget(
+            user_id=sub.user_id,
+            platform_name=sub.platform_name,
+            target_session=sub.target_session,
+            sub_id=sub.id,
+        ),
+        content="content",
+        media_urls=[video_url],
+        media_items=[("video", video_url)],
+    )
+
+    assert result["ok"] is True
+    request, _context = sender.requests[0]
+    assert request.media == [("video", video_url)]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_persists_media_urls_and_appends_links_on_failure():
+    sender = FakeSender(SendResult(ok=False, detail="forward failed"))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+    media_url = "https://example.com/video.mp4"
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        media_urls=[media_url],
+    )
+
+    assert stats == {"success": 0, "failed": 0, "pending": 1}
+    assert history_repo.save.await_count == 2
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    second_saved = history_repo.save.await_args_list[1].args[0]
+    assert first_saved.media_urls == [media_url]
+    assert second_saved.media_urls == [media_url]
+    assert "媒体原始链接:" in second_saved.content
+    assert media_url in second_saved.content
+
+
+@pytest.mark.asyncio
+async def test_dispatch_feed_entry_persists_raw_xml_in_history():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="title",
+            summary="summary",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item><title>title</title></item>",
+        ),
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert first_saved.raw_xml == "<item><title>title</title></item>"
 
 
 @pytest.mark.asyncio
@@ -323,12 +599,14 @@ async def test_dispatch_pending_retries_marks_successful_retry_success():
         sub_id=1,
         user_id="user-1",
         feed_id=10,
-        content="retry content",
+        content="retry content\n媒体原始链接:\nhttps://example.com/video.mp4",
+        media_urls=["https://example.com/video.mp4"],
         entry_title="title",
         entry_link="https://example.com/entry",
         status="retrying",
         retry_count=1,
         max_retries=3,
+        fail_reason="未知错误",
     )
 
     sub_repo = AsyncMock()
@@ -348,8 +626,11 @@ async def test_dispatch_pending_retries_marks_successful_retry_success():
     assert stats == {"success": 1, "failed": 0, "skipped": 0}
     assert history.status == "success"
     assert history.retry_count == 1
+    assert history.fail_reason is None
+    assert history.content == "retry content"
     assert len(sender.requests) == 1
     assert sender.requests[0][0].message == "retry content"
+    assert sender.requests[0][0].media == [("video", "https://example.com/video.mp4")]
     history_repo.get_and_mark_retrying.assert_awaited_once_with(5)
     history_repo.save.assert_awaited_once_with(history)
 
@@ -487,3 +768,103 @@ async def test_dispatch_pending_retries_skips_disabled_subscription():
     assert history.fail_reason == "Subscription not available"
     assert sender.requests == []
     history_repo.save.assert_awaited_once_with(history)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_agent_entry_deduplicates_only_success_records():
+    sender = FakeSender()
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = True
+    dispatcher = NotificationDispatcher(
+        subscription_repo=AsyncMock(),
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    result = await dispatcher.dispatch_agent_entry(
+        source_key="agent:test",
+        target=SendTarget(
+            user_id="user-1",
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        content="content",
+        raw_xml="<entry><p>Hello</p></entry>",
+        entry_title="title",
+        entry_guid="guid-1",
+    )
+
+    assert result["ok"] is True
+    assert result["deduplicated"] is True
+    history_repo.save.assert_not_awaited()
+    assert sender.requests == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_agent_entry_persists_raw_xml_in_history():
+    sender = FakeSender()
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+    dispatcher = NotificationDispatcher(
+        subscription_repo=AsyncMock(),
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    result = await dispatcher.dispatch_agent_entry(
+        source_key="agent:test",
+        target=SendTarget(
+            user_id="user-1",
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        content="content",
+        raw_xml="<entry><p>Hello</p></entry>",
+        entry_title="title",
+        entry_guid="guid-raw",
+    )
+
+    assert result["ok"] is True
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert first_saved.raw_xml == "<entry><p>Hello</p></entry>"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_retries_reuses_agent_history_without_subscription():
+    sender = FakeSender()
+    history = PushHistory(
+        id=104,
+        sub_id=None,
+        user_id="user-1",
+        feed_id=None,
+        source_type="agent",
+        source_key="agent:test",
+        content="retry content\n媒体原始链接:\nhttps://example.com/video.mp4",
+        media_urls=["https://example.com/video.mp4"],
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        status="retrying",
+        retry_count=1,
+        max_retries=3,
+    )
+
+    sub_repo = AsyncMock()
+    history_repo = AsyncMock()
+    history_repo.get_and_mark_retrying.return_value = [history]
+    history_repo.save.side_effect = lambda value: value
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_pending_retries(limit=5)
+
+    assert stats == {"success": 1, "failed": 0, "skipped": 0}
+    sub_repo.get_by_id.assert_not_awaited()
+    assert history.status == "success"
+    assert sender.requests[0][0].session_id == "telegram:Group:1"

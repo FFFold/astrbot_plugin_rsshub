@@ -5,8 +5,8 @@
 ### Removed
 
 - 移除 `src/infrastructure/api`（`RSSHubRadarAPI`）及相关导出；该 AI 增强订阅辅助接口在当前版本中无实际收益，避免继续维护无效模块。
-- 收敛 `_conf_schema.json`：仅保留 `basic_config`、`ffmpeg` 和 `sender_strategies`，订阅默认值与内容管线配置改由 AstrBot Plugin Pages 承载。
-- 移除传统翻译管道、翻译提供商、翻译缓存仓库/API/UI；后续翻译、总结和改写交由 AI 内容管线或扩展完成。
+- 收敛 `_conf_schema.json`：保留启动级基础设施、Routes 知识库、`ffmpeg` 和 `sender_strategies`；订阅默认值改由 AstrBot Plugin Pages 承载。
+- 移除传统翻译管道、翻译提供商、翻译缓存仓库/API/UI，以及内置内容处理/AI 筛选增强管道；后续翻译、总结和改写交由 AstrBot LLM 能力或扩展特性完成。
 - 移除 `rsshub_search_routes` 和 `rsshub_get_route_schema` LLM tool；RSSHub 路由检索后续走 AstrBot 知识库和 route skill。
 - 移除只包裹 `Feed` 去重方法的旧 `ContentFilterService`，避免与当前 `FeedPollingService` 去重路径重复。
 
@@ -14,12 +14,45 @@
 
 - 将 LLM 工具注册模块从 `src/application/commands/llmtools.py` 调整为 `src/application/llmtools.py`，避免把非命令模块放在命令包下。
 - 拆分配置职责：`src/application/settings.py` 仅保留应用层 settings dataclass，AstrBot 配置解析与兼容读取迁移到 `src/infrastructure/config/settings_adapter.py`。
-- Plugin Pages 设置页补齐订阅默认值和内容管线配置入口。
+- Plugin Pages「设置」页更名为「默认订阅设置」，仅维护订阅默认值，不再暴露内容管道配置。
+- Plugin Pages 不再提供新增订阅、TOML 导入和订阅导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 完成。
+- Plugin Pages 已有订阅管理会使用订阅自身 `user_id` 调用后端，Web API 不再把缺省用户静默落到 `webadmin`。
+- Plugin Pages 管理页优化移动端布局：Tab 导航可横向滚动，订阅表格在窄屏切换为卡片式布局，知识库状态、推送历史筛选和分页区域避免长文本/按钮重叠。
+- Plugin Pages 宽屏布局、表格列宽、长文本省略、输入框样式和知识库错误展示进一步收紧，减少管理页横向留白与操作列挤压。
+- Plugin Pages 订阅列表新增前端分页；订阅和推送历史分页控件统一上移到列表顶部，仅在存在跨页数据时显示。
+- Plugin Pages 默认订阅设置和知识库页改为居中窄容器；移除会遮挡表单的桌面端悬浮保存按钮，统一保留底部保存入口。
+- Plugin Pages 用户状态收敛为「用户」和「已封禁」两种；历史非负状态作为普通用户兼容显示，新写入只允许 `1` 或 `-1`。
+- `sender_strategies.enabled_platforms` 配置由四个布尔子项收敛为平台多选列表，并兼容读取旧版 object bool map，同时保留 `sender_strategies` 容器用于后续平台专属配置。
+- `_conf_schema.json` 中的固定配置项改为下拉/多选，有限范围的数值项改为滑块；Routes KB 同步源收敛为内置 GitHub Raw 与 `ghfast.top` raw 代理选项，避免用户手动输入不兼容镜像格式。
+- `rsshub_sub` / `rsshub_user` 配置继承语义收敛：移除 `use_sub_config` / `use_user_config` 开关列，改由具体字段 `-100` 统一表示继承；用户级配置默认继承全局配置。
+
+### Added
+
+- 新增 RSSHub Routes 知识库同步能力：支持通过 `/rsshub_kb_init`、`/rsshub_kb_sync`、`/rsshub_kb_status`、`/rsshub_kb_task` 管理 AstrBot 知识库中的 RSSHub 路由文档。
+- `/rsshub_kb_init` 支持按配置自动创建空的 RSSHub Routes 知识库；配置页可选择向量模型和重排序模型，留空时使用 AstrBot 当前可用默认 Provider。
+- 新增 Plugin Pages「知识库」页签，可查看 Routes KB 状态并启动/刷新同步任务。
+- LLM 请求在检测到 RSSHub 路由检索意图时，会注入使用 Routes 知识库的提示，避免恢复旧的 route 搜索 LLM tool。
+- 新增 LLM 工具 `rss_list_push_history`：AI agent 可按当前会话查询推送历史 JSON 列表，不暴露 `sub_id`。
+- 新增 LLM 工具 `rss_push_xml_entry`：AI agent 可直接提交 XML/HTML 标签内容进行即时推送，工具会完成 XML 校验、媒体解析、推送历史落库、成功态幂等去重与失败重试复用。
+- `rsshub_sub` / `rsshub_user` 新增 `ai_prompt` 字段，订阅导入导出、Web API 和 Plugin Pages 编辑面板会保留该提示词。
 
 ### Fixed
 
 - 修正 `_conf_schema.json` 与运行时配置类不一致的问题：`hash_history_min`、`global_config.interval`、`ffmpeg.gif_transcode` 默认值现在与代码一致。
-- 补充 `sender_strategies.qq_official` 配置项，避免 QQ 官方平台发送策略只能使用隐式默认值。
+- 补充并收敛 `sender_strategies.qq_official` 配置，避免 QQ 官方平台发送策略只能使用隐式默认值。
+- 修复 Web API 缺失 `user_id` 时会使用 `webadmin` 兜底的问题，避免 WebUI 操作创建或读取伪用户配置。
+- 修复 HTML `<video>`/`<audio>` 推送链路：解析出的媒体类型会保留到发送器，避免视频被按图片处理或只在正文中显示为 `[视频]`。
+- 修复 `/sub_test` 真推送路径中的视频/音频占位文本残留，保持与正常轮询推送一致的结构化媒体发送行为。
+- 修复 OneBot 合并转发媒体发送失败后的纯文本回退：回退节点现在会附带本次消息的全部原始媒体链接，避免 NapCat / OneBot 无法发送本地视频时只剩 `[视频]` 或丢失入口。
+- 修复推送历史 `fail_reason` 超长导致的 Pydantic 校验崩溃：发送异常详情、领域实体写入和仓储读取旧脏数据都会统一截断到 512 字符，避免重试扫描和 WebUI 推送历史接口被卡死。
+- 修复失败重试时媒体丢失的问题：首次推送历史会持久化 `media_urls`，后续重试会按历史媒体重新构造发送请求；失败历史内容也会补充原始媒体链接，便于 WebUI 排障。
+- 修复 XML 即时推送历史审计链路：`push_history` 新增 `raw_xml`，历史查询和 WebUI 可直接读取原始 XML。
+- 修复宿主工具来源展示为 `unknown/unknown` 的问题：插件注册的 RSSHub LLM 工具现在会绑定回插件模块来源。
+- 修复 `content:encoded` 正文解析兼容性，支持 `https://imjuya.github.io/juya-ai-daily/rss.xml` 这类完整正文仅位于 `content:encoded` 的 RSS 源。
+- 修复 Plugin Pages 子页标题与边框贴合、输入框样式偏原生的问题，统一表单内边距、边框、聚焦态和暗色模式显示。
+- 修复 Plugin Pages 操作列按钮在桌面端不居中、窄屏下易贴边挤压的问题；统一操作区对齐、间距和换行策略，并将列表/配置滚动限制在内容容器内部，减少标签页切换抖动。
+- 修复 Routes KB raw URL 拼接逻辑，避免 `https://代理/https://raw...` 这类代理前缀被 `urljoin` 改写成无效地址。
+- 修复旧 SQLite 库字段残留问题：迁移和启动自愈会重建 `rsshub_sub` / `rsshub_user`，移除旧翻译字段与旧继承开关字段。
 
 ## [1.1.3] - 2026-04-28
 

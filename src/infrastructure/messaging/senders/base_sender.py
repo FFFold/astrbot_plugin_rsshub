@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     pass
 
 logger = get_logger()
+MAX_SEND_ERROR_DETAIL_LENGTH = 512
 
 
 class DefaultMessageSender:
@@ -64,6 +65,17 @@ class DefaultMessageSender:
     @classmethod
     def _should_download_media_before_send(cls) -> bool:
         return bool(getattr(cls, "_download_media_before_send", True))
+
+    @staticmethod
+    def _normalize_error_detail(detail: str | None) -> str:
+        text = str(detail or "").strip()
+        if not text:
+            return ""
+        if len(text) <= MAX_SEND_ERROR_DETAIL_LENGTH:
+            return text
+        if MAX_SEND_ERROR_DETAIL_LENGTH <= 3:
+            return text[:MAX_SEND_ERROR_DETAIL_LENGTH]
+        return text[: MAX_SEND_ERROR_DETAIL_LENGTH - 3] + "..."
 
     @caching("media_cache", key="#media", ttl=900)
     async def prepare_media(
@@ -178,7 +190,11 @@ class DefaultMessageSender:
                 ex,
                 exc_info=True,
             )
-            return SendResult(ok=False, transient=True, detail=str(ex))
+            return SendResult(
+                ok=False,
+                transient=True,
+                detail=self._normalize_error_detail(str(ex)),
+            )
 
     async def send_to_user(
         self,
@@ -226,7 +242,7 @@ class DefaultMessageSender:
             return SendResult(
                 ok=False,
                 transient=self._is_transient_network_error(err),
-                detail=str(err),
+                detail=self._normalize_error_detail(str(err)),
             )
 
     async def send_to_group(

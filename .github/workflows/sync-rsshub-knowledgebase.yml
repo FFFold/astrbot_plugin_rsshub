@@ -162,7 +162,7 @@ jobs:
         run: |
           set -euo pipefail
           rsshub_revision="$(git -C /tmp/RSSHub rev-parse HEAD)"
-          python skills/rsshub-route-docs/generate_knowledgebase.py \
+          python .github/scripts/generate_knowledgebase.py \
             --input "${{ steps.routes.outputs.path }}" \
             --output "$GENERATED_DIR" \
             --source-revision "$rsshub_revision" \

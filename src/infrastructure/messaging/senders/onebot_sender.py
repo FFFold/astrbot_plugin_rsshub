@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from astrbot.api.message_components import Node, Nodes, Plain
 
+from ...pipeline import MessageFormatter
 from ...utils import get_logger
 from .base_sender import DefaultMessageSender
 from .types import MessageContext, SendRequest, SendResult
@@ -62,6 +63,9 @@ class OneBotMessageSender(DefaultMessageSender):
             image_components: list = []
             tail_components: list = []
             failed_media_urls: list[str] = []
+            original_media_urls = MessageFormatter.collect_original_urls(
+                effective_prepared
+            )
 
             if effective_prepared:
                 for item in effective_prepared:
@@ -96,7 +100,8 @@ class OneBotMessageSender(DefaultMessageSender):
 
             # 将失败链接追加到文本
             final_text = self._formatter._append_failed_links(
-                request.message, failed_media_urls
+                request.message,
+                failed_media_urls,
             )
 
             # 节点1：文字（header）
@@ -125,7 +130,10 @@ class OneBotMessageSender(DefaultMessageSender):
                 session_id,
                 result.detail,
             )
-            fallback_text = final_text if final_text else "RSS update"
+            fallback_text = self._formatter._append_failed_links(
+                request.message or "RSS update",
+                original_media_urls or failed_media_urls,
+            )
             fallback_nodes = [Node(content=[Plain(fallback_text)], name=nickname)]
             return await self._send_chain(session_id, [Nodes(fallback_nodes)])
 
@@ -139,5 +147,5 @@ class OneBotMessageSender(DefaultMessageSender):
             return SendResult(
                 ok=False,
                 transient=self._is_transient_network_error(err),
-                detail=str(err),
+                detail=self._normalize_error_detail(str(err)),
             )

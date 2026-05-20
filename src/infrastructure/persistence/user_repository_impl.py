@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlmodel import select
 
+from ...domain.entities.handlers import dump_handlers, handlers_json
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ..utils import get_logger
@@ -94,6 +95,7 @@ class UserRepositoryImpl:
             interval=orm.interval,
             notify=orm.notify,
             send_mode=orm.send_mode,
+            handlers=dump_handlers(orm.handlers),
             length_limit=orm.length_limit,
             link_preview=orm.link_preview,
             display_author=orm.display_author,
@@ -104,7 +106,6 @@ class UserRepositoryImpl:
             display_media=orm.display_media,
             default_target_session=orm.default_target_session,
             needs_binding_notice=orm.needs_binding_notice,
-            use_user_config=orm.use_user_config,
             created_at=orm.created_at,
             updated_at=orm.updated_at,
         )
@@ -118,6 +119,7 @@ class UserRepositoryImpl:
             interval=user.interval,
             notify=user.notify,
             send_mode=user.send_mode,
+            handlers=handlers_json(user.handlers),
             length_limit=user.length_limit,
             link_preview=user.link_preview,
             display_author=user.display_author,
@@ -128,7 +130,6 @@ class UserRepositoryImpl:
             display_media=user.display_media,
             default_target_session=user.default_target_session,
             needs_binding_notice=user.needs_binding_notice,
-            use_user_config=user.use_user_config,
             created_at=user.created_at,
             updated_at=user.updated_at,
         )

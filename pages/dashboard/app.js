@@ -1,27 +1,24 @@
 import {
   ready,
   getSubscriptions,
-  subscribe,
   unsubscribe,
   updateSubscription,
   getFeedItems,
   refreshFeed,
-  testUrl,
   testSubscription,
   batchActivate,
   batchDeactivate,
   batchUnsubscribe,
   getStats,
   checkUpdates,
-  getExport,
-  importSubscriptions,
-  getSettings,
-  setSettings,
   getPluginSettings,
   setPluginSettings,
   getUsers,
   getFeeds,
   getPushHistory,
+  getRouteKbStatus,
+  syncRouteKb,
+  getRouteKbTask,
   deletePushHistory,
   cleanupPushHistory,
   getUserDetails,
@@ -31,6 +28,15 @@ import {
 import { initTheme } from './js/theme.js';
 
 let toastTimer = null;
+let routeKbPollTimer = null;
+
+function normalizeUserState(state) {
+  return Number(state) < 0 ? -1 : 1;
+}
+
+function formatUserState(state) {
+  return normalizeUserState(state) < 0 ? '已封禁' : '用户';
+}
 
 function formatDate(iso) {
   if (!iso) return '-';
@@ -40,11 +46,54 @@ function formatDate(iso) {
   } catch { return iso; }
 }
 
-function splitLines(value) {
-  return String(value || '')
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function normalizeHandlers(handlers) {
+  if (!Array.isArray(handlers)) return [];
+  return handlers
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
+      id: String(item.id || '').trim(),
+      type: String(item.type || 'builtin').trim() || 'builtin',
+      name: String(item.name || '').trim(),
+      status: Number.isFinite(Number(item.status)) ? Number(item.status) : -100,
+      config: item.config && typeof item.config === 'object' ? { ...item.config } : {},
+    }))
+    .filter(item => item.id && item.name);
+}
+
+function handlersToEditorState(handlers) {
+  const normalized = normalizeHandlers(handlers);
+  const aiTransform = normalized.find(item => item.type === 'builtin' && item.name === 'ai_transform');
+  const xmlParse = normalized.find(item => item.type === 'builtin' && item.name === 'xml_parse');
+  return {
+    handlers: normalized,
+    xml_parse_enabled: Boolean(xmlParse && xmlParse.status !== 0),
+    ai_transform_enabled: Boolean(aiTransform && aiTransform.status !== 0),
+    ai_transform_prompt: aiTransform?.config?.prompt || '',
+    handlers_json: JSON.stringify(normalized, null, 2),
+  };
+}
+
+function buildHandlersFromEditorState(form) {
+  const handlers = [];
+  if (form.xml_parse_enabled) {
+    handlers.push({
+      id: 'builtin.xml_parse.default',
+      type: 'builtin',
+      name: 'xml_parse',
+      status: 1,
+      config: {},
+    });
+  }
+  if (form.ai_transform_enabled && String(form.ai_transform_prompt || '').trim()) {
+    handlers.push({
+      id: 'builtin.ai_transform.default',
+      type: 'builtin',
+      name: 'ai_transform',
+      status: 1,
+      config: { prompt: String(form.ai_transform_prompt || '').trim() },
+    });
+  }
+  return handlers;
 }
 
 const store = PetiteVue.reactive({
@@ -56,23 +105,22 @@ const store = PetiteVue.reactive({
   searchQuery: '',
   editMode: false,
   selectedIds: [],
+  subPagination: { page: 1, pageSize: 20 },
 
   // Panel
   panelVisible: false,
   panelExpanded: false,
-  panelMode: 'add', // add | edit | detail
-
-  // Add form
-  addForm: { url: '', title: '', tags: '', target_session: '', interval: 10 },
-  testResult: null,
+  panelMode: 'detail', // edit | detail
 
   // Edit form
   editForm: {
     id: 0, feed_id: 0, feed_title: '', feed_link: '', user_id: '',
     title: '', tags: '', target_session: '', interval: 10,
-    notify_: true, state_: true, send_mode: 0, length_limit: 0, link_preview: 0,
-    display_author: 0, display_via: 0, display_title: 0, display_entry_tags: -1,
-    style: 0, display_media: 0,
+    notify: -100, state_: true, send_mode: -100, length_limit: -100, link_preview: -100,
+    display_author: -100, display_via: -100, display_title: -100,
+    display_entry_tags: -100, style: -100, display_media: -100,
+    handlers_mode: 'inherit',
+    handlers: [], handlers_json: '[]', xml_parse_enabled: true, ai_transform_enabled: false, ai_transform_prompt: '',
   },
 
   // Detail
@@ -86,20 +134,6 @@ const store = PetiteVue.reactive({
   usersLoading: false,
   feeds: [],
   feedsLoading: false,
-  settingsLoading: false,
-  settings: {
-    interval: 10,
-    notify: 1,
-    send_mode: 0,
-    length_limit: 0,
-    link_preview: 0,
-    display_author: 0,
-    display_via: 0,
-    display_title: 0,
-    display_entry_tags: -1,
-    style: 0,
-    display_media: 0,
-  },
   pluginSettingsLoading: false,
   subscriptionDefaults: {
     interval: 10,
@@ -114,18 +148,6 @@ const store = PetiteVue.reactive({
     style: 'RSStT',
     display_media: true,
   },
-  pipelineSettings: {
-    keyword_blacklist: '',
-    keyword_whitelist: '',
-    min_content_length: 0,
-    min_media_count: 0,
-    ai_filter_enabled: false,
-    ai_filter_prompt: '',
-    ai_enrich_enabled: false,
-    ai_enrich_prompt: '',
-    ai_timeout_seconds: 15,
-  },
-  importForm: { content: '', skipExisting: true },
 
   // Push History
   pushHistory: [],
@@ -133,24 +155,35 @@ const store = PetiteVue.reactive({
   pushHistoryFilter: { status: '', page: 1, pageSize: 20 },
   pushHistoryTotal: 0,
 
+  // Route Knowledge
+  routeKbLoading: false,
+  routeKbSyncing: false,
+  routeKbStatus: null,
+  routeKbTask: null,
+
   // User Edit Panel
   userEditPanelVisible: false,
-  userEditForm: {
-    user_id: '',
-    state: 0,
-    interval: 10,
-    notify: true,
-    send_mode: 0,
-    length_limit: 0,
-    link_preview: 0,
-    display_author: 0,
-    display_via: 0,
-    display_title: 0,
-    display_entry_tags: -1,
-    style: 0,
-    display_media: 0,
-    default_target_session: '',
-  },
+    userEditForm: {
+      user_id: '',
+      state: 1,
+    interval: -100,
+    notify: -100,
+    send_mode: -100,
+    length_limit: -100,
+    link_preview: -100,
+    display_author: -100,
+    display_via: -100,
+      display_title: -100,
+      display_entry_tags: -100,
+      style: -100,
+      display_media: -100,
+      default_target_session: '',
+      handlers: [],
+      handlers_json: '[]',
+      xml_parse_enabled: true,
+      ai_transform_enabled: false,
+      ai_transform_prompt: '',
+    },
 
   // Feedback
   toast: { show: false, message: '', type: 'success' },
@@ -158,7 +191,7 @@ const store = PetiteVue.reactive({
 
   // ─── Lifecycle ─────────────────────────────────
 
-  async loadData() {
+  async loadData(resetPage = true) {
     this.loading = true;
     try {
       const [subResult, statsResult] = await Promise.all([
@@ -167,7 +200,7 @@ const store = PetiteVue.reactive({
       ]);
       this.subs = subResult.items;
       this.stats = statsResult.stats;
-      this.filterSubs();
+      this.filterSubs(resetPage);
     } catch (err) {
       this.showToast('加载失败: ' + err.message, 'error');
     } finally {
@@ -206,36 +239,9 @@ const store = PetiteVue.reactive({
   },
 
   async loadSettings() {
-    this.settingsLoading = true;
     this.pluginSettingsLoading = true;
     try {
-      const [result, pluginResult] = await Promise.all([
-        getSettings('webadmin'),
-        getPluginSettings(),
-      ]);
-      if (result.settings) {
-        this.settings = {
-          interval: result.settings.interval ?? 10,
-          notify: !!result.settings.notify,
-          send_mode: result.settings.send_mode ?? 0,
-          length_limit: result.settings.length_limit ?? 0,
-          link_preview: result.settings.link_preview ?? 0,
-          display_author: result.settings.display_author ?? 0,
-          display_via: result.settings.display_via ?? 0,
-          display_title: result.settings.display_title ?? 0,
-          display_entry_tags: result.settings.display_entry_tags ?? -1,
-          style: result.settings.style ?? 0,
-          display_media: result.settings.display_media ?? 0,
-        };
-      }
-      if (pluginResult.pipeline) {
-        this.pipelineSettings = {
-          ...this.pipelineSettings,
-          ...pluginResult.pipeline,
-          keyword_blacklist: (pluginResult.pipeline.keyword_blacklist || []).join('\n'),
-          keyword_whitelist: (pluginResult.pipeline.keyword_whitelist || []).join('\n'),
-        };
-      }
+      const pluginResult = await getPluginSettings();
       if (pluginResult.subscription_defaults) {
         this.subscriptionDefaults = {
           ...this.subscriptionDefaults,
@@ -245,44 +251,19 @@ const store = PetiteVue.reactive({
     } catch (err) {
       this.showToast('加载设置失败: ' + err.message, 'error');
     } finally {
-      this.settingsLoading = false;
       this.pluginSettingsLoading = false;
-    }
-  },
-
-  async saveSettings() {
-    try {
-      const payload = { ...this.settings, notify: this.settings.notify ? 1 : 0 };
-      await setSettings('webadmin', payload);
-      this.showToast('设置已保存');
-    } catch (err) {
-      this.showToast('保存设置失败: ' + err.message, 'error');
     }
   },
 
   async savePluginSettings() {
     try {
-      const pipeline = {
-        ...this.pipelineSettings,
-        keyword_blacklist: splitLines(this.pipelineSettings.keyword_blacklist),
-        keyword_whitelist: splitLines(this.pipelineSettings.keyword_whitelist),
-      };
       const result = await setPluginSettings({
         subscription_defaults: this.subscriptionDefaults,
-        pipeline,
       });
       if (result.subscription_defaults) {
         this.subscriptionDefaults = {
           ...this.subscriptionDefaults,
           ...result.subscription_defaults,
-        };
-      }
-      if (result.pipeline) {
-        this.pipelineSettings = {
-          ...this.pipelineSettings,
-          ...result.pipeline,
-          keyword_blacklist: (result.pipeline.keyword_blacklist || []).join('\n'),
-          keyword_whitelist: (result.pipeline.keyword_whitelist || []).join('\n'),
         };
       }
       this.showToast(result.message || '插件设置已保存');
@@ -293,20 +274,65 @@ const store = PetiteVue.reactive({
 
   // ─── Search & Filter ──────────────────────────
 
-  filterSubs() {
+  filterSubs(resetPage = true) {
     const q = this.searchQuery.toLowerCase().trim();
     if (!q) {
       this.filteredSubs = [...this.subs];
-      return;
+    } else {
+      this.filteredSubs = this.subs.filter((s) =>
+        (s.feed_title && s.feed_title.toLowerCase().includes(q)) ||
+        (s.feed_link && s.feed_link.toLowerCase().includes(q)) ||
+        (s.title && s.title.toLowerCase().includes(q)) ||
+        (s.tags && s.tags.toLowerCase().includes(q)) ||
+        (s.user_id && s.user_id.toLowerCase().includes(q)) ||
+        String(s.id).includes(q)
+      );
     }
-    this.filteredSubs = this.subs.filter((s) =>
-      (s.feed_title && s.feed_title.toLowerCase().includes(q)) ||
-      (s.feed_link && s.feed_link.toLowerCase().includes(q)) ||
-      (s.title && s.title.toLowerCase().includes(q)) ||
-      (s.tags && s.tags.toLowerCase().includes(q)) ||
-      (s.user_id && s.user_id.toLowerCase().includes(q)) ||
-      String(s.id).includes(q)
-    );
+    if (resetPage) {
+      this.resetSubPage();
+      this.selectedIds = [];
+    }
+    this.clampSubPage();
+  },
+
+  resetSubPage() {
+    this.subPagination.page = 1;
+  },
+
+  clampSubPage() {
+    const totalPages = this.subTotalPages();
+    if (this.subPagination.page > totalPages) this.subPagination.page = totalPages;
+    if (this.subPagination.page < 1) this.subPagination.page = 1;
+  },
+
+  subTotalPages() {
+    const pageSize = this.subPagination.pageSize || 20;
+    return Math.max(1, Math.ceil(this.filteredSubs.length / pageSize));
+  },
+
+  showSubPagination() {
+    return this.filteredSubs.length > (this.subPagination.pageSize || 20);
+  },
+
+  pagedSubs() {
+    this.clampSubPage();
+    const pageSize = this.subPagination.pageSize || 20;
+    const start = (this.subPagination.page - 1) * pageSize;
+    return this.filteredSubs.slice(start, start + pageSize);
+  },
+
+  subPrevPage() {
+    if (this.subPagination.page > 1) {
+      this.subPagination.page--;
+      this.selectedIds = [];
+    }
+  },
+
+  subNextPage() {
+    if (this.subPagination.page < this.subTotalPages()) {
+      this.subPagination.page++;
+      this.selectedIds = [];
+    }
   },
 
   // ─── Edit Mode / Batch ────────────────────────
@@ -325,7 +351,7 @@ const store = PetiteVue.reactive({
   async batchActivate() {
     if (this.selectedIds.length === 0) return;
     try {
-      await batchActivate(this.selectedIds);
+      await this.runBatchByUser((ids, userId) => batchActivate(ids, userId));
       this.showToast(`已启用 ${this.selectedIds.length} 个订阅`);
       this.selectedIds = [];
       await this.loadData();
@@ -337,7 +363,7 @@ const store = PetiteVue.reactive({
   async batchDeactivate() {
     if (this.selectedIds.length === 0) return;
     try {
-      await batchDeactivate(this.selectedIds);
+      await this.runBatchByUser((ids, userId) => batchDeactivate(ids, userId));
       this.showToast(`已禁用 ${this.selectedIds.length} 个订阅`);
       this.selectedIds = [];
       await this.loadData();
@@ -351,55 +377,12 @@ const store = PetiteVue.reactive({
     const ok = await this.showConfirm(`确定取消 ${this.selectedIds.length} 个订阅？此操作不可恢复。`, '批量取消订阅', '取消订阅');
     if (!ok) return;
     try {
-      await batchUnsubscribe(this.selectedIds);
+      await this.runBatchByUser((ids, userId) => batchUnsubscribe(ids, userId));
       this.showToast(`已取消 ${this.selectedIds.length} 个订阅`);
       this.selectedIds = [];
       await this.loadData();
     } catch (err) {
       this.showToast('批量取消失败: ' + err.message, 'error');
-    }
-  },
-
-  // ─── Panel: Add ───────────────────────────────
-
-  openAddPanel() {
-    this.panelMode = 'add';
-    this.addForm = { url: '', title: '', tags: '', target_session: '', interval: 10 };
-    this.testResult = null;
-    this.panelVisible = true;
-  },
-
-  async handleTestUrl() {
-    const url = this.addForm.url.trim();
-    if (!url) return;
-    this.testResult = { loading: true };
-    try {
-      const r = await testUrl(url);
-      this.testResult = r;
-    } catch (err) {
-      this.testResult = { error: err.message };
-    }
-  },
-
-  async handleAddSub() {
-    if (!this.addForm.url.trim()) {
-      this.showToast('请输入 RSS 链接', 'error');
-      return;
-    }
-    try {
-      const data = { url: this.addForm.url.trim() };
-      if (this.addForm.title) data.title = this.addForm.title.trim();
-      if (this.addForm.tags) data.tags = this.addForm.tags.trim();
-      if (this.addForm.target_session) data.target_session = this.addForm.target_session.trim();
-      if (this.addForm.interval && this.addForm.interval > 0) data.interval = this.addForm.interval;
-      if (this.selectedUserId) data.user_id = this.selectedUserId;
-
-      await subscribe(data);
-      this.showToast('订阅成功');
-      this.closePanel();
-      await this.loadData();
-    } catch (err) {
-      this.showToast('订阅失败: ' + err.message, 'error');
     }
   },
 
@@ -421,18 +404,20 @@ const store = PetiteVue.reactive({
       title: sub.title || '',
       tags: sub.tags || '',
       target_session: sub.target_session || '',
-      interval: sub.interval || 10,
+      interval: sub.interval ?? -100,
       state_: sub.state === 1,
-      notify_: sub.notify === 1,
-      send_mode: sub.send_mode ?? 0,
-      length_limit: sub.length_limit ?? 0,
-      link_preview: sub.link_preview ?? 0,
-      display_author: sub.display_author ?? 0,
-      display_via: sub.display_via ?? 0,
-      display_title: sub.display_title ?? 0,
-      display_entry_tags: sub.display_entry_tags ?? -1,
-      style: sub.style ?? 0,
-      display_media: sub.display_media ?? 0,
+      notify: sub.notify ?? -100,
+      send_mode: sub.send_mode ?? -100,
+      length_limit: sub.length_limit ?? -100,
+      link_preview: sub.link_preview ?? -100,
+      display_author: sub.display_author ?? -100,
+      display_via: sub.display_via ?? -100,
+      display_title: sub.display_title ?? -100,
+      display_entry_tags: sub.display_entry_tags ?? -100,
+      style: sub.style ?? -100,
+      display_media: sub.display_media ?? -100,
+      handlers_mode: sub.handlers_mode || 'inherit',
+      ...handlersToEditorState(sub.handlers),
     };
   },
 
@@ -459,7 +444,7 @@ const store = PetiteVue.reactive({
   async handleTestDetail(subId) {
     if (!subId) return;
     try {
-      const r = await testSubscription(subId);
+      const r = await testSubscription(subId, this.currentSubUserId());
       this.showToast(r.message || '测试完成');
     } catch (err) {
       this.showToast('测试失败: ' + err.message, 'error');
@@ -476,8 +461,14 @@ const store = PetiteVue.reactive({
       if (this.editForm.interval !== undefined) options.interval = this.editForm.interval;
       if (this.editForm.target_session !== undefined) options.target_session = this.editForm.target_session;
       if (this.editForm.length_limit !== undefined) options.length_limit = this.editForm.length_limit;
+      options.handlers_mode = this.editForm.handlers_mode || 'inherit';
+      if (options.handlers_mode === 'override') {
+        options.handlers = buildHandlersFromEditorState(this.editForm);
+      } else {
+        options.handlers = [];
+      }
       options.state = this.editForm.state_ ? 1 : 0;
-      options.notify = this.editForm.notify_ ? 1 : 0;
+      options.notify = this.editForm.notify;
       options.send_mode = this.editForm.send_mode;
       options.link_preview = this.editForm.link_preview;
       options.display_author = this.editForm.display_author;
@@ -487,7 +478,7 @@ const store = PetiteVue.reactive({
       options.style = this.editForm.style;
       options.display_media = this.editForm.display_media;
 
-      await updateSubscription(this.editForm.id, options);
+      await updateSubscription(this.editForm.id, options, this.currentSubUserId());
       this.showToast('订阅已更新');
       this.closePanel();
       await this.loadData();
@@ -502,7 +493,7 @@ const store = PetiteVue.reactive({
     const ok = await this.showConfirm('确定删除此订阅？此操作不可恢复。', '删除订阅', '删除');
     if (!ok) return;
     try {
-      await unsubscribe(id);
+      await unsubscribe(id, this.currentSubUserId());
       this.showToast('订阅已删除');
       this.closePanel();
       await this.loadData();
@@ -541,40 +532,81 @@ const store = PetiteVue.reactive({
     });
   },
 
-  async handleExport() {
+  // ─── RSSHub Routes KB ────────────────────────
+
+  async loadRouteKbStatus() {
+    this.routeKbLoading = true;
     try {
-      const result = await getExport('webadmin');
-      const blob = new Blob([result.data.content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = result.data.filename || 'subscriptions.toml';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      this.showToast(`已导出 ${result.data.count || 0} 个订阅`);
+      const result = await getRouteKbStatus();
+      this.routeKbStatus = result.status || null;
+      this.routeKbTask = this.routeKbStatus ? this.routeKbStatus.task : null;
+      this.syncRouteKbPollingState();
     } catch (err) {
-      this.showToast('导出失败: ' + err.message, 'error');
+      this.showToast('加载知识库状态失败: ' + err.message, 'error');
+    } finally {
+      this.routeKbLoading = false;
     }
   },
 
-  async handleImport() {
-    if (!this.importForm.content.trim()) {
-      this.showToast('请粘贴 TOML 内容', 'error');
+  async handleRouteKbSync() {
+    if (this.isRouteKbTaskRunning()) {
+      this.showToast('当前已有知识库同步任务在运行，请等待完成后再试', 'error');
+      this.startRouteKbPolling();
       return;
     }
+    this.routeKbSyncing = true;
     try {
-      const result = await importSubscriptions({
-        content: this.importForm.content,
-        skipExisting: this.importForm.skipExisting,
-      });
-      this.showToast(result.message || '导入完成');
-      this.importForm.content = '';
-      await this.loadData();
+      const result = await syncRouteKb();
+      this.routeKbTask = result.task || null;
+      if (this.routeKbStatus) this.routeKbStatus.task = this.routeKbTask;
+      this.syncRouteKbPollingState();
+      this.showToast('知识库同步任务已启动');
     } catch (err) {
-      this.showToast('导入失败: ' + err.message, 'error');
+      this.showToast('启动同步失败: ' + err.message, 'error');
+    } finally {
+      this.routeKbSyncing = false;
     }
+  },
+
+  async refreshRouteKbTask() {
+    try {
+      const result = await getRouteKbTask();
+      this.routeKbTask = result.task || null;
+      if (this.routeKbStatus) this.routeKbStatus.task = this.routeKbTask;
+      this.syncRouteKbPollingState();
+    } catch (err) {
+      this.showToast('刷新同步任务失败: ' + err.message, 'error');
+    }
+  },
+
+  isRouteKbTaskRunning() {
+    return !!(this.routeKbTask && ['queued', 'running'].includes(this.routeKbTask.status));
+  },
+
+  startRouteKbPolling() {
+    if (routeKbPollTimer) return;
+    routeKbPollTimer = setInterval(async () => {
+      if (this.activeTab !== 'route-kb') return;
+      await this.refreshRouteKbTask();
+      if (!this.isRouteKbTaskRunning()) {
+        this.stopRouteKbPolling();
+        await this.loadRouteKbStatus();
+      }
+    }, 3000);
+  },
+
+  stopRouteKbPolling() {
+    if (!routeKbPollTimer) return;
+    clearInterval(routeKbPollTimer);
+    routeKbPollTimer = null;
+  },
+
+  syncRouteKbPollingState() {
+    if (this.isRouteKbTaskRunning()) {
+      this.startRouteKbPolling();
+      return;
+    }
+    this.stopRouteKbPolling();
   },
 
   // ─── Push History ─────────────────────────────
@@ -589,6 +621,10 @@ const store = PetiteVue.reactive({
       });
       this.pushHistory = result.items || [];
       this.pushHistoryTotal = result.total || 0;
+      if (this.pushHistory.length === 0 && this.pushHistoryTotal > 0 && this.pushHistoryFilter.page > this.pushHistoryTotalPages()) {
+        this.pushHistoryFilter.page = this.pushHistoryTotalPages();
+        await this.loadPushHistory();
+      }
     } catch (err) {
       this.showToast('加载推送历史失败: ' + err.message, 'error');
     } finally {
@@ -628,11 +664,20 @@ const store = PetiteVue.reactive({
   },
 
   pushHistoryNextPage() {
-    const maxPage = Math.ceil(this.pushHistoryTotal / this.pushHistoryFilter.pageSize);
+    const maxPage = this.pushHistoryTotalPages();
     if (this.pushHistoryFilter.page < maxPage) {
       this.pushHistoryFilter.page++;
       this.loadPushHistory();
     }
+  },
+
+  pushHistoryTotalPages() {
+    const pageSize = this.pushHistoryFilter.pageSize || 20;
+    return Math.max(1, Math.ceil(this.pushHistoryTotal / pageSize));
+  },
+
+  showPushHistoryPagination() {
+    return this.pushHistoryTotal > (this.pushHistoryFilter.pageSize || 20);
   },
 
   // ─── User Management ────────────────────────────
@@ -640,19 +685,20 @@ const store = PetiteVue.reactive({
   openUserEditPanel(user) {
     this.userEditForm = {
       user_id: user.user_id,
-      state: user.state ?? 0,
-      interval: user.interval ?? 10,
-      notify: !!(user.notify ?? 1),
-      send_mode: user.send_mode ?? 0,
-      length_limit: user.length_limit ?? 0,
-      link_preview: user.link_preview ?? 0,
-      display_author: user.display_author ?? 0,
-      display_via: user.display_via ?? 0,
-      display_title: user.display_title ?? 0,
-      display_entry_tags: user.display_entry_tags ?? -1,
-      style: user.style ?? 0,
-      display_media: user.display_media ?? 0,
+      state: normalizeUserState(user.state ?? 1),
+      interval: user.interval ?? -100,
+      notify: user.notify ?? -100,
+      send_mode: user.send_mode ?? -100,
+      length_limit: user.length_limit ?? -100,
+      link_preview: user.link_preview ?? -100,
+      display_author: user.display_author ?? -100,
+      display_via: user.display_via ?? -100,
+      display_title: user.display_title ?? -100,
+      display_entry_tags: user.display_entry_tags ?? -100,
+      style: user.style ?? -100,
+      display_media: user.display_media ?? -100,
       default_target_session: user.default_target_session || '',
+      ...handlersToEditorState(user.handlers),
     };
     this.userEditPanelVisible = true;
   },
@@ -664,9 +710,9 @@ const store = PetiteVue.reactive({
   async handleSaveUserEdit() {
     try {
       const settings = {
-        state: this.userEditForm.state,
+        state: normalizeUserState(this.userEditForm.state),
         interval: this.userEditForm.interval,
-        notify: this.userEditForm.notify ? 1 : 0,
+        notify: this.userEditForm.notify,
         send_mode: this.userEditForm.send_mode,
         length_limit: this.userEditForm.length_limit,
         link_preview: this.userEditForm.link_preview,
@@ -677,9 +723,8 @@ const store = PetiteVue.reactive({
         style: this.userEditForm.style,
         display_media: this.userEditForm.display_media,
       };
-      if (this.userEditForm.default_target_session) {
-        settings.default_target_session = this.userEditForm.default_target_session;
-      }
+      settings.default_target_session = this.userEditForm.default_target_session.trim();
+      settings.handlers = buildHandlersFromEditorState(this.userEditForm);
       await updateUser(this.userEditForm.user_id, settings);
       this.showToast('用户配置已更新');
       this.closeUserEditPanel();
@@ -707,7 +752,33 @@ const store = PetiteVue.reactive({
 
   // ─── Util ─────────────────────────────────────
 
+  currentSubUserId() {
+    const subUserId = this.panelMode === 'edit' ? this.editForm.user_id : this.detailSub.user_id;
+    return subUserId || this.selectedUserId || undefined;
+  },
+
+  selectedSubsByUser() {
+    const selected = new Set(this.selectedIds);
+    return this.filteredSubs
+      .filter((sub) => selected.has(sub.id))
+      .reduce((groups, sub) => {
+        const userId = sub.user_id || this.selectedUserId || undefined;
+        const key = userId || '';
+        if (!groups[key]) groups[key] = { userId, ids: [] };
+        groups[key].ids.push(sub.id);
+        return groups;
+      }, {});
+  },
+
+  async runBatchByUser(action) {
+    const groups = Object.values(this.selectedSubsByUser());
+    for (const group of groups) {
+      await action(group.ids, group.userId);
+    }
+  },
+
   formatDate,
+  formatUserState,
 });
 
 window.store = store;
@@ -720,8 +791,12 @@ ready()
     store.loadData();
     pollTimer = setInterval(async () => {
       const { changed } = await checkUpdates();
-      if (changed) store.loadData();
+      if (changed) store.loadData(false);
     }, 10000);
+    window.addEventListener('beforeunload', () => {
+      if (pollTimer) clearInterval(pollTimer);
+      if (routeKbPollTimer) clearInterval(routeKbPollTimer);
+    });
   })
   .catch((err) => store.showToast('初始化失败: ' + err.message, 'error'));
 

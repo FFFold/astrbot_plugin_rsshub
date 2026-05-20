@@ -40,6 +40,18 @@ class PushHistoryRepository(Protocol):
         """
         ...
 
+    async def exists_success_by_scope_and_guid(
+        self,
+        *,
+        source_type: str,
+        user_id: str,
+        target_session: str,
+        entry_guid: str,
+        source_key: str | None = None,
+    ) -> bool:
+        """检查指定作用域内是否存在成功的相同 GUID 推送记录。"""
+        ...
+
     async def get_all(
         self, limit: int = 100, offset: int = 0, status: str | None = None
     ) -> list[PushHistory]:
@@ -56,7 +68,12 @@ class PushHistoryRepository(Protocol):
         ...
 
     async def get_by_user(
-        self, user_id: str, limit: int = 100, offset: int = 0
+        self,
+        user_id: str,
+        limit: int = 100,
+        offset: int = 0,
+        target_session: str | None = None,
+        status: str | None = None,
     ) -> list[PushHistory]:
         """获取用户的推送历史
 
@@ -64,10 +81,21 @@ class PushHistoryRepository(Protocol):
             user_id: 用户唯一标识
             limit: 限制数量
             offset: 偏移量
+            target_session: 目标会话过滤（可选）
+            status: 状态过滤（可选）
 
         Returns:
             推送历史列表
         """
+        ...
+
+    async def count_by_user(
+        self,
+        user_id: str,
+        target_session: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        """统计用户推送历史条数，可按目标会话和状态过滤。"""
         ...
 
     async def get_pending_for_retry(self, limit: int = 100) -> list[PushHistory]:

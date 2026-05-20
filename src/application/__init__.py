@@ -17,8 +17,7 @@ from .queries import (
     SubscriptionsResult,
 )
 from .services import (
-    ContentProcessingResult,
-    ContentProcessingService,
+    AgentXmlPushService,
     FeedPollingResult,
     FeedPollingService,
     NotificationDispatcher,
@@ -45,8 +44,7 @@ __all__ = [
     "ItemDTO",
     "SubscriptionDTO",
     # Services
-    "ContentProcessingResult",
-    "ContentProcessingService",
+    "AgentXmlPushService",
     "FeedPollingResult",
     "FeedPollingService",
     "NotificationDispatcher",

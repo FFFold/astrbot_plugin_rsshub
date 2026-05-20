@@ -51,6 +51,22 @@ class MessageFormatter:
             return self._build_telegram_chain(prepared_media, text, failed_urls)
         return self._build_default_chain(prepared_media, text, failed_urls)
 
+    @staticmethod
+    def collect_original_urls(
+        prepared_media: list[PreparedMedia] | None,
+    ) -> list[str]:
+        """Collect all original media URLs in first-seen order."""
+        if not prepared_media:
+            return []
+        urls: list[str] = []
+        seen: set[str] = set()
+        for item in prepared_media:
+            url = str(item.original_url or "").strip()
+            if url and url not in seen:
+                urls.append(url)
+                seen.add(url)
+        return urls
+
     # ------------------------------------------------------------------
     # 通用顺序：images → Plain → tails
     # ------------------------------------------------------------------

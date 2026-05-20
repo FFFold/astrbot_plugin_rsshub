@@ -7,11 +7,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...domain.constants import INHERIT_VALUE
+from ...domain.entities.handlers import parse_handlers_input
 from ...domain.repositories.user_repository import UserRepository
 from ..dto.result_dto import CommandResult
 
 # 设置选项的合法值范围
 VALID_SETTINGS = {
+    "state": (-1, 1),
     "interval": (1, 60),  # 分钟
     "notify": (0, 1),
     "send_mode": (-1, 2),  # -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息
@@ -24,7 +27,15 @@ VALID_SETTINGS = {
     "style": (0, 1),
     "display_media": (-1, 1),
 }
-REMOVED_TRANSLATION_SETTINGS = {"translate", "translate_target_lang"}
+INHERITABLE_SETTINGS = set(VALID_SETTINGS) - {"state"}
+STRING_SETTINGS = {"default_target_session"}
+JSON_SETTINGS = {"handlers"}
+REMOVED_SETTINGS = {
+    "translate",
+    "translate_target_lang",
+    "use_user_config",
+    "ai_prompt",
+}
 
 
 class SetUserSettingsCommand:
@@ -67,14 +78,32 @@ class SetUserSettingsCommand:
             option_key = option_key.strip().lower()
             parsed_value: int | str
 
-            if option_key in REMOVED_TRANSLATION_SETTINGS:
+            if option_key in REMOVED_SETTINGS:
                 return CommandResult(
                     success=False,
-                    message=f"选项 {option_key} 已移除，请使用 AI 内容管线或扩展处理翻译。",
+                    message=f"选项 {option_key} 已移除。",
                 )
 
-            if option_key in {"title", "tags"}:
-                parsed_value = str(raw_value).strip()
+            if (
+                option_key not in VALID_SETTINGS
+                and option_key not in STRING_SETTINGS
+                and option_key not in JSON_SETTINGS
+            ):
+                return CommandResult(
+                    success=False,
+                    message=f"未知配置项: {option_key}",
+                )
+
+            if option_key in STRING_SETTINGS:
+                parsed_value = str(raw_value).strip() or None
+            elif option_key in JSON_SETTINGS:
+                try:
+                    parsed_value = parse_handlers_input(raw_value)
+                except ValueError as exc:
+                    return CommandResult(
+                        success=False,
+                        message=str(exc),
+                    )
             else:
                 try:
                     parsed_value = int(raw_value)
@@ -84,12 +113,19 @@ class SetUserSettingsCommand:
                         message=f"选项 {option_key} 需要数字值",
                     )
 
-                if option_key in VALID_SETTINGS:
+                if option_key in INHERITABLE_SETTINGS and parsed_value == INHERIT_VALUE:
+                    pass
+                elif option_key in VALID_SETTINGS:
                     min_val, max_val = VALID_SETTINGS[option_key]
                     if not min_val <= parsed_value <= max_val:
                         return CommandResult(
                             success=False,
                             message=f"{option_key} 的值 {parsed_value} 超出范围 [{min_val}, {max_val}]",
+                        )
+                    if option_key == "state" and parsed_value == 0:
+                        return CommandResult(
+                            success=False,
+                            message="state 只支持 -1(已封禁) 或 1(用户)",
                         )
 
             old_value = getattr(user, option_key, None)

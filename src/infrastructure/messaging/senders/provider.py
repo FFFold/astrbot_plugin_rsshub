@@ -11,9 +11,9 @@ from ....application.ports import (
 from ....application.settings import SenderStrategySettings
 from ...utils import get_logger
 from .factory import get_sender_for_platform
+from .types import ChannelInfo
 from .types import MessageContext as InfraMessageContext
 from .types import SendRequest as InfraSendRequest
-from .types import ChannelInfo
 
 logger = get_logger()
 
