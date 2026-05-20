@@ -9,6 +9,43 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
+MAX_FAIL_REASON_LENGTH = 512
+
+
+def normalize_fail_reason(
+    reason: str | None, *, max_length: int = MAX_FAIL_REASON_LENGTH
+) -> str | None:
+    """Trim failure reasons to the persisted model limit."""
+    if reason is None:
+        return None
+    normalized = str(reason).strip()
+    if not normalized:
+        return None
+    if len(normalized) <= max_length:
+        return normalized
+    if max_length <= 3:
+        return normalized[:max_length]
+    return normalized[: max_length - 3] + "..."
+
+
+def normalize_display_fail_reason(
+    reason: str | None, *, max_length: int = MAX_FAIL_REASON_LENGTH
+) -> str | None:
+    """Normalize a failure reason for UI display and storage."""
+    return normalize_fail_reason(reason, max_length=max_length)
+
+
+def normalize_fail_reason_for_status(
+    status: str | None,
+    reason: str | None,
+    *,
+    max_length: int = MAX_FAIL_REASON_LENGTH,
+) -> str | None:
+    """Normalize stored/displayed fail reason according to push status."""
+    if status in {"failed", "stopped", "retrying"}:
+        return normalize_display_fail_reason(reason, max_length=max_length)
+    return None
+
 
 class PushHistory(BaseModel):
     """
@@ -18,11 +55,18 @@ class PushHistory(BaseModel):
     """
 
     id: int | None = Field(default=None, description="数据库ID")
-    sub_id: int = Field(..., description="订阅ID")
+    sub_id: int | None = Field(default=None, description="订阅ID")
     user_id: str = Field(..., description="用户ID")
-    feed_id: int = Field(..., description="FeedID")
+    feed_id: int | None = Field(default=None, description="FeedID")
+    source_type: str = Field(
+        default="feed", max_length=16, description="来源类型: feed/agent"
+    )
+    source_key: str | None = Field(
+        default=None, max_length=255, description="来源跟踪键"
+    )
 
     content: str = Field(default="", description="格式化后的消息内容")
+    raw_xml: str | None = Field(default=None, description="XML 推送原始内容")
     media_urls: list[str] | None = Field(default=None, description="媒体URL列表")
 
     entry_title: str = Field(default="", max_length=1024, description="条目标题")
@@ -60,9 +104,18 @@ class PushHistory(BaseModel):
         """检查是否可以重试"""
         return self.status == "failed" and self.retry_count < self.max_retries
 
+    def is_agent_source(self) -> bool:
+        """检查是否为 Agent 来源推送。"""
+        return self.source_type == "agent"
+
+    def is_feed_source(self) -> bool:
+        """检查是否为 Feed 来源推送。"""
+        return not self.is_agent_source()
+
     def mark_success(self) -> "PushHistory":
         """标记推送成功"""
         self.status = "success"
+        self.fail_reason = None
         self.completed_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
         return self
@@ -70,8 +123,7 @@ class PushHistory(BaseModel):
     def record_first_failure(self, reason: str | None = None) -> "PushHistory":
         """记录首次失败（不增加重试计数）"""
         self.status = "failed"
-        if reason:
-            self.fail_reason = reason
+        self.fail_reason = normalize_display_fail_reason(reason)
         self.updated_at = datetime.now(timezone.utc)
         return self
 
@@ -79,8 +131,7 @@ class PushHistory(BaseModel):
         """记录重试失败（增加重试计数）"""
         self.status = "failed"
         self.retry_count += 1
-        if reason:
-            self.fail_reason = reason
+        self.fail_reason = normalize_display_fail_reason(reason)
         self.updated_at = datetime.now(timezone.utc)
         return self
 
@@ -99,8 +150,7 @@ class PushHistory(BaseModel):
         self.status = "stopped"
         self.completed_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
-        if reason:
-            self.fail_reason = reason
+        self.fail_reason = normalize_display_fail_reason(reason)
         return self
 
     def is_pending(self) -> bool:

@@ -17,6 +17,12 @@ class GetUserSettingsCommand:
 
     def __init__(self, user_repo: UserRepository):
         self._user_repo = user_repo
+        self._removed_keys = {
+            "translate",
+            "translate_target_lang",
+            "use_user_config",
+            "ai_prompt",
+        }
 
     async def execute(
         self,
@@ -33,8 +39,6 @@ class GetUserSettingsCommand:
             CommandResult: 命令执行结果
         """
         user = await self._user_repo.get_by_id(user_id)
-        removed_translation_keys = {"translate", "translate_target_lang"}
-
         if not user:
             return CommandResult(
                 success=False,
@@ -42,10 +46,10 @@ class GetUserSettingsCommand:
             )
 
         if key:
-            if key in removed_translation_keys:
+            if key in self._removed_keys:
                 return CommandResult(
                     success=False,
-                    message=f"配置项 {key} 已移除，请使用 AI 内容管线或扩展处理翻译。",
+                    message=f"配置项 {key} 已移除。",
                 )
             # 获取单个配置项
             current_value = getattr(user, key, None)
@@ -56,9 +60,11 @@ class GetUserSettingsCommand:
 
         # 获取所有配置
         settings_map = {
+            "state": user.state,
             "interval": user.interval,
             "notify": user.notify,
             "send_mode": user.send_mode,
+            "handlers": user.handlers,
             "length_limit": user.length_limit,
             "link_preview": user.link_preview,
             "display_author": user.display_author,
@@ -67,6 +73,7 @@ class GetUserSettingsCommand:
             "display_entry_tags": user.display_entry_tags,
             "style": user.style,
             "display_media": user.display_media,
+            "default_target_session": user.default_target_session,
         }
 
         lines = ["用户配置:"]

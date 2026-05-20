@@ -48,34 +48,33 @@ class UserORM(RSSHubBaseModel, table=True):
     __tablename__ = "rsshub_user"
 
     id: str = Field(default=None, primary_key=True, description="用户ID")
-    state: int = Field(
-        default=0, description="用户状态: -1=封禁, 0=访客, 1=用户, 100=管理员"
-    )
+    state: int = Field(default=1, description="用户状态: -1=已封禁, 1=用户")
 
-    interval: int | None = Field(default=None, description="监控间隔(分钟)")
-    notify: int = Field(default=1, description="是否通知: 0=禁用, 1=启用")
+    interval: int = Field(default=INHERIT_VALUE, description="监控间隔(分钟)")
+    notify: int = Field(default=INHERIT_VALUE, description="是否通知: 0=禁用, 1=启用")
     send_mode: int = Field(
-        default=0, description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息"
+        default=INHERIT_VALUE,
+        description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息",
     )
-    length_limit: int = Field(default=0, description="长度限制")
-    link_preview: int = Field(default=0, description="链接预览: 0=自动, 1=强制启用")
+    handlers: str = Field(default="[]", description="内容处理 handlers JSON")
+    length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
+    link_preview: int = Field(
+        default=INHERIT_VALUE, description="链接预览: 0=自动, 1=强制启用"
+    )
     display_author: int = Field(
-        default=0, description="显示作者: -1=禁用, 0=自动, 1=强制"
+        default=INHERIT_VALUE, description="显示作者: -1=禁用, 0=自动, 1=强制"
     )
     display_via: int = Field(
-        default=0, description="显示来源: -2=完全禁用, -1=仅链接, 0=自动, 1=强制"
+        default=INHERIT_VALUE,
+        description="显示来源: -2=完全禁用, -1=仅链接, 0=自动, 1=强制",
     )
     display_title: int = Field(
-        default=0, description="显示标题: -1=禁用, 0=自动, 1=强制"
+        default=INHERIT_VALUE, description="显示标题: -1=禁用, 0=自动, 1=强制"
     )
-    display_entry_tags: int = Field(default=-1, description="显示标签")
-    style: int = Field(default=0, description="样式: 0=RSStT, 1=flowerss")
-    display_media: int = Field(default=0, description="显示媒体: -1=禁用, 0=启用")
-    translate: int = Field(
-        default=INHERIT_VALUE, description="翻译: -100=继承, 0=禁用, 1=启用"
-    )
-    translate_target_lang: str | None = Field(
-        default=None, max_length=16, description="翻译目标语言"
+    display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
+    style: int = Field(default=INHERIT_VALUE, description="样式: 0=RSStT, 1=flowerss")
+    display_media: int = Field(
+        default=INHERIT_VALUE, description="显示媒体: -1=禁用, 0=启用"
     )
     default_target_session: str | None = Field(
         default=None,
@@ -83,10 +82,6 @@ class UserORM(RSSHubBaseModel, table=True):
         description="默认推送目标会话(unified_msg_origin)",
     )
     needs_binding_notice: int = Field(default=0, description="是否需要提示绑定推送目标")
-    use_user_config: bool = Field(
-        default=False,
-        description="是否使用用户自身配置",
-    )
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -149,7 +144,7 @@ class SubORM(RSSHubBaseModel, table=True):
         description="平台类型名",
     )
 
-    interval: int | None = Field(default=None, description="监控间隔(分钟)")
+    interval: int = Field(default=INHERIT_VALUE, description="监控间隔(分钟)")
     next_check_time: datetime | None = Field(default=None, description="下次检查时间")
     notify: int = Field(default=INHERIT_VALUE, description="是否通知")
     send_mode: int = Field(default=INHERIT_VALUE, description="发送模式")
@@ -161,14 +156,12 @@ class SubORM(RSSHubBaseModel, table=True):
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
     style: int = Field(default=INHERIT_VALUE, description="样式")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
-    translate: int = Field(default=INHERIT_VALUE, description="翻译")
-    translate_target_lang: str | None = Field(
-        default=None, max_length=16, description="翻译目标语言"
+    handlers_mode: str = Field(
+        default="inherit",
+        max_length=16,
+        description="handlers 继承模式",
     )
-    use_sub_config: bool = Field(
-        default=False,
-        description="是否使用订阅自身配置",
-    )
+    handlers: str = Field(default="[]", description="内容处理 handlers JSON")
 
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -181,33 +174,26 @@ class SubORM(RSSHubBaseModel, table=True):
     )
 
 
-class TranslationCacheORM(RSSHubBaseModel, table=True):
-    """翻译缓存 ORM 模型，映射 rsshub_translation_cache 表。"""
-
-    __tablename__ = "rsshub_translation_cache"
-
-    id: int | None = Field(default=None, primary_key=True)
-    hash: str = Field(max_length=64, unique=True, index=True, description="原文哈希")
-    provider: str = Field(max_length=32, description="翻译器类型")
-    target_lang: str = Field(max_length=16, description="目标语言")
-    translated_text: str = Field(default="", description="翻译后的文本")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="创建时间",
-    )
-
-
 class PushHistoryORM(RSSHubBaseModel, table=True):
     """推送历史 ORM 模型，映射 rsshub_push_history 表。"""
 
     __tablename__ = "rsshub_push_history"
 
     id: int | None = Field(default=None, primary_key=True)
-    sub_id: int = Field(foreign_key="rsshub_sub.id", description="订阅ID")
+    sub_id: int | None = Field(
+        default=None, foreign_key="rsshub_sub.id", description="订阅ID"
+    )
     user_id: str = Field(foreign_key="rsshub_user.id", description="用户ID")
-    feed_id: int = Field(foreign_key="rsshub_feed.id", description="FeedID")
+    feed_id: int | None = Field(
+        default=None, foreign_key="rsshub_feed.id", description="FeedID"
+    )
+    source_type: str = Field(default="feed", max_length=16, description="来源类型")
+    source_key: str | None = Field(
+        default=None, max_length=255, description="来源跟踪键"
+    )
 
     content: str = Field(default="", description="格式化后的消息内容")
+    raw_xml: str | None = Field(default=None, description="XML 推送原始内容")
     media_urls: list[str] | None = Field(
         default=None, sa_column=Column(JSON), description="媒体URL列表"
     )

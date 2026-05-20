@@ -23,6 +23,7 @@ sys.path.insert(0, str(PLUGIN_DIR / "src"))
 sys.modules["astrbot"] = MagicMock()
 sys.modules["astrbot.api"] = MagicMock()
 sys.modules["astrbot.api.event"] = MagicMock()
+sys.modules["astrbot.api.provider"] = MagicMock()
 sys.modules["astrbot.api.star"] = MagicMock()
 message_components = MagicMock()
 for component_name in (

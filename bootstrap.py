@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from astrbot.api import AstrBotConfig
 from astrbot.api.star import Context
@@ -34,11 +34,13 @@ from .src.application.queries import (
     GetSubscriptionsQuery,
     SearchFeedsQuery,
 )
-from .src.application.services.content_processing_service import (
-    ContentProcessingService,
-)
+from .src.application.services.agent_xml_push_service import AgentXmlPushService
+from .src.application.services.content_handlers import ContentHandlerRuntime
 from .src.application.services.feed_polling_service import FeedPollingService
 from .src.application.services.notification_dispatcher import NotificationDispatcher
+from .src.application.services.route_knowledge_service import (
+    RouteKnowledgeSyncService,
+)
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.application.settings import ApplicationSettings
 from .src.domain.repositories.feed_repository import FeedRepository
@@ -47,6 +49,10 @@ from .src.infrastructure.config import RsshubPluginConfig, set_config
 from .src.infrastructure.config.settings_adapter import build_application_settings
 from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
+from .src.infrastructure.knowledge import (
+    AstrBotRouteKnowledgeRepository,
+    build_route_knowledge_source,
+)
 from .src.infrastructure.messaging import InfrastructureMessageSenderProvider
 from .src.infrastructure.persistence import (
     get_database,
@@ -56,7 +62,11 @@ from .src.infrastructure.persistence import (
     get_user_repository,
 )
 from .src.infrastructure.schedule import RSSScheduler
-from .src.infrastructure.utils import get_logger, get_plugin_data_dir
+from .src.infrastructure.utils import (
+    get_logger,
+    get_plugin_cache_dir,
+    get_plugin_data_dir,
+)
 from .src.interfaces import WebApiHandler
 
 logger = get_logger()
@@ -84,6 +94,10 @@ class PluginDeps(TypedDict, total=False):
     polling_service: FeedPollingService
     feed_repo: FeedRepository
     subscription_repo: SubscriptionRepository
+    push_history_repo: Any
+    route_knowledge_service: RouteKnowledgeSyncService
+    notification_dispatcher: NotificationDispatcher
+    agent_xml_push_service: AgentXmlPushService
 
 
 @dataclass(slots=True)
@@ -96,10 +110,12 @@ class PluginRuntime:
     web_api: WebApiHandler
     push_job_queue: SessionPushQueue
     notification_dispatcher: NotificationDispatcher
+    route_knowledge_service: RouteKnowledgeSyncService
     db_initialized: bool
 
     async def stop(self) -> None:
         """Stop runtime-owned background work and shared resources."""
+        await self.route_knowledge_service.close()
         await self.scheduler.stop()
         await self.push_job_queue.stop_all()
         db = get_database()
@@ -146,6 +162,7 @@ async def create_plugin_runtime(
             web_api=web_api,
             push_job_queue=queue,
             notification_dispatcher=notification_dispatcher,
+            route_knowledge_service=deps["route_knowledge_service"],
             db_initialized=True,
         )
         logger.info("RSSHub 插件初始化完成")
@@ -199,13 +216,11 @@ def _build_dependencies(
 
     notification_dispatcher = NotificationDispatcher(
         subscription_repo=sub_repo,
+        user_repo=user_repo,
         push_history_repo=push_history_repo,
         sender_provider=sender_provider,
         push_job_queue=push_job_queue,
-    )
-    content_processor = ContentProcessingService(
-        app_settings.pipeline,
-        llm_generate_func=_build_llm_generate(context, app_settings),
+        content_handler_runtime=ContentHandlerRuntime(context=context),
     )
     polling_service = FeedPollingService(
         feed_repo=feed_repo,
@@ -215,8 +230,21 @@ def _build_dependencies(
         fetcher_factory=RSSFeedFetcher,
         parser=RSSParser(),
         notification_dispatcher=notification_dispatcher,
-        content_processor=content_processor,
         history_entry_limit=app_settings.scheduler.history_entry_limit,
+    )
+    route_source = build_route_knowledge_source(
+        app_settings.route_knowledge,
+        proxy=app_settings.basic.proxy,
+    )
+    route_repository = AstrBotRouteKnowledgeRepository(
+        context=context,
+        settings=app_settings.route_knowledge,
+    )
+    route_knowledge_service = RouteKnowledgeSyncService(
+        settings=app_settings.route_knowledge,
+        source=route_source,
+        repository=route_repository,
+        state_dir=get_plugin_cache_dir("route_knowledge"),
     )
 
     deps = PluginDeps(
@@ -258,37 +286,12 @@ def _build_dependencies(
         polling_service=polling_service,
         feed_repo=feed_repo,
         subscription_repo=sub_repo,
+        push_history_repo=push_history_repo,
+        route_knowledge_service=route_knowledge_service,
+        notification_dispatcher=notification_dispatcher,
+        agent_xml_push_service=AgentXmlPushService(notification_dispatcher),
     )
     return deps, notification_dispatcher
-
-
-def _build_llm_generate(
-    context: Context | None,
-    app_settings: ApplicationSettings,
-):
-    if not (
-        app_settings.pipeline.ai_filter_enabled
-        or app_settings.pipeline.ai_enrich_enabled
-    ):
-        return None
-
-    async def _generate(*, prompt: str) -> str:
-        if context is None:
-            return ""
-        provider = context.get_using_provider()
-        if provider is None or not hasattr(provider, "text_chat"):
-            return ""
-        response = await asyncio.wait_for(
-            provider.text_chat(
-                prompt=prompt,
-                session_id="rsshub-content-pipeline",
-                persist=False,
-            ),
-            timeout=app_settings.pipeline.ai_timeout_seconds,
-        )
-        return str(getattr(response, "completion_text", response) or "")
-
-    return _generate
 
 
 async def _start_scheduler(
@@ -343,6 +346,7 @@ def _register_web_api(
         sub_repo=deps["subscription_repo"],
         user_repo=get_user_repository(),
         push_history_repo=get_push_history_repository(),
+        route_knowledge_service=deps["route_knowledge_service"],
         config=config,
         raw_config=raw_config,
     )

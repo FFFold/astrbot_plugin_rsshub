@@ -88,8 +88,16 @@
   color: var(--text-primary);
 }
 
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
 [data-theme="dark"] .form-group input[type="text"],
 [data-theme="dark"] .form-group input[type="number"],
+.dark-mode input[type="text"],
+.dark-mode input[type="number"],
+.dark-mode select,
+.dark-mode textarea,
 .dark-mode .form-group input[type="text"],
 .dark-mode .form-group input[type="number"] {
   background: var(--input-bg);
@@ -189,6 +197,13 @@
 [data-theme="dark"] .form-actions,
 .dark-mode .form-actions {
   border-color: var(--border-color);
+}
+
+[data-theme="dark"] .table-scroll-area,
+.dark-mode .table-scroll-area,
+[data-theme="dark"] .settings-scroll-area,
+.dark-mode .settings-scroll-area {
+  scrollbar-color: var(--border-color) transparent;
 }
 
 /* 深色模式下的确认对话框 */

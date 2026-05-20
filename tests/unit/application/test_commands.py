@@ -142,6 +142,55 @@ class TestSubscribeFeedCommand:
         assert "http" in result.message.lower()
         fetcher_factory.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_subscribe_applies_session_default_handlers_mode(self):
+        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
+            SubscribeFeedCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+
+        fetcher = AsyncMock()
+        fetcher.fetch.return_value = MagicMock(
+            error=None,
+            rss_d=MagicMock(feed={"title": "Test Feed"}),
+        )
+        fetcher.close = AsyncMock()
+        fetcher_factory = MagicMock(return_value=fetcher)
+
+        feed_repo = MagicMock()
+        feed_repo.get_by_link = AsyncMock(return_value=None)
+        feed_repo.save = AsyncMock(
+            return_value=Feed(
+                id=1, link="https://example.com/rss.xml", title="Test Feed"
+            )
+        )
+        sub_repo = MagicMock()
+        sub_repo.get_by_user_and_feed = AsyncMock(return_value=None)
+        sub_repo.save = AsyncMock(
+            return_value=Subscription(id=1, user_id="user123", feed_id=1)
+        )
+        sub_repo.update_options = AsyncMock()
+
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetcher_factory=fetcher_factory,
+        )
+
+        result = await cmd.execute(
+            url="https://example.com/rss.xml",
+            user_id="user123",
+            session_defaults={"handlers_mode": "disabled"},
+        )
+
+        assert result.success is True
+        sub_repo.update_options.assert_awaited_once_with(
+            1,
+            "user123",
+            handlers_mode="disabled",
+        )
+
 
 class TestUnsubscribeFeedCommand:
     """测试取消订阅命令"""

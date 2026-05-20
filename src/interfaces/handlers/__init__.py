@@ -16,12 +16,18 @@ from .config import (
     handle_sub_set_user,
 )
 from .data import handle_export, handle_import
+from .route_knowledge import (
+    handle_rsshub_kb_init,
+    handle_rsshub_kb_status,
+    handle_rsshub_kb_sync,
+    handle_rsshub_kb_task,
+)
 from .subscription import (
     handle_rss_stop,
     handle_sub,
     handle_sub_list,
-    handle_sub_status,
     handle_sub_state,
+    handle_sub_status,
     handle_unsub,
 )
 
@@ -45,4 +51,8 @@ __all__ = [
     "handle_export",
     "handle_import",
     "handle_test_sub",
+    "handle_rsshub_kb_init",
+    "handle_rsshub_kb_sync",
+    "handle_rsshub_kb_status",
+    "handle_rsshub_kb_task",
 ]

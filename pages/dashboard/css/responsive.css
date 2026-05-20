@@ -1,7 +1,15 @@
 /* ===== 响应式 / Responsive ===== */
 @media (max-width: 768px) {
+  body {
+    overflow: auto;
+  }
+
   .container {
     padding: 16px;
+    max-width: 100%;
+    min-height: auto;
+    height: auto;
+    overflow: visible;
   }
 
   .header {
@@ -45,6 +53,7 @@
   .form-actions {
     flex-direction: column-reverse;
     gap: 12px;
+    align-items: stretch;
   }
 
   .form-actions .btn {
@@ -53,10 +62,14 @@
 
   .center-actions {
     width: 100%;
+    margin: 0;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 8px;
   }
 
   .center-actions .btn {
-    flex: 1;
+    flex: 1 1 0;
   }
 
   .btn-danger {

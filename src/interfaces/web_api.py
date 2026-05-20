@@ -36,11 +36,15 @@ if TYPE_CHECKING:
     from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
     from ..application.queries.get_feed_items_query import GetFeedItemsQuery
     from ..application.services.feed_polling_service import FeedPollingService
+    from ..application.services.route_knowledge_service import (
+        RouteKnowledgeSyncService,
+    )
     from ..domain.repositories.feed_repository import FeedRepository
     from ..domain.repositories.push_history_repository import PushHistoryRepository
     from ..domain.repositories.subscription_repository import SubscriptionRepository
     from ..domain.repositories.user_repository import UserRepository
 PLUGIN_NAME = "astrbot_plugin_rsshub"
+USER_ID_REQUIRED_ERROR = "user_id 不能为空"
 
 
 class WebApiHandler:
@@ -68,6 +72,7 @@ class WebApiHandler:
         sub_repo: SubscriptionRepository,
         user_repo: UserRepository,
         push_history_repo: PushHistoryRepository,
+        route_knowledge_service: RouteKnowledgeSyncService | None = None,
         config: RsshubPluginConfig | None = None,
         raw_config: AstrBotConfig | None = None,
     ):
@@ -91,6 +96,7 @@ class WebApiHandler:
         self._sub_repo = sub_repo
         self._user_repo = user_repo
         self._push_history_repo = push_history_repo
+        self._route_knowledge_service = route_knowledge_service
         self._config = config
         self._raw_config = raw_config
 
@@ -137,6 +143,9 @@ class WebApiHandler:
             ("POST", "/import", self.handle_import, "导入订阅"),
             ("GET", "/stats", self.handle_stats, "插件统计"),
             ("GET", "/push-history", self.handle_push_history, "推送历史"),
+            ("GET", "/route-kb/status", self.handle_route_kb_status, "Routes KB 状态"),
+            ("POST", "/route-kb/sync", self.handle_route_kb_sync, "同步 Routes KB"),
+            ("GET", "/route-kb/task", self.handle_route_kb_task, "Routes KB 任务"),
             (
                 "POST",
                 "/push-history/delete",
@@ -214,6 +223,34 @@ class WebApiHandler:
         """轻量更新检查（无认证限制，通过 bridge apiGet 代理调用）"""
         return jsonify({"ok": True, "changed": False, "counter": self._change_counter})
 
+    # ─── RSSHub Routes KB ────────────────────────────────────
+
+    async def handle_route_kb_status(self):
+        """获取 RSSHub Routes 知识库同步状态。"""
+        if self._route_knowledge_service is None:
+            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
+        status = await self._route_knowledge_service.get_status()
+        return jsonify({"ok": True, "status": _dump_dataclass_like(status)})
+
+    async def handle_route_kb_sync(self):
+        """启动 RSSHub Routes 知识库同步。"""
+        if self._route_knowledge_service is None:
+            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
+        try:
+            task = await self._route_knowledge_service.start_sync()
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "route_kb_sync_started"}))
+        return jsonify({"ok": True, "task": _dump_dataclass_like(task)})
+
+    async def handle_route_kb_task(self):
+        """获取最近 RSSHub Routes 知识库同步任务。"""
+        if self._route_knowledge_service is None:
+            return jsonify({"ok": False, "error": "Routes KB 服务未初始化"})
+        task = self._route_knowledge_service.get_task_status()
+        return jsonify({"ok": True, "task": _dump_dataclass_like(task)})
+
     # ─── 订阅列表 ─────────────────────────────────────────────
 
     async def handle_list_subscriptions(self):
@@ -248,6 +285,8 @@ class WebApiHandler:
                     "interval": s.interval,
                     "notify": s.notify,
                     "send_mode": s.send_mode,
+                    "handlers_mode": s.handlers_mode,
+                    "handlers": s.handlers,
                     "length_limit": s.length_limit,
                     "link_preview": s.link_preview,
                     "display_author": s.display_author,
@@ -256,7 +295,6 @@ class WebApiHandler:
                     "display_entry_tags": s.display_entry_tags,
                     "style": s.style,
                     "display_media": s.display_media,
-                    "use_sub_config": s.use_sub_config,
                     "created_at": s.created_at.isoformat() if s.created_at else None,
                     "updated_at": s.updated_at.isoformat() if s.updated_at else None,
                 }
@@ -293,6 +331,7 @@ class WebApiHandler:
                     "interval": u.interval,
                     "notify": u.notify,
                     "send_mode": u.send_mode,
+                    "handlers": u.handlers,
                     "length_limit": u.length_limit,
                     "link_preview": u.link_preview,
                     "display_author": u.display_author,
@@ -302,7 +341,6 @@ class WebApiHandler:
                     "style": u.style,
                     "display_media": u.display_media,
                     "default_target_session": u.default_target_session,
-                    "use_user_config": u.use_user_config,
                     "created_at": u.created_at.isoformat() if u.created_at else None,
                     "updated_at": u.updated_at.isoformat() if u.updated_at else None,
                 }
@@ -374,14 +412,28 @@ class WebApiHandler:
 
     # ─── 订阅管理 ─────────────────────────────────────────────
 
+    @staticmethod
+    def _extract_required_user_id(data: dict[str, Any] | None) -> str:
+        if not isinstance(data, dict):
+            return ""
+        user_id = data.get("user_id", "")
+        return str(user_id).strip() if user_id is not None else ""
+
+    @staticmethod
+    def _user_id_required_response():
+        return jsonify({"ok": False, "error": USER_ID_REQUIRED_ERROR})
+
     async def handle_subscribe(self):
         """订阅 RSS 源"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         url = (data or {}).get("url", "").strip()
         if not url:
             return jsonify({"ok": False, "error": "url 不能为空"})
 
-        user_id = (data or {}).get("user_id", "webadmin")
         target_session = (data or {}).get("target_session")
         platform_name = (data or {}).get("platform_name")
 
@@ -404,8 +456,11 @@ class WebApiHandler:
     async def handle_unsubscribe(self):
         """取消订阅"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         sub_id = (data or {}).get("sub_id", 0)
-        user_id = (data or {}).get("user_id", "webadmin")
 
         if not sub_id:
             return jsonify({"ok": False, "error": "sub_id 不能为空"})
@@ -421,10 +476,13 @@ class WebApiHandler:
         """更新订阅选项"""
         data = await request.get_json()
         if not data:
-            return jsonify({"ok": False, "error": "请求体为空"})
+            return self._user_id_required_response()
 
         sub_id = data.get("sub_id", 0)
-        user_id = data.get("user_id", "webadmin")
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         options = data.get("options", {})
 
         if not sub_id:
@@ -515,7 +573,10 @@ class WebApiHandler:
 
     async def handle_get_settings(self):
         """获取用户默认设置"""
-        user_id = request.args.get("user_id", "webadmin")
+        user_id = (request.args.get("user_id") or "").strip()
+        if not user_id:
+            return self._user_id_required_response()
+
         result = await self._get_user_settings_cmd.execute(user_id=user_id)
         if result.success and result.data:
             return jsonify({"ok": True, "settings": result.data})
@@ -525,9 +586,12 @@ class WebApiHandler:
         """更新用户默认设置"""
         data = await request.get_json()
         if not data:
-            return jsonify({"ok": False, "error": "请求体为空"})
+            return self._user_id_required_response()
 
-        user_id = data.get("user_id", "webadmin")
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         settings = data.get("settings", {})
 
         result = await self._set_user_settings_cmd.execute(
@@ -538,7 +602,7 @@ class WebApiHandler:
         return jsonify({"ok": result.success, "message": result.message})
 
     async def handle_get_plugin_settings(self):
-        """获取插件级订阅默认值和内容管线配置"""
+        """获取插件级订阅默认值"""
         if self._config is None:
             return jsonify({"ok": False, "error": "插件配置未初始化"})
         settings = build_application_settings(self._config)
@@ -548,12 +612,11 @@ class WebApiHandler:
                 "subscription_defaults": _dump_dataclass_like(
                     settings.subscription_defaults
                 ),
-                "pipeline": _dump_dataclass_like(settings.pipeline),
             }
         )
 
     async def handle_set_plugin_settings(self):
-        """更新插件级订阅默认值和内容管线配置"""
+        """更新插件级订阅默认值"""
         if self._config is None:
             return jsonify({"ok": False, "error": "插件配置未初始化"})
         if self._raw_config is None or not hasattr(self._raw_config, "save_config"):
@@ -563,11 +626,8 @@ class WebApiHandler:
         if not data:
             return jsonify({"ok": False, "error": "请求体为空"})
 
-        pipeline_updates = data.get("pipeline") or {}
         subscription_updates = data.get("subscription_defaults") or {}
-        if not isinstance(pipeline_updates, dict) or not isinstance(
-            subscription_updates, dict
-        ):
+        if not isinstance(subscription_updates, dict):
             return jsonify({"ok": False, "error": "配置格式无效"})
 
         try:
@@ -576,11 +636,6 @@ class WebApiHandler:
                 config_dict["global_config"] = {
                     **config_dict.get("global_config", {}),
                     **subscription_updates,
-                }
-            if pipeline_updates:
-                config_dict["pipeline"] = {
-                    **config_dict.get("pipeline", {}),
-                    **pipeline_updates,
                 }
 
             updated = RsshubPluginConfig.from_astrbot_config(config_dict)
@@ -597,7 +652,6 @@ class WebApiHandler:
                     "subscription_defaults": _dump_dataclass_like(
                         settings.subscription_defaults
                     ),
-                    "pipeline": _dump_dataclass_like(settings.pipeline),
                 }
             )
         except Exception as exc:
@@ -608,8 +662,11 @@ class WebApiHandler:
     async def handle_test_subscription(self):
         """测试订阅推送"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         sub_id = (data or {}).get("sub_id", 0)
-        user_id = (data or {}).get("user_id", "webadmin")
 
         if not sub_id:
             return jsonify({"ok": False, "error": "sub_id 不能为空"})
@@ -637,8 +694,11 @@ class WebApiHandler:
     async def handle_batch_activate(self):
         """批量启用订阅"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         sub_ids = (data or {}).get("sub_ids", [])
-        user_id = (data or {}).get("user_id", "webadmin")
 
         if not sub_ids:
             return jsonify({"ok": False, "error": "sub_ids 不能为空"})
@@ -653,8 +713,11 @@ class WebApiHandler:
     async def handle_batch_deactivate(self):
         """批量禁用订阅"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         sub_ids = (data or {}).get("sub_ids", [])
-        user_id = (data or {}).get("user_id", "webadmin")
 
         if not sub_ids:
             return jsonify({"ok": False, "error": "sub_ids 不能为空"})
@@ -669,8 +732,11 @@ class WebApiHandler:
     async def handle_batch_unsubscribe(self):
         """批量取消订阅"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         sub_ids = (data or {}).get("sub_ids", [])
-        user_id = (data or {}).get("user_id", "webadmin")
 
         if not sub_ids:
             return jsonify({"ok": False, "error": "sub_ids 不能为空"})
@@ -685,7 +751,9 @@ class WebApiHandler:
     async def handle_export(self):
         """导出订阅（返回 OPML/TOML 内容）"""
         data = await request.get_json()
-        user_id = (data or {}).get("user_id", "webadmin")
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
 
         result = await self._export_cmd.execute(user_id=user_id)
         if result.success and result.data:
@@ -705,8 +773,11 @@ class WebApiHandler:
     async def handle_import(self):
         """导入 TOML 订阅内容"""
         data = await request.get_json()
+        user_id = self._extract_required_user_id(data)
+        if not user_id:
+            return self._user_id_required_response()
+
         content = (data or {}).get("content", "")
-        user_id = (data or {}).get("user_id", "webadmin")
         target_session = (data or {}).get("target_session")
         platform_name = (data or {}).get("platform_name")
         skip_existing = bool((data or {}).get("skip_existing", True))
@@ -764,26 +835,49 @@ class WebApiHandler:
     async def handle_push_history(self):
         """获取推送历史列表"""
         status = request.args.get("status")
+        user_id = request.args.get("user_id")
+        target_session = request.args.get("target_session")
         page = request.args.get("page", 1, type=int)
         page_size = request.args.get("page_size", 20, type=int)
         offset = (page - 1) * page_size
 
-        items = await self._push_history_repo.get_all(
-            limit=page_size, offset=offset, status=status
-        )
-        stats = await self._push_history_repo.get_stats()
+        if user_id:
+            items = await self._push_history_repo.get_by_user(
+                user_id=user_id,
+                limit=page_size,
+                offset=offset,
+                target_session=target_session,
+                status=status,
+            )
+            total = await self._push_history_repo.count_by_user(
+                user_id=user_id,
+                target_session=target_session,
+                status=status,
+            )
+        else:
+            items = await self._push_history_repo.get_all(
+                limit=page_size, offset=offset, status=status
+            )
+            stats = await self._push_history_repo.get_stats()
+            total = stats.get("total", 0)
 
         data = []
         for h in items:
             data.append(
                 {
                     "id": h.id,
-                    "sub_id": h.sub_id,
                     "user_id": h.user_id,
                     "feed_id": h.feed_id,
+                    "source_type": h.source_type,
+                    "source_key": h.source_key,
+                    "content": h.content,
+                    "raw_xml": h.raw_xml,
+                    "media_urls": h.media_urls,
                     "entry_title": h.entry_title,
                     "entry_link": h.entry_link,
+                    "entry_guid": h.entry_guid,
                     "feed_title": h.feed_title,
+                    "feed_link": h.feed_link,
                     "platform_name": h.platform_name,
                     "target_session": h.target_session,
                     "status": h.status,
@@ -802,7 +896,7 @@ class WebApiHandler:
             {
                 "ok": True,
                 "items": data,
-                "total": stats.get("total", 0),
+                "total": total,
                 "page": page,
                 "page_size": page_size,
             }
@@ -827,8 +921,15 @@ class WebApiHandler:
 
 
 def _dump_dataclass_like(value: Any) -> dict[str, Any]:
-    return {
-        key: list(item) if isinstance(item, tuple) else item
-        for key, item in vars(value).items()
-        if not key.startswith("_")
-    }
+    def _convert(item: Any) -> Any:
+        if isinstance(item, tuple):
+            return [_convert(part) for part in item]
+        if hasattr(item, "__dict__"):
+            return {
+                key: _convert(part)
+                for key, part in vars(item).items()
+                if not key.startswith("_")
+            }
+        return item
+
+    return _convert(value)

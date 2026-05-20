@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
+from ...domain.entities.content_types import AudioContent, VideoContent
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.feed_dto import FeedDTO
@@ -18,7 +19,7 @@ from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
 from ..services.feed_polling_service import FeedPollingService, FeedReadResult
 from ..services.html_parser import HTMLParser
-from ..services.notification_dispatcher import NotificationDispatcher
+from ..services.notification_dispatcher import NotificationDispatcher, SendTarget
 
 
 @dataclass
@@ -217,6 +218,7 @@ class TestSubscriptionCommand:
 
         fake_sub = SimpleNamespace(
             id=0,
+            user_id=user_id,
             platform_name=platform_name,
             target_session=target_session,
         )
@@ -227,6 +229,10 @@ class TestSubscriptionCommand:
             summary = entry.summary or ""
             parsed = await HTMLParser(summary, feed_link=feed_url).parse()
             plain_summary = parsed.html_tree.get_plain().strip()
+            if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
+                plain_summary = FeedPollingService._remove_media_placeholders(
+                    plain_summary
+                )
             content = (
                 f"{title}\n\n{plain_summary}"
                 if plain_summary and plain_summary != title
@@ -247,10 +253,17 @@ class TestSubscriptionCommand:
                 if getattr(enclosure, "url", "")
             )
             media_urls = list(dict.fromkeys(media_urls))
+            media_items = FeedPollingService._media_items_from_parsed(parsed.media)
             send_result = await self._notification_dispatcher.send_to_session(
-                subscription=fake_sub,
+                target=SendTarget(
+                    user_id=str(fake_sub.user_id or ""),
+                    platform_name=fake_sub.platform_name,
+                    target_session=fake_sub.target_session,
+                    sub_id=fake_sub.id,
+                ),
                 content=content,
                 media_urls=media_urls,
+                media_items=media_items,
                 job_description=f"sub_test target={target}",
                 channel_title=feed_title,
                 channel_link=feed_url,

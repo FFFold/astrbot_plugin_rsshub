@@ -290,3 +290,137 @@ async def run_migrations(conn) -> list[int]:
     """
     runner = MigrationRunner()
     return await runner.run_all(conn)
+
+
+async def ensure_push_history_schema(conn) -> list[str]:
+    """补齐 push_history 兼容字段。
+
+    旧库可能已经记录过迁移版本，但实际表结构仍缺少 agent push 所需列。
+    这里在每次启动时做一次轻量自愈，保证运行时查询不会因缺列直接失败。
+    """
+
+    async def _table_exists(table: str) -> bool:
+        result = await conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        return result.fetchone() is not None
+
+    async def _column_names(table: str) -> set[str]:
+        result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+        return {str(row[1]) for row in result.fetchall()}
+
+    if not await _table_exists("rsshub_push_history"):
+        return []
+
+    applied: list[str] = []
+    columns = await _column_names("rsshub_push_history")
+    required_columns = {
+        "source_type": "ALTER TABLE rsshub_push_history ADD COLUMN source_type VARCHAR(16) NOT NULL DEFAULT 'feed'",
+        "source_key": "ALTER TABLE rsshub_push_history ADD COLUMN source_key VARCHAR(255)",
+        "raw_xml": "ALTER TABLE rsshub_push_history ADD COLUMN raw_xml TEXT",
+    }
+    for column, sql in required_columns.items():
+        if column in columns:
+            continue
+        await conn.exec_driver_sql(sql)
+        applied.append(column)
+        logger.info(
+            "数据库 schema 自愈: 为 rsshub_push_history 添加缺失字段 %s", column
+        )
+    return applied
+
+
+async def cleanup_legacy_translation_tables(conn) -> list[str]:
+    """删除已废弃的翻译缓存相关表。
+
+    旧版本曾包含翻译/内容处理链路，SQLite 中可能残留相关表。
+    这里在每次启动时幂等清理，避免历史脏库长期保留无用结构。
+    """
+
+    legacy_tables = (
+        "rsshub_translation_cache",
+        "rsshub_translate_cache",
+        "rsshub_translation_history",
+        "rsshub_translate_history",
+    )
+
+    dropped: list[str] = []
+    for table in legacy_tables:
+        result = await conn.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        )
+        if result.fetchone() is None:
+            continue
+        await conn.exec_driver_sql(f"DROP TABLE IF EXISTS {table}")
+        dropped.append(table)
+        logger.info("数据库 schema 自愈: 删除旧翻译缓存表 %s", table)
+    return dropped
+
+
+async def ensure_user_subscription_prompt_schema(conn) -> list[str]:
+    """补齐用户/订阅配置表的 handlers 与 handlers_mode 字段并清理旧配置字段。
+
+    旧库可能已经记录过迁移版本，但表结构仍保留 ai_prompt 或 use_*_config。
+    这里按顺序复用 V6/V7 的幂等重建逻辑做启动自愈。
+    """
+
+    from .V6_ai_prompt_and_inherit_options import (
+        _column_names,
+        _table_exists,
+    )
+    from .V6_ai_prompt_and_inherit_options import (
+        _rebuild_sub_table as _rebuild_sub_table_v6,
+    )
+    from .V6_ai_prompt_and_inherit_options import (
+        _rebuild_user_table as _rebuild_user_table_v6,
+    )
+    from .V7_handlers_chain import _rebuild_sub_table as _rebuild_sub_table_v7
+    from .V7_handlers_chain import _rebuild_user_table as _rebuild_user_table_v7
+    from .V8_subscription_handlers_mode import (
+        _rebuild_sub_table as _rebuild_sub_table_v8,
+    )
+
+    before: dict[str, set[str]] = {}
+    for table in ("rsshub_user", "rsshub_sub"):
+        if await _table_exists(conn, table):
+            before[table] = await _column_names(conn, table)
+
+    user_columns = before.get("rsshub_user", set())
+    sub_columns = before.get("rsshub_sub", set())
+
+    user_needs_v6_v7 = bool(user_columns) and (
+        "handlers" not in user_columns
+        or "ai_prompt" in user_columns
+        or {
+            "use_user_config",
+            "translate",
+            "translate_target_lang",
+        }.intersection(user_columns)
+    )
+    sub_needs_v6_v7 = bool(sub_columns) and (
+        "handlers" not in sub_columns
+        or "ai_prompt" in sub_columns
+        or {
+            "use_sub_config",
+            "translate",
+            "translate_target_lang",
+        }.intersection(sub_columns)
+    )
+
+    if user_needs_v6_v7:
+        await _rebuild_user_table_v6(conn)
+        await _rebuild_user_table_v7(conn)
+    if sub_needs_v6_v7:
+        await _rebuild_sub_table_v6(conn)
+        await _rebuild_sub_table_v7(conn)
+    await _rebuild_sub_table_v8(conn)
+
+    changed: list[str] = []
+    for table, previous in before.items():
+        current = await _column_names(conn, table)
+        if previous != current:
+            changed.append(table)
+            logger.info("数据库 schema 自愈: 更新 %s handlers/继承字段结构", table)
+    return changed

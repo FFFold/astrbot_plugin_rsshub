@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from astrbot.api.event import AstrMessageEvent
 
+from ...domain.entities.handlers import parse_handlers_input
+
 SESSION_DEFAULT_KV_PREFIX = "rsshub_session_defaults_"
 SESSION_DEFAULT_KEYS = {
     "interval",
@@ -17,10 +19,17 @@ SESSION_DEFAULT_KEYS = {
     "display_entry_tags",
     "style",
     "display_media",
+    "handlers",
     "title",
     "tags",
 }
-REMOVED_TRANSLATION_KEYS = {"translate", "translate_target_lang"}
+REMOVED_KEYS = {
+    "translate",
+    "translate_target_lang",
+    "use_sub_config",
+    "use_user_config",
+    "ai_prompt",
+}
 
 
 async def handle_sub_set(
@@ -33,10 +42,8 @@ async def handle_sub_set(
         }
     user_id = event.get_sender_id()
     option_key = option.strip().lower()
-    if option_key in REMOVED_TRANSLATION_KEYS:
-        return {
-            "plain": f"选项 {option_key} 已移除，请使用 AI 内容管线或扩展处理翻译。"
-        }
+    if option_key in REMOVED_KEYS:
+        return {"plain": f"选项 {option_key} 已移除。"}
     result = await deps["update_sub_cmd"].execute(
         sub_id=sub_id, user_id=user_id, **{option_key: value}
     )
@@ -154,7 +161,12 @@ async def handle_sub_set_session(
         return {"plain": f"未知选项: {option_key}"}
 
     parsed_value = value
-    if option_key not in {"title", "tags"}:
+    if option_key == "handlers":
+        try:
+            parsed_value = parse_handlers_input(value)
+        except ValueError as exc:
+            return {"plain": str(exc)}
+    elif option_key not in {"title", "tags"}:
         try:
             parsed_value = int(value)
         except ValueError:

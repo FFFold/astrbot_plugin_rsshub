@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urljoin
+from xml.etree import ElementTree
 
 import feedparser
 from pydantic import BaseModel, Field
@@ -38,6 +39,7 @@ class EntryParsed(BaseModel):
     summary: str | None = Field(default="", description="摘要")
     guid: str = Field(default="", description="全局唯一标识")
     entry_id: str = Field(default="", description="条目ID")
+    raw_xml: str = Field(default="", description="原始 item/entry XML")
     tags: list[str] = Field(default_factory=list, description="标签列表")
     enclosures: list[Enclosure] = Field(default_factory=list, description="附件列表")
     published: datetime | None = Field(default=None, description="发布时间")
@@ -91,7 +93,11 @@ class RSSParser:
             if bozo_exception and not feed:
                 return [], f"RSS parse failed: {bozo_exception}"
 
-        return [self.parse_entry(entry, feed_link=feed_link) for entry in entries], None
+        parsed_entries = [
+            self.parse_entry(entry, feed_link=feed_link) for entry in entries
+        ]
+        self._attach_raw_xml(parsed_entries, xml_content)
+        return parsed_entries, None
 
     @staticmethod
     def parse_entry(entry: Any, feed_link: str | None = None) -> EntryParsed:
@@ -113,9 +119,7 @@ class RSSParser:
         result.entry_id = RSSParser._get_text(entry.get("id", ""))
         result.id = result.entry_id or result.guid or result.link
 
-        content = entry.get("content", [])
-        if content:
-            result.content = content[0].get("value", "")
+        result.content = RSSParser._get_entry_content(entry)
 
         summary = entry.get("summary") or entry.get("description")
         if summary:
@@ -164,6 +168,29 @@ class RSSParser:
         return text.strip()
 
     @staticmethod
+    def _get_entry_content(entry: Any) -> str:
+        """获取条目正文，优先使用 feedparser 解析出的完整内容字段。"""
+        content = entry.get("content", [])
+        if isinstance(content, list):
+            for item in content:
+                value = item.get("value") if hasattr(item, "get") else None
+                if value:
+                    return str(value)
+        elif hasattr(content, "get"):
+            value = content.get("value")
+            if value:
+                return str(value)
+        elif content:
+            return str(content)
+
+        for key in ("content_encoded", "content:encoded"):
+            value = entry.get(key)
+            if value:
+                return str(value)
+
+        return ""
+
+    @staticmethod
     def _get_link(entry: Any, feed_link: str | None = None) -> str:
         """获取条目链接，处理相对链接"""
         link = entry.get("link") or entry.get("guid")
@@ -171,3 +198,116 @@ class RSSParser:
             if feed_link:
                 link = urljoin(feed_link, link)
         return link or ""
+
+    @staticmethod
+    def _local_name(tag: str) -> str:
+        if "}" in tag:
+            return tag.rsplit("}", 1)[-1]
+        if ":" in tag:
+            return tag.rsplit(":", 1)[-1]
+        return tag
+
+    @classmethod
+    def _entry_xml_candidates(
+        cls,
+        xml_content: str | bytes,
+    ) -> list[tuple[dict[str, str], str]]:
+        if isinstance(xml_content, bytes):
+            text = xml_content.decode("utf-8", errors="ignore")
+        else:
+            text = str(xml_content or "")
+        if not text.strip():
+            return []
+
+        try:
+            root = ElementTree.fromstring(text)
+        except ElementTree.ParseError:
+            return []
+
+        candidates: list[tuple[dict[str, str], str]] = []
+        for elem in root.iter():
+            local_name = cls._local_name(elem.tag)
+            if local_name not in {"item", "entry"}:
+                continue
+            info: dict[str, str] = {"tag": local_name}
+            text_parts: list[str] = []
+            for child in list(elem):
+                child_name = cls._local_name(child.tag)
+                child_text = "".join(child.itertext()).strip()
+                if (
+                    child_name
+                    in {
+                        "guid",
+                        "id",
+                        "title",
+                        "description",
+                        "summary",
+                        "content",
+                        "author",
+                        "pubDate",
+                        "published",
+                        "updated",
+                    }
+                    and child_text
+                ):
+                    info[child_name] = child_text
+                if child_name == "link":
+                    href = str(child.attrib.get("href", "") or "").strip()
+                    if href:
+                        info["link"] = href
+                    elif child_text:
+                        info["link"] = child_text
+                if child_text:
+                    text_parts.append(child_text)
+            info["text"] = "\n".join(text_parts)
+            candidates.append((info, ElementTree.tostring(elem, encoding="unicode")))
+        return candidates
+
+    @classmethod
+    def _candidate_score(cls, entry: EntryParsed, info: dict[str, str]) -> int:
+        score = 0
+        if entry.guid and entry.guid == info.get("guid"):
+            score += 10
+        if entry.entry_id and entry.entry_id == info.get("id"):
+            score += 10
+        if entry.link and entry.link == info.get("link"):
+            score += 8
+        if entry.title and entry.title == info.get("title"):
+            score += 4
+        summary = str(entry.summary or "").strip()
+        content = str(entry.content or "").strip()
+        combined = info.get("text", "")
+        if summary and summary in combined:
+            score += 2
+        if content and content[:120] and content[:120] in combined:
+            score += 2
+        return score
+
+    @classmethod
+    def _attach_raw_xml(
+        cls,
+        entries: list[EntryParsed],
+        xml_content: str | bytes,
+    ) -> None:
+        candidates = cls._entry_xml_candidates(xml_content)
+        if not candidates:
+            return
+
+        used: set[int] = set()
+        for index, entry in enumerate(entries):
+            best_idx = -1
+            best_score = -1
+            for candidate_idx, (info, raw_xml) in enumerate(candidates):
+                if candidate_idx in used:
+                    continue
+                score = cls._candidate_score(entry, info)
+                if score > best_score:
+                    best_score = score
+                    best_idx = candidate_idx
+            if best_idx >= 0 and best_score > 0:
+                entry.raw_xml = candidates[best_idx][1]
+                used.add(best_idx)
+                continue
+            if index < len(candidates) and index not in used:
+                entry.raw_xml = candidates[index][1]
+                used.add(index)

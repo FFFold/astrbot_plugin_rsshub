@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass as py_dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
-from urllib.parse import parse_qsl, urlencode, urljoin
+from urllib.parse import urlparse
 
 try:
     from astrbot.core.agent.tool import FunctionTool
@@ -17,13 +17,16 @@ except Exception:  # pragma: no cover - test/mocking fallback
         description: str
         parameters: dict
         handler: Any = None
+        handler_module_path: str | None = None
 
 
 if TYPE_CHECKING:
     from astrbot.core.agent.run_context import ContextWrapper
     from astrbot.core.astr_agent_context import AstrAgentContext
 
+from ..infrastructure.config import get_config
 from ..interfaces import handlers as h
+from .services.agent_xml_push_service import AgentXmlValidationError
 
 
 class LLMToolDeps(TypedDict):
@@ -34,7 +37,9 @@ class LLMToolDeps(TypedDict):
     set_user_settings_cmd: Any
     get_user_settings_cmd: Any
     subscription_repo: Any
+    push_history_repo: Any
     export_cmd: Any
+    agent_xml_push_service: Any
 
 
 LLM_TOOL_NAMES = [
@@ -46,37 +51,39 @@ LLM_TOOL_NAMES = [
     "rss_set_user_default_option",
     "rss_set_session_default_option",
     "rss_get_session_defaults",
-    "rsshub_build_subscribe_url",
+    "rss_list_push_history",
+    "rss_push_xml_entry",
 ]
 
 
-def _resolve_base_url(explicit_base_url: str = "") -> str:
-    if explicit_base_url.strip():
-        return explicit_base_url.strip().rstrip("/")
-    try:
-        from ..infrastructure.config import get_config
-
-        cfg = get_config()
-        if cfg and cfg.rsshub_base_url:
-            return str(cfg.rsshub_base_url).rstrip("/")
-    except Exception:
-        pass
-    return "https://rsshub.app"
+def _normalize_subscribe_target(*, url: str = "", uri: str = "") -> str:
+    targets = [part.strip() for part in str(url or "").split() if part.strip()]
+    raw_uri = str(uri or "").strip()
+    if raw_uri:
+        targets.append(_resolve_rsshub_uri(raw_uri))
+    return " ".join(targets)
 
 
-def _parse_params_input(params_json: str) -> dict[str, Any]:
-    raw = (params_json or "").strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, dict):
-            return {str(k): str(v) for k, v in parsed.items() if v is not None}
-    except json.JSONDecodeError:
-        pass
-    if "=" in raw:
-        return dict(parse_qsl(raw, keep_blank_values=True))
-    return {}
+def _resolve_rsshub_uri(value: str) -> str:
+    trimmed = str(value or "").strip()
+    if not trimmed:
+        return ""
+    parsed = urlparse(trimmed)
+    if parsed.scheme in {"http", "https"}:
+        return trimmed
+
+    config = get_config()
+    base_url = "https://rsshub.app"
+    if config is not None:
+        candidate = str(
+            getattr(config.basic_config, "rsshub_base_url", "") or ""
+        ).strip()
+        if candidate:
+            base_url = candidate
+
+    normalized_base = base_url.rstrip("/")
+    normalized_path = trimmed if trimmed.startswith("/") else f"/{trimmed}"
+    return f"{normalized_base}{normalized_path}"
 
 
 def _tool(
@@ -85,13 +92,36 @@ def _tool(
     description: str,
     parameters: dict,
     handler,
+    plugin_context,
 ) -> FunctionTool:
-    return FunctionTool(
+    tool = FunctionTool(
         name=name,
         description=description,
         parameters=parameters,
         handler=handler,
     )
+    tool.handler_module_path = getattr(plugin_context, "__module__", "") or None
+    return tool
+
+
+def _extract_event(tool_context: Any) -> Any:
+    """兼容 AstrBot 工具上下文包装器与直接事件对象。"""
+    if callable(getattr(tool_context, "get_sender_id", None)) and hasattr(
+        tool_context, "unified_msg_origin"
+    ):
+        return tool_context
+
+    wrapper_context = getattr(tool_context, "context", None)
+    if wrapper_context is not None:
+        wrapped_event = getattr(wrapper_context, "event", None)
+        if wrapped_event is not None:
+            return wrapped_event
+
+    direct_event = getattr(tool_context, "event", None)
+    if direct_event is not None:
+        return direct_event
+
+    raise TypeError("无法从工具上下文中解析消息事件")
 
 
 def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
@@ -99,23 +129,31 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
 
     async def rss_subscribe(
         context: ContextWrapper[AstrAgentContext],
-        url: str,
+        url: str = "",
+        uri: str = "",
     ) -> str:
-        result = await h.handle_sub(context.context.event, url, deps)
+        event = _extract_event(context)
+        result = await h.handle_sub(
+            event,
+            _normalize_subscribe_target(url=url, uri=uri),
+            deps,
+        )
         return result.get("plain", "")
 
     async def rss_unsubscribe(
         context: ContextWrapper[AstrAgentContext],
         sub_id: str,
     ) -> str:
-        result = await h.handle_unsub(context.context.event, sub_id, deps)
+        event = _extract_event(context)
+        result = await h.handle_unsub(event, sub_id, deps)
         return result.get("plain", "")
 
     async def rss_unsubscribe_all(
         context: ContextWrapper[AstrAgentContext],
         scope: str = "",
     ) -> str:
-        result = await h.handle_unsub_all(context.context.event, scope, deps)
+        event = _extract_event(context)
+        result = await h.handle_unsub_all(event, scope, deps)
         return result.get("plain", "")
 
     async def rss_list_subscriptions(
@@ -123,8 +161,9 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         page: str = "",
         page_size: str = "",
     ) -> str:
+        event = _extract_event(context)
         args = " ".join(part for part in (page, page_size) if str(part).strip())
-        result = await h.handle_sub_list(context.context.event, args, deps)
+        result = await h.handle_sub_list(event, args, deps)
         return result.get("plain", "")
 
     async def rss_set_subscription_option(
@@ -133,12 +172,13 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         key: str,
         value: str,
     ) -> str:
+        event = _extract_event(context)
         try:
             sub_id_int = int(sub_id)
         except ValueError:
             return "订阅 ID 必须是数字"
         result = await h.handle_sub_set(
-            context.context.event,
+            event,
             sub_id_int,
             key,
             value,
@@ -151,7 +191,8 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         key: str,
         value: str,
     ) -> str:
-        result = await h.handle_sub_set_user(context.context.event, key, value, deps)
+        event = _extract_event(context)
+        result = await h.handle_sub_set_user(event, key, value, deps)
         return result.get("plain", "")
 
     async def rss_set_session_default_option(
@@ -159,8 +200,9 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         key: str,
         value: str,
     ) -> str:
+        event = _extract_event(context)
         result = await h.handle_sub_set_session(
-            context.context.event,
+            event,
             key,
             value,
             deps,
@@ -171,57 +213,142 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
     async def rss_get_session_defaults(
         context: ContextWrapper[AstrAgentContext],
     ) -> str:
+        event = _extract_event(context)
         result = await h.handle_sub_get_session(
-            context.context.event,
+            event,
             "",
             deps,
             plugin_context,
         )
         return result.get("plain", "")
 
-    async def rsshub_build_subscribe_url(
+    async def rss_list_push_history(
         context: ContextWrapper[AstrAgentContext],
-        uri: str = "",
-        params_json: str = "",
-        base_url: str = "",
+        page: str = "",
+        page_size: str = "",
     ) -> str:
-        del context
-        if not uri.strip():
-            return "请提供 uri，例如 /bilibili/user/dynamic/12345"
-        resolved = _resolve_base_url(base_url)
-        clean_uri = uri.strip()
-        if not clean_uri.startswith("/"):
-            clean_uri = f"/{clean_uri}"
-        params = _parse_params_input(params_json)
-        subscribe_url = urljoin(f"{resolved}/", clean_uri.lstrip("/"))
-        if params:
-            subscribe_url = f"{subscribe_url}?{urlencode(params, doseq=True)}"
+        event = _extract_event(context)
+        user_id = str(event.get_sender_id() or "").strip()
+        target_session = str(getattr(event, "unified_msg_origin", "") or "").strip()
+        try:
+            page_num = max(1, int(str(page).strip() or "1"))
+        except ValueError:
+            page_num = 1
+        try:
+            page_size_num = max(1, min(100, int(str(page_size).strip() or "20")))
+        except ValueError:
+            page_size_num = 20
+
+        scoped_items = await deps["push_history_repo"].get_by_user(
+            user_id=user_id,
+            limit=page_size_num,
+            offset=(page_num - 1) * page_size_num,
+            target_session=target_session,
+        )
+        total = await deps["push_history_repo"].count_by_user(
+            user_id=user_id,
+            target_session=target_session,
+        )
         return json.dumps(
             {
-                "resolved_base_url": resolved,
-                "uri": clean_uri,
-                "params": params,
-                "subscribe_url": subscribe_url,
+                "ok": True,
+                "page": page_num,
+                "page_size": page_size_num,
+                "total": total,
+                "items": [
+                    {
+                        "id": item.id,
+                        "source_type": item.source_type,
+                        "source_key": item.source_key,
+                        "content": item.content,
+                        "raw_xml": getattr(item, "raw_xml", None),
+                        "media_urls": item.media_urls,
+                        "entry_title": item.entry_title,
+                        "entry_link": item.entry_link,
+                        "entry_guid": item.entry_guid,
+                        "feed_title": item.feed_title,
+                        "feed_link": item.feed_link,
+                        "platform_name": item.platform_name,
+                        "target_session": item.target_session,
+                        "status": item.status,
+                        "retry_count": item.retry_count,
+                        "max_retries": item.max_retries,
+                        "fail_reason": item.fail_reason,
+                        "created_at": item.created_at.isoformat()
+                        if item.created_at
+                        else None,
+                        "updated_at": item.updated_at.isoformat()
+                        if item.updated_at
+                        else None,
+                        "completed_at": item.completed_at.isoformat()
+                        if item.completed_at
+                        else None,
+                    }
+                    for item in scoped_items
+                ],
             },
             ensure_ascii=False,
             indent=2,
         )
 
+    async def rss_push_xml_entry(
+        context: ContextWrapper[AstrAgentContext],
+        source_key: str,
+        title: str,
+        xml: str,
+        link: str = "",
+        author: str = "",
+        feed_title: str = "",
+        entry_guid: str = "",
+        idempotency_key: str = "",
+        dry_run: bool = False,
+    ) -> str:
+        event = _extract_event(context)
+        service = deps["agent_xml_push_service"]
+        try:
+            return await service.push_entry_json(
+                user_id=str(event.get_sender_id() or "").strip(),
+                platform_name=str(event.get_platform_name() or "").strip().lower()
+                or None,
+                target_session=str(
+                    getattr(event, "unified_msg_origin", "") or ""
+                ).strip(),
+                source_key=source_key,
+                title=title,
+                xml=xml,
+                link=link,
+                author=author,
+                feed_title=feed_title,
+                entry_guid=entry_guid,
+                idempotency_key=idempotency_key,
+                dry_run=bool(dry_run),
+            )
+        except AgentXmlValidationError as exc:
+            return json.dumps(
+                {"ok": False, "error": str(exc)},
+                ensure_ascii=False,
+                indent=2,
+            )
+
     return [
         _tool(
             name="rss_subscribe",
-            description="订阅 RSS 源，支持空格分隔多个 URL。",
+            description="订阅 RSS 源。优先传 uri，工具会自动用插件默认 RSSHub 基址拼接；也支持直接传完整 URL，多个目标可用空格分隔。",
             parameters={
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "一个或多个 RSS URL，空格分隔。",
-                    }
+                        "description": "一个或多个完整 RSS URL，空格分隔。已提供 uri 时可留空。",
+                    },
+                    "uri": {
+                        "type": "string",
+                        "description": "RSSHub 路由 uri 或相对路径，例如 /twitter/user/123。优先使用此字段。",
+                    },
                 },
-                "required": ["url"],
             },
             handler=rss_subscribe,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_unsubscribe",
@@ -237,6 +364,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 "required": ["sub_id"],
             },
             handler=rss_unsubscribe,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_unsubscribe_all",
@@ -251,6 +379,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 },
             },
             handler=rss_unsubscribe_all,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_list_subscriptions",
@@ -266,6 +395,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 },
             },
             handler=rss_list_subscriptions,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_set_subscription_option",
@@ -280,6 +410,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 "required": ["sub_id", "key", "value"],
             },
             handler=rss_set_subscription_option,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_set_user_default_option",
@@ -293,6 +424,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 "required": ["key", "value"],
             },
             handler=rss_set_user_default_option,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_set_session_default_option",
@@ -306,31 +438,59 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                 "required": ["key", "value"],
             },
             handler=rss_set_session_default_option,
+            plugin_context=plugin_context,
         ),
         _tool(
             name="rss_get_session_defaults",
             description="查看当前会话默认配置。",
             parameters={"type": "object", "properties": {}},
             handler=rss_get_session_defaults,
+            plugin_context=plugin_context,
         ),
         _tool(
-            name="rsshub_build_subscribe_url",
-            description="基于 uri 和参数构建 RSSHub 订阅 URL。",
+            name="rss_list_push_history",
+            description="查看当前会话推送历史，返回 JSON 列表。",
             parameters={
                 "type": "object",
                 "properties": {
-                    "uri": {"type": "string", "description": "路由 URI"},
-                    "params_json": {
+                    "page": {"type": "string", "description": "页码，默认1"},
+                    "page_size": {
                         "type": "string",
-                        "description": "JSON 对象或 query-string 参数串",
-                    },
-                    "base_url": {
-                        "type": "string",
-                        "description": "可选 RSSHub base URL 覆盖值",
+                        "description": "每页数量，默认20，最大100",
                     },
                 },
-                "required": ["uri"],
             },
-            handler=rsshub_build_subscribe_url,
+            handler=rss_list_push_history,
+            plugin_context=plugin_context,
+        ),
+        _tool(
+            name="rss_push_xml_entry",
+            description="将 XML/HTML 标签内容解析为消息组件并推送到当前会话。",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "source_key": {
+                        "type": "string",
+                        "description": "稳定推送流 ID，例如 daily:ai-news",
+                    },
+                    "title": {"type": "string", "description": "消息标题"},
+                    "xml": {
+                        "type": "string",
+                        "description": "要解析推送的 XML/HTML 标签内容",
+                    },
+                    "link": {"type": "string", "description": "可选条目链接"},
+                    "author": {"type": "string", "description": "可选作者"},
+                    "feed_title": {"type": "string", "description": "可选来源标题"},
+                    "entry_guid": {"type": "string", "description": "可选条目 GUID"},
+                    "idempotency_key": {
+                        "type": "string",
+                        "description": "可选显式幂等键",
+                    },
+                    "dry_run": {"type": "boolean", "description": "仅解析预览，不发送"},
+                },
+                "required": ["source_key", "title", "xml"],
+            },
+            handler=rss_push_xml_entry,
+            plugin_context=plugin_context,
         ),
     ]

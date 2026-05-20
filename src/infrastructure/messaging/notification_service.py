@@ -9,7 +9,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...application.ports import MessageSenderProvider
-from ...application.services.notification_dispatcher import NotificationDispatcher
+from ...application.services.notification_dispatcher import (
+    NotificationDispatcher,
+    SendTarget,
+)
 from ...application.services.session_push_queue import SessionPushQueue
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -134,7 +137,12 @@ class NotificationServiceImpl:
                 continue
 
             await self._dispatcher.send_to_session(
-                subscription=sub,
+                target=SendTarget(
+                    user_id=sub.user_id,
+                    platform_name=sub.platform_name,
+                    target_session=sub.target_session,
+                    sub_id=sub.id,
+                ),
                 content=content,
                 media_urls=None,
                 job_description=f"feed-error feed={feed.id}, sub={sub.id}",

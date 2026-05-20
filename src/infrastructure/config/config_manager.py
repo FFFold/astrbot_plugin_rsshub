@@ -12,6 +12,13 @@ from pydantic import BaseModel, Field
 if TYPE_CHECKING:
     from astrbot.api import AstrBotConfig
 
+SENDER_STRATEGY_KEYS: tuple[str, ...] = (
+    "telegram",
+    "aiocqhttp",
+    "qq_official",
+    "weixin_oc",
+)
+
 
 class BasicConfig(BaseModel):
     """基础设施配置（系统级，不继承）"""
@@ -160,30 +167,6 @@ class FFmpegConfig(BaseModel):
         return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
-class PipelineFeatureConfig(BaseModel):
-    """内容处理管线配置"""
-
-    keyword_blacklist: list[str] = Field(
-        default_factory=list, description="关键词黑名单"
-    )
-    keyword_whitelist: list[str] = Field(
-        default_factory=list, description="关键词白名单"
-    )
-    min_content_length: int = Field(default=0, description="最小正文长度")
-    min_media_count: int = Field(default=0, description="最少媒体数量")
-    ai_filter_enabled: bool = Field(default=False, description="启用 AI 筛选")
-    ai_filter_prompt: str = Field(default="", description="AI 筛选提示词")
-    ai_enrich_enabled: bool = Field(default=False, description="启用 AI 增强")
-    ai_enrich_prompt: str = Field(default="", description="AI 增强提示词")
-    ai_timeout_seconds: int = Field(default=15, description="AI 处理超时")
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> PipelineFeatureConfig:
-        if not data:
-            return cls()
-        return cls.model_validate({**cls().model_dump(), **(data or {})})
-
-
 class SenderStrategiesConfig(BaseModel):
     """发送策略配置"""
 
@@ -193,7 +176,76 @@ class SenderStrategiesConfig(BaseModel):
     weixin_oc: bool = Field(default=True, description="微信策略")
 
     @classmethod
+    def from_config(cls, data: Any) -> SenderStrategiesConfig:
+        if data is None:
+            return cls()
+        if isinstance(data, dict):
+            if "enabled_platforms" in data:
+                return cls.from_config(data.get("enabled_platforms"))
+            known_values = {
+                key: value for key, value in data.items() if key in SENDER_STRATEGY_KEYS
+            }
+            return cls.model_validate(
+                {**dict.fromkeys(SENDER_STRATEGY_KEYS, True), **known_values}
+            )
+        if isinstance(data, str):
+            parts = data.replace(",", "\n").splitlines()
+            enabled = {part.strip() for part in parts if part.strip()}
+            return cls.from_enabled_platforms(enabled)
+        if isinstance(data, (list, tuple, set)):
+            enabled = {str(item).strip() for item in data if str(item).strip()}
+            return cls.from_enabled_platforms(enabled)
+        return cls.model_validate({**cls().model_dump(), **(data or {})})
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> SenderStrategiesConfig:
+        return cls.from_config(data)
+
+    @classmethod
+    def from_enabled_platforms(cls, enabled: set[str]) -> SenderStrategiesConfig:
+        enabled = {item for item in enabled if item in SENDER_STRATEGY_KEYS}
+        return cls(**{key: key in enabled for key in SENDER_STRATEGY_KEYS})
+
+    def to_enabled_platforms(self) -> list[str]:
+        return [key for key in SENDER_STRATEGY_KEYS if getattr(self, key)]
+
+    def to_config_dict(self) -> dict[str, list[str]]:
+        return {"enabled_platforms": self.to_enabled_platforms()}
+
+
+class RouteKnowledgeConfig(BaseModel):
+    """RSSHub Routes 知识库同步配置"""
+
+    kb_name: str = Field(default="RSSHub Routes", description="AstrBot 知识库名称")
+    embedding_provider_id: str = Field(
+        default="", description="默认向量模型 Provider ID"
+    )
+    rerank_provider_id: str = Field(
+        default="", description="默认重排序模型 Provider ID"
+    )
+    source_mode: str = Field(default="mirror", description="知识库来源模式")
+    source_base_url: str = Field(
+        default=(
+            "https://raw.githubusercontent.com/"
+            "FlanChanXwO/rsshub-routes-knowledgebase/main"
+        ),
+        description="Routes 知识库文件源 base URL",
+    )
+    fallback_base_url: str = Field(
+        default=(
+            "https://raw.githubusercontent.com/"
+            "FlanChanXwO/rsshub-routes-knowledgebase/main"
+        ),
+        description="auto 模式下的 fallback base URL",
+    )
+    local_source_dir: str = Field(default="", description="local 模式本地目录")
+    timeout: int = Field(default=30, description="同步请求超时（秒）")
+    batch_size: int = Field(default=32, description="KB embedding 批大小")
+    tasks_limit: int = Field(default=3, description="KB embedding 并发任务数")
+    max_retries: int = Field(default=3, description="KB embedding 最大重试次数")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> RouteKnowledgeConfig:
         if not data:
             return cls()
         return cls.model_validate({**cls().model_dump(), **(data or {})})
@@ -208,7 +260,7 @@ class RsshubPluginConfig(BaseModel):
     sender_strategies: SenderStrategiesConfig = Field(
         default_factory=SenderStrategiesConfig
     )
-    pipeline: PipelineFeatureConfig = Field(default_factory=PipelineFeatureConfig)
+    route_knowledge: RouteKnowledgeConfig = Field(default_factory=RouteKnowledgeConfig)
     db_file: str = Field(default="rsshub.db", description="数据库文件名")
 
     @classmethod
@@ -238,21 +290,22 @@ class RsshubPluginConfig(BaseModel):
         basic_cfg = astrbot_config.get("basic_config", {})
         global_cfg = astrbot_config.get("global_config", {})
         ffmpeg_cfg = astrbot_config.get("ffmpeg", {})
-        sender_strategies_cfg = astrbot_config.get("sender_strategies", {})
-        pipeline_cfg = astrbot_config.get("pipeline", {})
+        sender_strategies_cfg = astrbot_config.get("sender_strategies")
+        route_knowledge_cfg = astrbot_config.get("route_knowledge", {})
 
         return cls(
             basic_config=BasicConfig.from_dict(basic_cfg),
             global_config=GlobalConfig.from_dict(global_cfg),
             ffmpeg=FFmpegConfig.from_dict(ffmpeg_cfg),
-            sender_strategies=SenderStrategiesConfig.from_dict(sender_strategies_cfg),
-            pipeline=PipelineFeatureConfig.from_dict(pipeline_cfg),
+            sender_strategies=SenderStrategiesConfig.from_config(sender_strategies_cfg),
+            route_knowledge=RouteKnowledgeConfig.from_dict(route_knowledge_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),
         )
 
     def save(self, astrbot_config: AstrBotConfig) -> None:
         """保存配置到 AstrBotConfig"""
         config_dict = self.model_dump()
+        config_dict["sender_strategies"] = self.sender_strategies.to_config_dict()
         for key, value in config_dict.items():
             if key != "db_file":
                 astrbot_config[key] = value

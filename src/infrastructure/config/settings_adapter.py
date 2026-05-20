@@ -8,7 +8,7 @@ from ...application.settings import (
     ApplicationSettings,
     BasicSettings,
     FeedFetchSettings,
-    PipelineSettings,
+    RouteKnowledgeSettings,
     RSSSettings,
     SchedulerSettings,
     SenderStrategySettings,
@@ -35,6 +35,50 @@ def _as_tuple(value: Any) -> tuple[str, ...]:
     return ()
 
 
+def _normalize_route_knowledge_base_url(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    old = "FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase"
+    new = "FlanChanXwO/rsshub-routes-knowledgebase/main"
+    return raw.replace(old, new)
+
+
+_SENDER_STRATEGY_KEYS: tuple[str, ...] = (
+    "telegram",
+    "aiocqhttp",
+    "qq_official",
+    "weixin_oc",
+)
+
+
+def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict) and "enabled_platforms" in value:
+        return _enabled_sender_strategy_names(value.get("enabled_platforms"))
+    if isinstance(value, str):
+        return set(_as_tuple(value))
+    if isinstance(value, (list, tuple, set)):
+        return set(_as_tuple(value))
+    return None
+
+
+def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
+    enabled = _enabled_sender_strategy_names(value)
+    if enabled is not None:
+        enabled = {item for item in enabled if item in _SENDER_STRATEGY_KEYS}
+        return SenderStrategySettings(
+            **{key: key in enabled for key in _SENDER_STRATEGY_KEYS}
+        )
+    return SenderStrategySettings(
+        telegram=bool(_get_value(value, "telegram", True)),
+        aiocqhttp=bool(_get_value(value, "aiocqhttp", True)),
+        qq_official=bool(_get_value(value, "qq_official", True)),
+        weixin_oc=bool(_get_value(value, "weixin_oc", True)),
+    )
+
+
 def build_application_settings(config: Any) -> ApplicationSettings:
     """Build application settings from an infrastructure config object.
 
@@ -44,8 +88,8 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     """
     basic_cfg = _get_value(config, "basic_config")
     global_cfg = _get_value(config, "global_config")
-    pipeline_cfg = _get_value(config, "pipeline")
     sender_cfg = _get_value(config, "sender_strategies")
+    route_knowledge_cfg = _get_value(config, "route_knowledge")
 
     basic = BasicSettings(
         proxy=str(
@@ -95,24 +139,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
         ),
     )
 
-    pipeline = PipelineSettings(
-        keyword_blacklist=_as_tuple(_get_value(pipeline_cfg, "keyword_blacklist", ())),
-        keyword_whitelist=_as_tuple(_get_value(pipeline_cfg, "keyword_whitelist", ())),
-        min_content_length=max(
-            0, int(_get_value(pipeline_cfg, "min_content_length", 0) or 0)
-        ),
-        min_media_count=max(
-            0, int(_get_value(pipeline_cfg, "min_media_count", 0) or 0)
-        ),
-        ai_filter_enabled=bool(_get_value(pipeline_cfg, "ai_filter_enabled", False)),
-        ai_filter_prompt=str(_get_value(pipeline_cfg, "ai_filter_prompt", "") or ""),
-        ai_enrich_enabled=bool(_get_value(pipeline_cfg, "ai_enrich_enabled", False)),
-        ai_enrich_prompt=str(_get_value(pipeline_cfg, "ai_enrich_prompt", "") or ""),
-        ai_timeout_seconds=max(
-            1, int(_get_value(pipeline_cfg, "ai_timeout_seconds", 15) or 15)
-        ),
-    )
-
     return ApplicationSettings(
         basic=basic,
         fetch=FeedFetchSettings(
@@ -158,11 +184,55 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             style=str(_get_value(global_cfg, "style", "RSStT") or "RSStT"),
             display_media=bool(_get_value(global_cfg, "display_media", True)),
         ),
-        pipeline=pipeline,
-        sender_strategies=SenderStrategySettings(
-            telegram=bool(_get_value(sender_cfg, "telegram", True)),
-            aiocqhttp=bool(_get_value(sender_cfg, "aiocqhttp", True)),
-            qq_official=bool(_get_value(sender_cfg, "qq_official", True)),
-            weixin_oc=bool(_get_value(sender_cfg, "weixin_oc", True)),
+        sender_strategies=_build_sender_strategy_settings(sender_cfg),
+        route_knowledge=RouteKnowledgeSettings(
+            kb_name=str(
+                _get_value(route_knowledge_cfg, "kb_name", "RSSHub Routes")
+                or "RSSHub Routes"
+            ),
+            embedding_provider_id=str(
+                _get_value(route_knowledge_cfg, "embedding_provider_id", "") or ""
+            ),
+            rerank_provider_id=str(
+                _get_value(route_knowledge_cfg, "rerank_provider_id", "") or ""
+            ),
+            source_mode=str(
+                _get_value(route_knowledge_cfg, "source_mode", "mirror") or "mirror"
+            ),
+            source_base_url=str(
+                _normalize_route_knowledge_base_url(
+                    _get_value(
+                        route_knowledge_cfg,
+                        "source_base_url",
+                        RouteKnowledgeSettings.source_base_url,
+                    )
+                    or RouteKnowledgeSettings.source_base_url
+                )
+            ),
+            fallback_base_url=str(
+                _normalize_route_knowledge_base_url(
+                    _get_value(
+                        route_knowledge_cfg,
+                        "fallback_base_url",
+                        RouteKnowledgeSettings.fallback_base_url,
+                    )
+                    or RouteKnowledgeSettings.fallback_base_url
+                )
+            ),
+            local_source_dir=str(
+                _get_value(route_knowledge_cfg, "local_source_dir", "") or ""
+            ),
+            timeout=max(
+                1, int(_get_value(route_knowledge_cfg, "timeout", basic.timeout) or 30)
+            ),
+            batch_size=max(
+                1, int(_get_value(route_knowledge_cfg, "batch_size", 32) or 32)
+            ),
+            tasks_limit=max(
+                1, int(_get_value(route_knowledge_cfg, "tasks_limit", 3) or 3)
+            ),
+            max_retries=max(
+                0, int(_get_value(route_knowledge_cfg, "max_retries", 3) or 3)
+            ),
         ),
     )

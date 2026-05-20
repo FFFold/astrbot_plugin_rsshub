@@ -74,12 +74,11 @@
 - 🎨 **富媒体支持** - 基于 HTML 结构解析内容（链接、图片、音频、视频、文件、At 组件等）
 - ⚙️ **灵活配置** - 订阅级与用户默认级的消息格式选项，会话级默认配置（KV）
 - 🤖 **LLM 工具调用** - 支持 AI 订阅、查询、管理等操作
-- 🌐 **管理面板** - 基于 AstrBot Plugin Pages 的可视化管理界面
+- 🌐 **管理面板** - 基于 AstrBot Plugin Pages 的可视化管理界面，支持订阅、用户、Feed、推送历史、默认订阅设置和 Routes 知识库管理
 - 📦 **数据导入导出** - 支持 TOML 格式备份和恢复订阅数据
 - 🔄 **失败队列** - 平台连接失败时自动进入队列，恢复后重试推送
 - 🤝 **多 BOT 支持** - 单会话多 BOT 去重
-- 🔍 **RSSHub 集成** - 通过 LLM 工具快速构建 RSSHub 订阅链接
-- 🧠 **AI 内容管线** - 支持 Plugin Pages 配置 AI 筛选与 AI 增强
+- 🔍 **RSSHub 集成** - 支持将 RSSHub Routes 文档同步到 AstrBot 知识库辅助路由检索
 
 ---
 
@@ -118,7 +117,7 @@
 
 ## 🛠️ 配置项
 
-> **注意**：AstrBot 配置页仅保留启动级基础设施配置和平台发送策略；订阅默认值与内容管线请前往 AstrBot 面板的 Plugin Pages 管理。
+> **注意**：AstrBot 配置页仅保留启动级基础设施配置、Routes 知识库和平台发送策略；订阅默认值请前往 AstrBot 面板的 Plugin Pages 管理。
 
 在 AstrBot 管理面板的「配置」页面，找到 `RSSHub` 插件配置：
 
@@ -143,6 +142,26 @@
 | `download_media_before_send` | 布尔值 | 先下载媒体后发送，Docker 环境下需共享数据卷 | `false` |
 | `download_media_timeout` | 整数 | 媒体下载超时（秒），m3u8/HLS 建议 60-180 秒 | `30` |
 
+### RSSHub Routes 知识库 (`route_knowledge`)
+
+用于将 RSSHub Routes Markdown 文档同步到 AstrBot 知识库。`/rsshub_kb_init` 可按 `kb_name` 自动创建空知识库，也可复用已有知识库；向量模型和重排序模型留空时使用当前第一个可用 Provider。
+
+AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url` 使用下拉选项，避免手动输入不兼容的 raw 镜像格式；有限范围的超时、并发和批量参数使用滑块。当前内置来源包括 GitHub Raw 和 `ghfast.top` raw 代理格式，知识库文件来自独立仓库 `FlanChanXwO/rsshub-routes-knowledgebase`。
+
+| 配置项 | 类型 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `route_knowledge.kb_name` | 字符串 | 同步目标知识库名称 | `RSSHub Routes` |
+| `route_knowledge.embedding_provider_id` | 字符串 | 自动创建知识库时使用的向量模型 Provider ID；留空使用第一个可用 Embedding Provider | `""` |
+| `route_knowledge.rerank_provider_id` | 字符串 | 自动创建或补齐知识库时使用的重排序模型 Provider ID；留空使用第一个可用 Rerank Provider，无可用 Provider 时关闭重排序 | `""` |
+| `route_knowledge.source_mode` | 下拉 | 同步来源模式：`mirror` 使用主地址，`auto` 失败后尝试备用地址，`github` 使用内置 GitHub Raw，`local` 使用本地目录 | `mirror` |
+| `route_knowledge.source_base_url` | 下拉 | 包含 `metadata.json`、`index/` 和 `docs/` 的 raw 文件根地址 | GitHub Raw |
+| `route_knowledge.fallback_base_url` | 下拉 | `source_mode=auto` 时的备用 raw 文件根地址 | GitHub Raw |
+| `route_knowledge.local_source_dir` | 字符串 | `source_mode=local` 时的本地同步目录 | `""` |
+| `route_knowledge.timeout` | 滑块整数 | 下载 metadata 和 Markdown 文件的超时时间（秒） | `30` |
+| `route_knowledge.batch_size` | 滑块整数 | 传给 AstrBot 知识库上传接口的 batch_size | `32` |
+| `route_knowledge.tasks_limit` | 滑块整数 | 传给 AstrBot 知识库上传接口的并发任务数 | `3` |
+| `route_knowledge.max_retries` | 滑块整数 | 传给 AstrBot 知识库上传接口的重试次数 | `3` |
+
 ### 订阅默认配置（Plugin Pages）
 
 订阅全局默认值不再在 AstrBot 配置页暴露，请在 Plugin Pages 中维护。包括默认监控间隔、通知、发送模式、内容长度、展示策略和媒体展示等。
@@ -155,19 +174,14 @@
 |--------|------|------|--------|
 | `ffmpeg.video_transcode` | 布尔值 | 视频发送前自动转码为兼容 H264/AAC MP4 | `false` |
 | `ffmpeg.video_transcode_timeout` | 整数 | 视频转码超时时间（秒） | `120` |
-| `ffmpeg.gif_transcode` | 布尔值 | 无声视频自动转 GIF | `true` |
+| `ffmpeg.gif_transcode` | 布尔值 | 无声视频自动转 GIF | `false` |
 | `ffmpeg.gif_transcode_timeout` | 整数 | GIF 转码超时时间（秒） | `60` |
 
 ### 发送策略配置 (`sender_strategies`)
 
-| 配置项 | 类型 | 说明 | 默认值 |
-|--------|------|------|--------|
-| `sender_strategies.telegram` | 布尔值 | 启用 Telegram 专用策略（媒体优先、大小限制处理） | `true` |
-| `sender_strategies.aiocqhttp` | 布尔值 | 启用 OneBot 专用策略（合并转发节点） | `true` |
-| `sender_strategies.weixin_oc` | 布尔值 | 启用微信个人号专用策略 | `true` |
+`sender_strategies.enabled_platforms` 现在是平台多选列表，默认启用 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。未选中的平台会回退到默认发送器。
 
-> **命名说明：**
-> - 配置文件中使用 `sender_strategies.<platform>` 形式（点号分隔），例如：`sender_strategies.telegram`、`sender_strategies.aiocqhttp`
+> 兼容说明：旧版 `sender_strategies.telegram = true` 这类布尔对象配置仍可读取；保存后会写回 `sender_strategies.enabled_platforms`，保留 `sender_strategies` 容器以便后续扩展平台专属配置。
 
 ## 📝 使用方法
 
@@ -188,6 +202,10 @@
 | `/deactivate_subs`                     | `/disable_subs`, `/禁用全部订阅` | 禁用当前会话所有订阅 |
 | `/sub_status`                          | `/推送状态`, `/任务状态` | 查看当前会话推送任务（running + queued，含 job_id/feed 信息） |
 | `/sub_stop [job_id/feed_id/all]`       | `/停止RSS`, `/停止推送` | 停止推送任务：不带参数停止当前 running 任务；可按 job_id/feed_id 精确停止；`all` 停止当前会话全部任务 |
+| `/rsshub_kb_init`                      | - | 管理员初始化 RSSHub Routes 知识库 |
+| `/rsshub_kb_sync`                      | - | 管理员启动 RSSHub Routes 知识库同步任务 |
+| `/rsshub_kb_status`                    | - | 查看 RSSHub Routes 知识库状态 |
+| `/rsshub_kb_task`                      | - | 查看最近一次 Routes KB 同步任务进度 |
 
 **布尔值格式支持**：所有命令中的布尔值参数支持以下格式：`true`/`false`, `yes`/`no`, `y`/`n`, `1`/`0`, `on`/`off`, `enable`/`disable`
 
@@ -203,26 +221,24 @@
 
 ### 配置继承架构
 
-v1.1.0 起引入三层配置继承体系：
+订阅设置采用三层配置继承体系：
 
-1. **订阅级配置** (`/sub_profile set sub ...`): 通过 `use_sub_config` 控制
-   - `true`: 使用订阅级设置的独立配置
-   - `false` (默认): 继承用户级配置
+1. **订阅级配置** (`/sub_profile set sub ...`): 字段值为 `-100` 时继承用户级配置，其他值直接作为订阅配置生效
+2. **用户级配置** (`/sub_profile set user ...`): 字段值为 `-100` 时继承全局配置，其他值作为用户默认配置生效
+3. **全局配置**: AstrBot JSON 配置（默认），新用户开箱即用
 
-2. **用户级配置** (`/sub_profile set user ...`): 通过 `use_user_config` 控制
-   - `true`: 使用用户级设置的用户配置
-   - `false` (默认): 继承全局配置
-
-3. **全局配置**: AstrBot JSON 配置（默认）
-   - 新用户开箱即用，无需额外配置
+`rsshub_sub` 与 `rsshub_user` 不再使用 `use_sub_config` / `use_user_config` 开关列；继承完全由具体配置项的 `-100` 值表达。旧翻译字段也已从这两张表中移除。
 
 **示例**：
 ```bash
-# 让订阅使用独立配置
-/sub_profile set sub 1 use_sub_config true
+# 让订阅继承用户/全局发送模式
+/sub_profile set sub 1 send_mode -100
 
-# 让用户使用独立配置
-/sub_profile set user use_user_config true
+# 让用户发送模式继承全局配置
+/sub_profile set user send_mode -100
+
+# 为订阅设置 AI 内容处理提示词
+/sub_profile set sub 1 ai_prompt 请总结为三条要点
 
 # 查看配置来源
 /sub_profile get user  # 查看用户配置
@@ -260,10 +276,10 @@ v1.1.0 起引入三层配置继承体系：
 
 | 选项 | 类型 | 说明 |
 |------|------|------|
-| `use_sub_config` | bool | 是否使用订阅独立配置（默认 false） |
 | `state` | 0/1 | 推送状态：0=禁用, 1=启用 |
 | `notify` | 0/1 | 是否通知 |
 | `send_mode` | -1/0/2 | -1(仅链接)/0(自动)/2(直接消息) |
+| `ai_prompt` | 字符串 | AI 内容处理提示词 |
 | `length_limit` | 正整数 | 0 表示不限制 |
 | `link_preview` | 0/1 | 链接预览 |
 | `display_author` | -1~1 | 显示作者 |
@@ -290,11 +306,20 @@ v1.1.0 起引入三层配置继承体系：
 - `rss_set_user_default_option` - 设置用户默认选项
 - `rss_set_session_default_option` - 设置会话默认选项
 - `rss_get_session_defaults` - 获取会话默认配置
-- `rsshub_build_subscribe_url` - 构建 RSSHub 订阅链接
+- `rss_list_push_history` - 查询当前会话推送历史（JSON）
+- `rss_push_xml_entry` - 解析 XML/HTML 标签内容并推送到当前会话
 
 在 AstrBot 的 LLM 配置中开启工具调用即可使用。
 
 > RSSHub 路由检索后续走 AstrBot 知识库和 route skill；插件不再提供 route 搜索 LLM tool。
+>
+> `rss_push_xml_entry` 是面向 AI agent 的即时推送工具，不使用订阅 `sub_id`，也不读取订阅默认配置。它会：
+> - 对输入 XML 做格式校验，拒绝坏格式、DOCTYPE/ENTITY 和超大输入
+> - 将标签内容解析为正文 + 媒体组件
+> - 使用 `source_key + user_id + target_session + entry_guid` 做成功态幂等去重
+> - 写入推送历史并复用现有失败重试链路
+> - 在媒体发送失败时，把原始媒体链接保留到失败历史和回退文本中
+> - 为 XML 即时推送历史额外保存 `raw_xml` 以便审计和后续排障
 
 ---
 
@@ -319,7 +344,7 @@ src/
 │   ├── messaging/    # 消息发送
 │   ├── persistence/  # 数据持久化
 │   ├── fetcher/      # RSS 拉取与解析
-│   ├── pipeline/     # 内容处理与格式化
+│   ├── pipeline/     # 消息链格式化
 │   ├── schedule/     # 调度服务
 │   ├── utils/        # 工具函数
 └── __init__.py       # 统一导出
@@ -339,6 +364,16 @@ src/
 
 本项目管理界面使用 **AstrBot Plugin Pages**（`pages/dashboard`），通过 AstrBot 面板访问。
 后端接口由 `WebApiHandler` 注册到 `/{plugin_name}/...` 路径下（当前为 `/astrbot_plugin_rsshub/...`）。
+
+管理页包含已有订阅管理、用户/Feed 列表、推送历史、默认订阅设置和 RSSHub Routes 知识库同步。WebUI 不创建新订阅，也不提供订阅导入/导出入口；新增、导入和导出订阅请使用聊天命令或 AI agent。用户状态仅保留「用户」和「已封禁」两种；窄屏下订阅表格会切换为卡片式布局，推送历史筛选、分页和知识库状态区域会自动换行，避免按钮或长文本重叠。
+订阅列表采用前端分页，分页控件放在列表上方；页面滚动被限制在列表/配置容器内部，避免切换标签页时整页布局抖动。默认订阅设置统一使用底部保存按钮，不再使用遮挡表单的悬浮按钮。
+
+## 🧩 解析与推送兼容性
+
+- RSS 解析优先读取 `content` 结构化正文，并兼容 `content:encoded` / `content_encoded` 字段，适配 Juya AI Daily 等完整正文位于 `content:encoded` 的源。
+- HTML `<video>`、`<audio>` 会作为结构化媒体传入发送器，正文中不会残留 `[视频]` / `[音频]` 占位；RSSHub 常见的 `?url=<encoded media>` 包装链接也会参与媒体类型推断。
+- OneBot / NapCat 合并转发若因本地媒体文件失败而降级为纯文本，回退文本会附带本次消息的全部原始媒体链接；失败记录写入推送历史后，WebUI 和失败重试也能继续看到这些链接。
+- 推送历史中的失败原因会按 512 字符上限统一截断；旧数据库里遗留的超长失败原因也会在读取时自动清洗，避免 `/push-history` 接口和定时重试任务因脏数据崩溃。
 
 ---
 

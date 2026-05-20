@@ -4,11 +4,21 @@
 处理更新订阅配置选项的业务用例。
 """
 
+from ...domain.entities.handlers import parse_handlers_input
+from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 
-REMOVED_TRANSLATION_OPTIONS = {"translate", "translate_target_lang"}
+REMOVED_OPTIONS = {"translate", "translate_target_lang", "use_sub_config", "ai_prompt"}
+STRING_OPTIONS = {
+    "title",
+    "tags",
+    "target_session",
+    "platform_name",
+    "handlers_mode",
+}
+JSON_OPTIONS = {"handlers"}
 
 
 class UpdateSubscriptionCommand:
@@ -38,18 +48,35 @@ class UpdateSubscriptionCommand:
         Returns:
             CommandResult: 命令执行结果
         """
-        removed = sorted(REMOVED_TRANSLATION_OPTIONS.intersection(options))
+        removed = sorted(REMOVED_OPTIONS.intersection(options))
         if removed:
             return CommandResult(
                 success=False,
-                message=(
-                    "订阅翻译选项已移除，请使用 AI 内容管线或扩展处理翻译: "
-                    + ", ".join(removed)
-                ),
+                message=("订阅翻译选项已移除: " + ", ".join(removed)),
             )
+        normalized_options = {}
+        for key, value in options.items():
+            if key in STRING_OPTIONS:
+                normalized_value = str(value or "").strip()
+                if key == "handlers_mode":
+                    normalized_value = normalized_value.lower()
+                    if normalized_value not in SUPPORTED_HANDLERS_MODES:
+                        return CommandResult(
+                            success=False,
+                            message="handlers_mode 只支持 inherit / override / disabled",
+                        )
+                normalized_options[key] = normalized_value
+                continue
+            if key in JSON_OPTIONS:
+                try:
+                    normalized_options[key] = parse_handlers_input(value)
+                except ValueError as exc:
+                    return CommandResult(success=False, message=str(exc))
+                continue
+            normalized_options[key] = value
 
         subscription = await self._subscription_repo.update_options(
-            sub_id, user_id, **options
+            sub_id, user_id, **normalized_options
         )
         if not subscription:
             return CommandResult(

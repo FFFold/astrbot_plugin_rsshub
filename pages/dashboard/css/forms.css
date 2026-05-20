@@ -181,29 +181,46 @@
   width: 100%;
 }
 
+input[type="text"],
+input[type="number"],
+select,
+textarea,
 .form-group input[type="text"],
 .form-group input[type="number"],
 .command-item-row select {
   width: 100%;
   padding: 14px 16px;
-  border: none;
-  border-bottom: 2px solid #e2e8f0;
-  border-radius: 4px 4px 0 0;
+  border: 1px solid #d5e0ec;
+  border-radius: 8px;
   font-size: 14px;
   transition: all 0.2s;
-  background: #f8fafc;
+  background: white;
   color: #1b1c1d;
-  height: 48px;
+  min-height: 40px;
+  appearance: none;
 }
 
+textarea {
+  min-height: 96px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus,
 .form-group input[type="text"]:focus,
 .form-group input[type="number"]:focus,
 .command-item-row select:focus {
   outline: none;
-  background: #eef2f6;
-  border-bottom-color: #3c96ca;
+  background: #fbfdff;
+  border-color: #3c96ca;
+  box-shadow: 0 0 0 3px rgba(60, 150, 202, 0.12);
 }
 
+input::placeholder,
+textarea::placeholder,
 .form-group input::placeholder {
   color: #94a3b8;
 }
@@ -213,6 +230,26 @@
   font-size: 12px;
   color: #94a3b8;
   margin-top: 8px;
+}
+
+.handler-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .required {
@@ -506,12 +543,16 @@
   border-top: 1px solid #e2e8f0;
   gap: 16px;
   position: relative;
+  flex-wrap: wrap;
 }
 
 .center-actions {
   display: flex;
   gap: 12px;
   margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 /* 删除按钮 - 紧贴容器右上角 */
