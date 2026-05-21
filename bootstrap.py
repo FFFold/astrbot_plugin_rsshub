@@ -42,7 +42,6 @@ from .src.application.services.route_knowledge_service import (
     RouteKnowledgeSyncService,
 )
 from .src.application.services.session_push_queue import SessionPushQueue
-from .src.application.settings import ApplicationSettings
 from .src.domain.repositories.feed_repository import FeedRepository
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
 from .src.infrastructure.config import RsshubPluginConfig, set_config
@@ -68,6 +67,7 @@ from .src.infrastructure.utils import (
     get_plugin_data_dir,
 )
 from .src.interfaces import WebApiHandler
+from .src.shared.settings import ApplicationSettings
 
 logger = get_logger()
 

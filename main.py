@@ -29,11 +29,11 @@ from .src.application.services.route_knowledge_service import (
     should_inject_route_knowledge_prompt,
 )
 from .src.application.services.session_push_queue import SessionPushQueue
-from .src.application.settings import ApplicationSettings
 from .src.infrastructure.schedule import RSSScheduler
 from .src.infrastructure.utils import get_logger
 from .src.interfaces import WebApiHandler
 from .src.interfaces import handlers as _h
+from .src.shared.settings import ApplicationSettings
 
 logger = get_logger()
 _HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
