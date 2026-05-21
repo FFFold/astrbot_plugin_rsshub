@@ -34,7 +34,7 @@ class User(BaseModel):
     notify: int = Field(default=INHERIT_VALUE, description="是否通知: 0=禁用, 1=启用")
     send_mode: int = Field(
         default=INHERIT_VALUE,
-        description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息",
+        description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
     )
     handler_specs: Any = Field(
         default_factory=list,
@@ -42,9 +42,6 @@ class User(BaseModel):
         description="内容处理 handlers",
     )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
-    link_preview: int = Field(
-        default=INHERIT_VALUE, description="链接预览: 0=自动, 1=强制启用"
-    )
     display_author: int = Field(
         default=INHERIT_VALUE, description="显示作者: -1=禁用, 0=自动, 1=强制"
     )

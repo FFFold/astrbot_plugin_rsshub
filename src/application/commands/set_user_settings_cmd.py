@@ -17,9 +17,8 @@ VALID_SETTINGS = {
     "state": (-1, 1),
     "interval": (1, 60),  # 分钟
     "notify": (0, 1),
-    "send_mode": (-1, 2),  # -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息
+    "send_mode": (-1, 1),  # -1=仅链接, 0=自动, 1=直接发送
     "length_limit": (0, 10000),
-    "link_preview": (0, 1),
     "display_author": (-1, 1),
     "display_via": (-2, 1),
     "display_title": (-1, 1),

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -18,6 +18,33 @@ SENDER_STRATEGY_KEYS: tuple[str, ...] = (
     "qq_official",
     "weixin_oc",
 )
+
+
+class PlatformSenderStrategyConfig(BaseModel):
+    """平台专属 sender 策略。"""
+
+    enable_telegraph: bool = Field(default=False, description="启用 Telegraph 自动分流")
+    telegraph_token: str = Field(default="", description="Telegraph access token")
+    prefer_local_video: bool = Field(
+        default=False, description="是否优先使用本地视频文件"
+    )
+
+    @classmethod
+    def from_dict(cls, data: Any) -> PlatformSenderStrategyConfig:
+        if not data:
+            return cls()
+        if isinstance(data, list):
+            data = next((item for item in data if isinstance(item, dict)), None)
+        if not isinstance(data, dict):
+            return cls()
+        clean_data = {k: v for k, v in data.items() if k != "__template_key"}
+        return cls.model_validate({**cls().model_dump(), **clean_data})
+
+    def to_template_list(self, template_key: str) -> list[dict[str, Any]]:
+        data = self.model_dump()
+        if data == type(self)().model_dump():
+            return []
+        return [{"__template_key": template_key, **data}]
 
 
 class BasicConfig(BaseModel):
@@ -73,7 +100,6 @@ class GlobalConfig(BaseModel):
     notify: bool = Field(default=True, description="是否通知")
     send_mode: str = Field(default="自动", description="发送模式")
     length_limit: int = Field(default=0, description="长度限制")
-    link_preview: str = Field(default="自动", description="链接预览")
     display_author: str = Field(default="自动", description="显示作者")
     display_via: str = Field(default="自动", description="显示来源")
     display_title: str = Field(default="自动", description="显示标题")
@@ -81,29 +107,39 @@ class GlobalConfig(BaseModel):
     style: str = Field(default="RSStT", description="样式")
     display_media: bool = Field(default=True, description="显示媒体")
 
-    _SEND_MODE_MAP: dict[str, int] = {"仅链接": -1, "自动": 0, "直接消息": 2}
-    _LINK_PREVIEW_MAP: dict[str, int] = {"自动": 0, "强制启用": 1}
-    _DISPLAY_AUTHOR_MAP: dict[str, int] = {"禁用": -1, "自动": 0, "强制": 1}
-    _DISPLAY_VIA_MAP: dict[str, int] = {
+    _SEND_MODE_MAP: ClassVar[dict[str, int]] = {"仅链接": -1, "自动": 0, "直接发送": 1}
+    _DISPLAY_AUTHOR_MAP: ClassVar[dict[str, int]] = {"禁用": -1, "自动": 0, "强制": 1}
+    _DISPLAY_VIA_MAP: ClassVar[dict[str, int]] = {
         "完全禁用": -2,
         "仅链接": -1,
         "自动": 0,
         "强制": 1,
     }
-    _DISPLAY_TITLE_MAP: dict[str, int] = {"禁用": -1, "自动": 0, "强制": 1}
-    _STYLE_MAP: dict[str, int] = {"RSStT": 0, "flowerss": 1}
+    _DISPLAY_TITLE_MAP: ClassVar[dict[str, int]] = {
+        "禁用": -1,
+        "自动": 0,
+        "强制": 1,
+    }
+    _STYLE_MAP: ClassVar[dict[str, int]] = {"RSStT": 0, "flowerss": 1}
 
-    _SEND_MODE_RMAP: dict[int, str] = {-1: "仅链接", 0: "自动", 2: "直接消息"}
-    _LINK_PREVIEW_RMAP: dict[int, str] = {0: "自动", 1: "强制启用"}
-    _DISPLAY_AUTHOR_RMAP: dict[int, str] = {-1: "禁用", 0: "自动", 1: "强制"}
-    _DISPLAY_VIA_RMAP: dict[int, str] = {
+    _SEND_MODE_RMAP: ClassVar[dict[int, str]] = {-1: "仅链接", 0: "自动", 1: "直接发送"}
+    _DISPLAY_AUTHOR_RMAP: ClassVar[dict[int, str]] = {
+        -1: "禁用",
+        0: "自动",
+        1: "强制",
+    }
+    _DISPLAY_VIA_RMAP: ClassVar[dict[int, str]] = {
         -2: "完全禁用",
         -1: "仅链接",
         0: "自动",
         1: "强制",
     }
-    _DISPLAY_TITLE_RMAP: dict[int, str] = {-1: "禁用", 0: "自动", 1: "强制"}
-    _STYLE_RMAP: dict[int, str] = {0: "RSStT", 1: "flowerss"}
+    _DISPLAY_TITLE_RMAP: ClassVar[dict[int, str]] = {
+        -1: "禁用",
+        0: "自动",
+        1: "强制",
+    }
+    _STYLE_RMAP: ClassVar[dict[int, str]] = {0: "RSStT", 1: "flowerss"}
 
     def to_db_values(self) -> dict[str, Any]:
         """转换为数据库存储的整数值"""
@@ -112,7 +148,6 @@ class GlobalConfig(BaseModel):
             "notify": 1 if self.notify else 0,
             "send_mode": self._SEND_MODE_MAP.get(self.send_mode, 0),
             "length_limit": self.length_limit,
-            "link_preview": self._LINK_PREVIEW_MAP.get(self.link_preview, 0),
             "display_author": self._DISPLAY_AUTHOR_MAP.get(self.display_author, 0),
             "display_via": self._DISPLAY_VIA_MAP.get(self.display_via, 0),
             "display_title": self._DISPLAY_TITLE_MAP.get(self.display_title, 0),
@@ -122,16 +157,28 @@ class GlobalConfig(BaseModel):
         }
 
     @classmethod
+    def normalize_send_mode_value(cls, value: Any) -> int:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return 0
+        if normalized == 2:
+            return 1
+        if normalized == 1:
+            return 0
+        if normalized in {-1, 0}:
+            return normalized
+        return 0
+
+    @classmethod
     def from_db_values(cls, values: dict[str, Any]) -> GlobalConfig:
         """从数据库整数值创建配置"""
+        send_mode_value = cls.normalize_send_mode_value(values.get("send_mode", 0))
         return cls(
             interval=values.get("interval", 10),
             notify=values.get("notify", 1) == 1,
-            send_mode=cls._SEND_MODE_RMAP.get(values.get("send_mode", 0), "自动"),
+            send_mode=cls._SEND_MODE_RMAP.get(send_mode_value, "自动"),
             length_limit=values.get("length_limit", 0),
-            link_preview=cls._LINK_PREVIEW_RMAP.get(
-                values.get("link_preview", 0), "自动"
-            ),
             display_author=cls._DISPLAY_AUTHOR_RMAP.get(
                 values.get("display_author", 0), "自动"
             ),
@@ -174,19 +221,40 @@ class SenderStrategiesConfig(BaseModel):
     aiocqhttp: bool = Field(default=True, description="QQ策略")
     qq_official: bool = Field(default=True, description="QQ官方策略")
     weixin_oc: bool = Field(default=True, description="微信策略")
+    telegram_settings: PlatformSenderStrategyConfig = Field(
+        default_factory=PlatformSenderStrategyConfig, alias="telegram_config"
+    )
+    aiocqhttp_settings: PlatformSenderStrategyConfig = Field(
+        default_factory=PlatformSenderStrategyConfig, alias="aiocqhttp_config"
+    )
 
     @classmethod
     def from_config(cls, data: Any) -> SenderStrategiesConfig:
         if data is None:
             return cls()
         if isinstance(data, dict):
+            known_values = dict.fromkeys(SENDER_STRATEGY_KEYS, True)
             if "enabled_platforms" in data:
-                return cls.from_config(data.get("enabled_platforms"))
-            known_values = {
-                key: value for key, value in data.items() if key in SENDER_STRATEGY_KEYS
-            }
+                enabled = _enabled_from_sender_config(data) or set()
+                known_values.update({key: key in enabled for key in SENDER_STRATEGY_KEYS})
+            else:
+                known_values.update(
+                    {
+                        key: bool(value)
+                        for key, value in data.items()
+                        if key in SENDER_STRATEGY_KEYS and isinstance(value, bool)
+                    }
+                )
             return cls.model_validate(
-                {**dict.fromkeys(SENDER_STRATEGY_KEYS, True), **known_values}
+                {
+                    **known_values,
+                    "telegram_config": PlatformSenderStrategyConfig.from_dict(
+                        data.get("telegram") or data.get("telegram_config")
+                    ),
+                    "aiocqhttp_config": PlatformSenderStrategyConfig.from_dict(
+                        data.get("aiocqhttp") or data.get("aiocqhttp_config")
+                    ),
+                }
             )
         if isinstance(data, str):
             parts = data.replace(",", "\n").splitlines()
@@ -209,8 +277,29 @@ class SenderStrategiesConfig(BaseModel):
     def to_enabled_platforms(self) -> list[str]:
         return [key for key in SENDER_STRATEGY_KEYS if getattr(self, key)]
 
-    def to_config_dict(self) -> dict[str, list[str]]:
-        return {"enabled_platforms": self.to_enabled_platforms()}
+    def to_config_dict(self) -> dict[str, Any]:
+        return {
+            "enabled_platforms": self.to_enabled_platforms(),
+            "telegram": self.telegram_settings.to_template_list("telegram_strategy"),
+            "aiocqhttp": self.aiocqhttp_settings.to_template_list("onebot_strategy"),
+        }
+
+
+def _enabled_from_sender_config(data: dict[str, Any]) -> set[str] | None:
+    if "enabled_platforms" in data:
+        raw = data.get("enabled_platforms")
+        if isinstance(raw, str):
+            return {part.strip() for part in raw.replace(",", "\n").splitlines() if part.strip()}
+        if isinstance(raw, (list, tuple, set)):
+            return {str(item).strip() for item in raw if str(item).strip()}
+        return set()
+
+    bool_keys = {
+        key for key in SENDER_STRATEGY_KEYS if isinstance(data.get(key), bool)
+    }
+    if bool_keys:
+        return {key for key in bool_keys if bool(data.get(key))}
+    return None
 
 
 class RouteKnowledgeConfig(BaseModel):

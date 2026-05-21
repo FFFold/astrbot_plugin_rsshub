@@ -27,7 +27,6 @@ INHERIT_VALUE = -100
 EFFECTIVE_OPTION_KEYS = (
     "send_mode",
     "length_limit",
-    "link_preview",
     "display_author",
     "display_via",
     "display_title",
@@ -54,13 +53,10 @@ class UserORM(RSSHubBaseModel, table=True):
     notify: int = Field(default=INHERIT_VALUE, description="是否通知: 0=禁用, 1=启用")
     send_mode: int = Field(
         default=INHERIT_VALUE,
-        description="发送模式: -1=仅链接, 0=自动, 1=Telegraph, 2=直接消息",
+        description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
     )
     handlers: str = Field(default="[]", description="内容处理 handlers JSON")
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
-    link_preview: int = Field(
-        default=INHERIT_VALUE, description="链接预览: 0=自动, 1=强制启用"
-    )
     display_author: int = Field(
         default=INHERIT_VALUE, description="显示作者: -1=禁用, 0=自动, 1=强制"
     )
@@ -147,9 +143,11 @@ class SubORM(RSSHubBaseModel, table=True):
     interval: int = Field(default=INHERIT_VALUE, description="监控间隔(分钟)")
     next_check_time: datetime | None = Field(default=None, description="下次检查时间")
     notify: int = Field(default=INHERIT_VALUE, description="是否通知")
-    send_mode: int = Field(default=INHERIT_VALUE, description="发送模式")
+    send_mode: int = Field(
+        default=INHERIT_VALUE,
+        description="发送模式: -100=继承, -1=仅链接, 0=自动, 1=直接发送",
+    )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
-    link_preview: int = Field(default=INHERIT_VALUE, description="链接预览")
     display_author: int = Field(default=INHERIT_VALUE, description="显示作者")
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
     display_title: int = Field(default=INHERIT_VALUE, description="显示标题")
@@ -197,6 +195,9 @@ class PushHistoryORM(RSSHubBaseModel, table=True):
     media_urls: list[str] | None = Field(
         default=None, sa_column=Column(JSON), description="媒体URL列表"
     )
+    handler_trace: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSON), description="handler 执行摘要"
+    )
 
     entry_title: str = Field(default="", max_length=1024, description="条目标题")
     entry_link: str = Field(default="", max_length=4096, description="条目链接")
@@ -213,7 +214,9 @@ class PushHistoryORM(RSSHubBaseModel, table=True):
     )
 
     status: str | None = Field(
-        default=None, max_length=16, description="状态: pending/success/failed/stopped"
+        default=None,
+        max_length=16,
+        description="状态: pending/success/failed/stopped/skipped",
     )
     retry_count: int = Field(default=0, description="重试次数")
     max_retries: int = Field(default=3, description="最大重试次数")

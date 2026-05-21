@@ -12,7 +12,6 @@ SESSION_DEFAULT_KEYS = {
     "notify",
     "send_mode",
     "length_limit",
-    "link_preview",
     "display_author",
     "display_via",
     "display_title",

@@ -23,7 +23,6 @@ SUBSCRIPTION_EXPORT_INT_FIELDS = {
     "notify",
     "send_mode",
     "length_limit",
-    "link_preview",
     "display_author",
     "display_via",
     "display_title",
