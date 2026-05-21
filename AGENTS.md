@@ -51,12 +51,14 @@ Behavior invariants:
 - Push tail formatting should include legacy `via <link> | <feed> (author: ...)` style.
 - Only append all original media URLs when a send failure falls back to text or when recording failure-facing history; successful push content should stay free of extra raw media-link suffixes.
 - `PushHistory.fail_reason` and sender exception detail must stay within the 512-character model/database limit; repository reads must tolerate and truncate legacy overlong values.
+- `send_mode` runtime semantics are `-1=仅链接`、`0=自动`、`1=直接发送`；legacy `1=Telegraph` must normalize to `0` and legacy `2=直接消息` must normalize to `1`.
+- Telegraph is a sender-level auto-routing strategy, not an explicit send mode; it only applies when the active platform sender enables it and normalized deduplicated media count is greater than 1.
 
 ## Subscription profile invariants
 
 - `rsshub_sub` and `rsshub_user` do not use `use_sub_config` / `use_user_config`; do not reintroduce those columns or API fields.
 - `-100` is the sole inheritance marker for subscription/user profile options. Subscription options inherit from user profile; user profile options inherit from global defaults.
-- `rsshub_sub.ai_prompt` and `rsshub_user.ai_prompt` store optional AI content-processing prompts; import/export and Web API should preserve them.
+- `rsshub_sub.handlers` and `rsshub_user.handlers` store JSON handler chains. Do not reintroduce `ai_prompt`; legacy non-empty prompts migrate to `builtin.ai_transform`.
 - Legacy translation columns (`translate`, `translate_target_lang`) must stay removed from `rsshub_sub` and `rsshub_user`.
 
 ## Do-not-regress rules
@@ -68,10 +70,13 @@ Behavior invariants:
 - Local debugging from this plugin directory must not create/use `<plugin>/data` for runtime state; use `get_plugin_data_dir()`, `get_plugin_cache_dir()`, or `get_plugin_export_dir()`.
 - `_conf_schema.json` only exposes startup-level config, Routes KB provider/source settings, credentials, and platform strategies; subscription defaults belong in Plugin Pages.
 - Fixed-choice `_conf_schema.json` fields should use `options`; bounded numeric fields should use `slider` instead of free-form numbers.
-- `sender_strategies.enabled_platforms` is a list-style platform multi-select in `_conf_schema.json`; keep the `sender_strategies` object container available for future platform-specific settings and keep runtime compatibility for old bool-map configs in infrastructure adapters.
+- `sender_strategies.enabled_platforms` is a list-style platform multi-select in `_conf_schema.json`; `sender_strategies.aiocqhttp` / `sender_strategies.telegram` are `template_list` platform strategy entries, and runtime currently reads only the first item for each platform. Keep runtime compatibility for old bool-map and object configs in infrastructure adapters.
 - Plugin Pages may manage existing subscriptions, users, push history, subscription defaults, and Routes KB tasks, but must not provide new subscription creation or subscription TOML import/export entry points. Use chat commands or AI agent tools for those user-owned flows.
+- Plugin Pages handler editors are schema-driven and shared between user/subscription forms; they should read `handlers/schema` when available, keep a frontend fallback, and preserve raw JSON editing for unknown extension handlers.
+- Plugin Pages must not expose `link_preview` controls or state.
 - Do not add or use a `webadmin` fallback user. Web API endpoints that mutate or export user-owned resources must receive an explicit real `user_id`.
-- Do not restore built-in content-processing, translation, AI filter, or AI enrich pipeline settings; future content processing belongs in extension paths.
+- Do not restore legacy content-processing, translation, AI enrich pipeline settings, or `_conf_schema.json` content pipeline toggles. Current content processing belongs to the handlers chain.
+- Formatter responsibilities are formatting parsed entries/media for senders only; do not put translation, enrichment, route lookup, or subscription command fallback behavior into formatter code. AI filtering belongs in `ContentHandlerRuntime`.
 - Keep `src/application/settings.py` as application dataclasses only; AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
 
 ## Dev and test commands
@@ -116,6 +121,11 @@ Recently completed regression fixes include:
   - `FeedPollingService` dispatches parsed/deduplicated entries without `ContentProcessingService`.
   - Plugin Pages exposes existing subscription management, user management, subscription defaults, refresh/test actions, push history, stats, and Routes KB entry points; it does not expose content pipeline settings or subscription import/export.
   - Traditional translation pipeline, translation cache model/UI/API, AI filter/enrich settings, RSSHub route stub LLM tools, and legacy `ContentFilterService` are removed. Future translation/summarization work belongs in AstrBot LLM or extension paths.
+- Plugin Pages handler editing is schema-driven:
+  - User and subscription editors share the same handler list editing model.
+  - UI supports enable/disable, ordering, add built-in handler, delete, schema fields, and raw JSON advanced mode.
+  - Frontend calls `/handlers/schema` when available and falls back to built-in XML/AI handler schema.
+  - `link_preview` controls were removed from Plugin Pages.
 - Simplified plugin user states to `用户` and `已封禁`; legacy non-negative states are treated as normal users and no plugin-owned admin/guest role should be reintroduced.
 - Removed Plugin Pages `webadmin` fallback behavior; user-owned Web API writes now require explicit `user_id` and front-end actions pass the existing subscription owner.
 - `sender_strategies.enabled_platforms` is rendered as a compact platform multi-select and saves inside the `sender_strategies` object while still reading legacy bool-map configs.
@@ -131,10 +141,10 @@ Recently completed regression fixes include:
   - OneBot merged-forward fallback text includes all original media URLs when media send fails
   - push history failure reasons and sender exception details are truncated to 512 chars, and repository reads truncate legacy dirty values before entity construction
 - Rebuilt subscription/user profile schema:
-  - `rsshub_sub` and `rsshub_user` now include `ai_prompt`
+  - `rsshub_sub` and `rsshub_user` now include `handlers`
   - legacy `use_sub_config`, `use_user_config`, `translate`, and `translate_target_lang` columns are removed by migration/self-heal
   - profile inheritance is represented only by `-100`; user profile options default to `-100` to inherit global defaults
-  - TOML import/export and Plugin Pages preserve editable `ai_prompt`
+  - TOML import/export and Plugin Pages preserve editable handler chains
 - Added agent XML instant-push path:
   - `rss_push_xml_entry` validates XML/HTML payloads, rejects malformed / oversized / DOCTYPE input, and parses tags into message content + media
   - agent pushes are tracked in `push_history` with `source_type=agent` and `source_key`, without exposing or depending on `sub_id`

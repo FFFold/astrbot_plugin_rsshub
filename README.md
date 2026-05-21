@@ -74,7 +74,7 @@
 - 🎨 **富媒体支持** - 基于 HTML 结构解析内容（链接、图片、音频、视频、文件、At 组件等）
 - ⚙️ **灵活配置** - 订阅级与用户默认级的消息格式选项，会话级默认配置（KV）
 - 🤖 **LLM 工具调用** - 支持 AI 订阅、查询、管理等操作
-- 🌐 **管理面板** - 基于 AstrBot Plugin Pages 的可视化管理界面，支持订阅、用户、Feed、推送历史、默认订阅设置和 Routes 知识库管理
+- 🌐 **管理面板** - 基于 AstrBot Plugin Pages 的可视化管理界面，支持订阅、用户、Feed、推送历史、默认订阅设置、schema-driven handler 编辑和 Routes 知识库管理
 - 📦 **数据导入导出** - 支持 TOML 格式备份和恢复订阅数据
 - 🔄 **失败队列** - 平台连接失败时自动进入队列，恢复后重试推送
 - 🤝 **多 BOT 支持** - 单会话多 BOT 去重
@@ -164,9 +164,15 @@ AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url`
 
 ### 订阅默认配置（Plugin Pages）
 
-订阅全局默认值不再在 AstrBot 配置页暴露，请在 Plugin Pages 中维护。包括默认监控间隔、通知、发送模式、内容长度、展示策略和媒体展示等。
+订阅全局默认值不再在 AstrBot 配置页暴露，请在 Plugin Pages 中维护。包括默认监控间隔、通知、发送模式、内容长度、展示策略和媒体展示等。链接预览 `link_preview` 已从 Plugin Pages 控件中移除，不再作为可视化配置项维护。
 
 > 旧配置中的 `global_config` 仍可被运行时读取，避免升级后丢失已有设置。
+
+### 内容处理与 handler
+
+旧版内置翻译、AI enrich 管道已移除；formatter 只负责把已解析条目格式化为平台消息，不再承载内容筛选、翻译或改写职责。当前内容处理通过 handlers 链执行，内置 `xml_parse`、`ai_filter`、`ai_transform` 可分别用于 XML/HTML 清洗、AI 过滤和 AI 改写；外部扩展 handler 先保留为可保存/展示的数据位。
+
+Plugin Pages 的用户/订阅处理链编辑器会优先读取 Web API `handlers/schema`，并在接口尚不可用时使用内置 fallback。当前编辑器支持启停、排序、添加内置 handler、删除、schema 字段编辑和原始 JSON 高级模式，字段类型覆盖 `string`、`text`、`bool`、`int`、`float`、`select`、`list[string]`、`json`。
 
 ### FFmpeg 配置 (`ffmpeg`)
 
@@ -181,7 +187,17 @@ AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url`
 
 `sender_strategies.enabled_platforms` 现在是平台多选列表，默认启用 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。未选中的平台会回退到默认发送器。
 
-> 兼容说明：旧版 `sender_strategies.telegram = true` 这类布尔对象配置仍可读取；保存后会写回 `sender_strategies.enabled_platforms`，保留 `sender_strategies` 容器以便后续扩展平台专属配置。
+> 兼容说明：旧版 `sender_strategies.telegram = true` 这类布尔对象配置仍可读取；保存后会写回 `sender_strategies.enabled_platforms`。`sender_strategies.telegram` / `sender_strategies.aiocqhttp` 使用 `template_list` 按需添加平台策略，当前每个平台只读取第一条模板。
+
+平台专属 sender 策略模板目前用于 `telegram` 和 `aiocqhttp`：
+
+| 配置项 | 类型 | 说明 |
+|--------|------|------|
+| `enable_telegraph` | 布尔值 | 启用 Telegraph 自动分流 |
+| `telegraph_token` | 字符串 | Telegraph access token；启用自动分流时必填 |
+| `prefer_local_video` | 布尔值 | OneBot 视频是否优先本地文件；默认关闭，优先远程 URL |
+
+Telegraph 不是显式 `send_mode`。它只会在 sender 自动策略里触发：当前为自动发送、平台已启用 Telegraph、token 有效，且去重后的媒体条目数大于 1。
 
 ## 📝 使用方法
 
@@ -237,8 +253,8 @@ AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url`
 # 让用户发送模式继承全局配置
 /sub_profile set user send_mode -100
 
-# 为订阅设置 AI 内容处理提示词
-/sub_profile set sub 1 ai_prompt 请总结为三条要点
+# 为订阅设置 AI 过滤 handler
+/sub_profile set sub 1 handlers '[{"id":"builtin.ai_filter.default","type":"builtin","name":"ai_filter","status":1,"config":{"prompt":"过滤广告和抽奖内容","input_scope":"both","reason_max_length":120}}]'
 
 # 查看配置来源
 /sub_profile get user  # 查看用户配置
@@ -278,10 +294,9 @@ AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url`
 |------|------|------|
 | `state` | 0/1 | 推送状态：0=禁用, 1=启用 |
 | `notify` | 0/1 | 是否通知 |
-| `send_mode` | -1/0/2 | -1(仅链接)/0(自动)/2(直接消息) |
-| `ai_prompt` | 字符串 | AI 内容处理提示词 |
+| `send_mode` | -1/0/1 | -1(仅链接)/0(自动)/1(直接发送) |
+| `handlers` | JSON 数组 | 内容处理链，支持 `xml_parse` / `ai_filter` / `ai_transform` |
 | `length_limit` | 正整数 | 0 表示不限制 |
-| `link_preview` | 0/1 | 链接预览 |
 | `display_author` | -1~1 | 显示作者 |
 | `display_via` | -2~-1/0/1 | 显示来源 |
 | `display_title` | -1~1 | 显示标题 |
@@ -312,6 +327,8 @@ AstrBot 配置页中，`source_mode`、`source_base_url` 和 `fallback_base_url`
 在 AstrBot 的 LLM 配置中开启工具调用即可使用。
 
 > RSSHub 路由检索后续走 AstrBot 知识库和 route skill；插件不再提供 route 搜索 LLM tool。
+>
+> 命令仍是新增订阅、导入导出等用户归属流程的兜底入口；Plugin Pages 不提供新增订阅或 TOML 导入导出入口。
 >
 > `rss_push_xml_entry` 是面向 AI agent 的即时推送工具，不使用订阅 `sub_id`，也不读取订阅默认配置。它会：
 > - 对输入 XML 做格式校验，拒绝坏格式、DOCTYPE/ENTITY 和超大输入

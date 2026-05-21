@@ -9,12 +9,14 @@
 - 移除传统翻译管道、翻译提供商、翻译缓存仓库/API/UI，以及内置内容处理/AI 筛选增强管道；后续翻译、总结和改写交由 AstrBot LLM 能力或扩展特性完成。
 - 移除 `rsshub_search_routes` 和 `rsshub_get_route_schema` LLM tool；RSSHub 路由检索后续走 AstrBot 知识库和 route skill。
 - 移除只包裹 `Feed` 去重方法的旧 `ContentFilterService`，避免与当前 `FeedPollingService` 去重路径重复。
+- 移除 Plugin Pages 中的 `link_preview` 控件和前端状态；链接预览不再作为 WebUI 可视化配置项维护。
 
 ### Changed
 
 - 将 LLM 工具注册模块从 `src/application/commands/llmtools.py` 调整为 `src/application/llmtools.py`，避免把非命令模块放在命令包下。
 - 拆分配置职责：`src/application/settings.py` 仅保留应用层 settings dataclass，AstrBot 配置解析与兼容读取迁移到 `src/infrastructure/config/settings_adapter.py`。
 - Plugin Pages「设置」页更名为「默认订阅设置」，仅维护订阅默认值，不再暴露内容管道配置。
+- Plugin Pages 用户/订阅处理链编辑器改为 schema-driven：优先读取 `handlers/schema`，接口不可用时使用内置 fallback；两处编辑共用启停、排序、添加内置 handler、删除、字段编辑和原始 JSON 高级模式。
 - Plugin Pages 不再提供新增订阅、TOML 导入和订阅导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 完成。
 - Plugin Pages 已有订阅管理会使用订阅自身 `user_id` 调用后端，Web API 不再把缺省用户静默落到 `webadmin`。
 - Plugin Pages 管理页优化移动端布局：Tab 导航可横向滚动，订阅表格在窄屏切换为卡片式布局，知识库状态、推送历史筛选和分页区域避免长文本/按钮重叠。
@@ -22,9 +24,11 @@
 - Plugin Pages 订阅列表新增前端分页；订阅和推送历史分页控件统一上移到列表顶部，仅在存在跨页数据时显示。
 - Plugin Pages 默认订阅设置和知识库页改为居中窄容器；移除会遮挡表单的桌面端悬浮保存按钮，统一保留底部保存入口。
 - Plugin Pages 用户状态收敛为「用户」和「已封禁」两种；历史非负状态作为普通用户兼容显示，新写入只允许 `1` 或 `-1`。
-- `sender_strategies.enabled_platforms` 配置由四个布尔子项收敛为平台多选列表，并兼容读取旧版 object bool map，同时保留 `sender_strategies` 容器用于后续平台专属配置。
+- `sender_strategies.enabled_platforms` 配置由四个布尔子项收敛为平台多选列表，并兼容读取旧版 object bool map；`aiocqhttp` / `telegram` 平台策略改为 `template_list` 按需添加，用于 Telegraph 自动分流和 OneBot 视频策略。
 - `_conf_schema.json` 中的固定配置项改为下拉/多选，有限范围的数值项改为滑块；Routes KB 同步源收敛为内置 GitHub Raw 与 `ghfast.top` raw 代理选项，避免用户手动输入不兼容镜像格式。
 - `rsshub_sub` / `rsshub_user` 配置继承语义收敛：移除 `use_sub_config` / `use_user_config` 开关列，改由具体字段 `-100` 统一表示继承；用户级配置默认继承全局配置。
+- `send_mode` 语义调整为 `-1=仅链接`、`0=自动`、`1=直接发送`；旧值 `1=Telegraph` 兼容归一到自动，旧值 `2=直接消息` 兼容归一到直接发送。
+- Formatter 职责收口为格式化已解析条目和媒体输出，不承载内置 AI filter、翻译、改写或路由检索逻辑；相关扩展应走 AstrBot LLM、AI agent 工具或 handler schema 扩展。
 
 ### Added
 
@@ -34,7 +38,7 @@
 - LLM 请求在检测到 RSSHub 路由检索意图时，会注入使用 Routes 知识库的提示，避免恢复旧的 route 搜索 LLM tool。
 - 新增 LLM 工具 `rss_list_push_history`：AI agent 可按当前会话查询推送历史 JSON 列表，不暴露 `sub_id`。
 - 新增 LLM 工具 `rss_push_xml_entry`：AI agent 可直接提交 XML/HTML 标签内容进行即时推送，工具会完成 XML 校验、媒体解析、推送历史落库、成功态幂等去重与失败重试复用。
-- `rsshub_sub` / `rsshub_user` 新增 `ai_prompt` 字段，订阅导入导出、Web API 和 Plugin Pages 编辑面板会保留该提示词。
+- `rsshub_sub` / `rsshub_user` 使用 `handlers` JSON 字段保存内容处理链；旧 `ai_prompt` 会迁移为默认 `ai_transform` handler。
 
 ### Fixed
 
@@ -44,6 +48,7 @@
 - 修复 HTML `<video>`/`<audio>` 推送链路：解析出的媒体类型会保留到发送器，避免视频被按图片处理或只在正文中显示为 `[视频]`。
 - 修复 `/sub_test` 真推送路径中的视频/音频占位文本残留，保持与正常轮询推送一致的结构化媒体发送行为。
 - 修复 OneBot 合并转发媒体发送失败后的纯文本回退：回退节点现在会附带本次消息的全部原始媒体链接，避免 NapCat / OneBot 无法发送本地视频时只剩 `[视频]` 或丢失入口。
+- 修复 Telegram caption 发送链路的主动 1024 截断，避免 sender 在平台专属链中提前裁掉正文。
 - 修复推送历史 `fail_reason` 超长导致的 Pydantic 校验崩溃：发送异常详情、领域实体写入和仓储读取旧脏数据都会统一截断到 512 字符，避免重试扫描和 WebUI 推送历史接口被卡死。
 - 修复失败重试时媒体丢失的问题：首次推送历史会持久化 `media_urls`，后续重试会按历史媒体重新构造发送请求；失败历史内容也会补充原始媒体链接，便于 WebUI 排障。
 - 修复 XML 即时推送历史审计链路：`push_history` 新增 `raw_xml`，历史查询和 WebUI 可直接读取原始 XML。
@@ -53,6 +58,7 @@
 - 修复 Plugin Pages 操作列按钮在桌面端不居中、窄屏下易贴边挤压的问题；统一操作区对齐、间距和换行策略，并将列表/配置滚动限制在内容容器内部，减少标签页切换抖动。
 - 修复 Routes KB raw URL 拼接逻辑，避免 `https://代理/https://raw...` 这类代理前缀被 `urljoin` 改写成无效地址。
 - 修复旧 SQLite 库字段残留问题：迁移和启动自愈会重建 `rsshub_sub` / `rsshub_user`，移除旧翻译字段与旧继承开关字段。
+- 修复 OneBot 视频发送策略：默认不再优先把本地 mp4 路径塞进合并转发节点；启用 Telegraph 自动分流时，多媒体消息会优先转为 Telegraph 页面链接发送，失败后回落平台原生发送链路。
 
 ## [1.1.3] - 2026-04-28
 
