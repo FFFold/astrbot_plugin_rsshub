@@ -252,7 +252,7 @@ class RSSScheduler:
             if session is None:
                 return {}
             stmt = (
-                select(SubORM)
+                select(SubORM.id, SubORM.feed_id, SubORM.interval)
                 .join(FeedORM)
                 .where(
                     SubORM.state == 1,
@@ -264,24 +264,24 @@ class RSSScheduler:
                 )
             )
             result = await session.execute(stmt)
-            due_subs = list(result.scalars().all())
+            due_rows = list(result.all())
 
-        for sub in due_subs:
-            if sub.id is None or sub.feed_id is None:
+        for sub_id, feed_id, interval in due_rows:
+            if sub_id is None or feed_id is None:
                 continue
             due = DueSubscription(
-                id=sub.id,
-                feed_id=sub.feed_id,
-                interval=self._resolve_interval(sub),
+                id=sub_id,
+                feed_id=feed_id,
+                interval=self._resolve_interval(interval),
             )
-            due_by_feed.setdefault(sub.feed_id, []).append(due)
+            due_by_feed.setdefault(feed_id, []).append(due)
 
         return due_by_feed
 
-    def _resolve_interval(self, sub: SubORM) -> int:
+    def _resolve_interval(self, interval: int | None) -> int:
         """解析订阅生效的监控间隔"""
-        if sub.interval and sub.interval > 0:
-            return sub.interval
+        if interval and interval > 0:
+            return interval
         return self._default_interval
 
     @locked("#feed_id")

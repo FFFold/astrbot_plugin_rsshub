@@ -26,12 +26,16 @@ class _ExecuteResult:
     def scalars(self):
         return _ScalarResult(self._values)
 
+    def all(self):
+        return [(sub.id, sub.feed_id, sub.interval) for sub in self._values]
+
 
 class _FakeSession:
     def __init__(self, subs: list[SubORM]):
         self._subs = subs
         self._by_id = {sub.id: sub for sub in subs}
         self.commits = 0
+        self.executed_statements = []
 
     async def __aenter__(self):
         return self
@@ -40,6 +44,7 @@ class _FakeSession:
         return None
 
     async def execute(self, _stmt):
+        self.executed_statements.append(_stmt)
         return _ExecuteResult(self._subs)
 
     async def get(self, _model, item_id):
@@ -144,6 +149,29 @@ async def test_scheduler_groups_due_subscriptions_by_feed_and_triggers_polling(
         <= (subs[2].next_check_time - subs[0].next_check_time).total_seconds()
         <= 310
     )
+
+
+@pytest.mark.asyncio
+async def test_scheduler_due_query_uses_only_scheduler_columns(monkeypatch):
+    subs = [_sub(1, 10, 5)]
+    fake_db = _FakeDatabase(subs)
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.schedule.rss_scheduler.get_database",
+        lambda: fake_db,
+    )
+
+    scheduler = RSSScheduler(
+        feed_polling_service=AsyncMock(),
+        default_interval=10,
+    )
+
+    await scheduler._load_due_subscriptions(datetime.now(timezone.utc))
+
+    compiled_sql = str(fake_db.sessions[0].executed_statements[0])
+    assert "rsshub_sub.id" in compiled_sql
+    assert "rsshub_sub.feed_id" in compiled_sql
+    assert "rsshub_sub.interval" in compiled_sql
+    assert "rsshub_sub.link_preview" not in compiled_sql
 
 
 @pytest.mark.asyncio
