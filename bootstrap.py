@@ -221,6 +221,7 @@ def _build_dependencies(
         sender_provider=sender_provider,
         push_job_queue=push_job_queue,
         content_handler_runtime=ContentHandlerRuntime(context=context),
+        subscription_defaults=app_settings.subscription_defaults,
     )
     polling_service = FeedPollingService(
         feed_repo=feed_repo,

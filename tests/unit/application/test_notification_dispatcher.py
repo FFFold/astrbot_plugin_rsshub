@@ -43,6 +43,29 @@ class FakeSenderProvider:
         return self.sender
 
 
+class FakeProviderResponse:
+    def __init__(self, completion_text: str) -> None:
+        self.completion_text = completion_text
+
+
+class FakeProvider:
+    def __init__(self, completion_text: str) -> None:
+        self.completion_text = completion_text
+        self.prompts = []
+
+    async def text_chat(self, **kwargs):
+        self.prompts.append(kwargs)
+        return FakeProviderResponse(self.completion_text)
+
+
+class FakeProviderContext:
+    def __init__(self, provider: FakeProvider) -> None:
+        self.provider = provider
+
+    def get_using_provider(self, session_id=None):
+        return self.provider
+
+
 def test_content_handler_runtime_resolves_handlers_mode_semantics():
     runtime = ContentHandlerRuntime()
     user = User(
@@ -110,6 +133,48 @@ def test_content_handler_runtime_resolves_handlers_mode_semantics():
     assert [spec.name for spec in inherit] == ["xml_parse"]
     assert [spec.name for spec in override] == ["ai_transform"]
     assert disabled == []
+
+
+@pytest.mark.asyncio
+async def test_ai_filter_invalid_json_allows_with_trace():
+    provider = FakeProvider("not json")
+    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_filter.default",
+                "type": "builtin",
+                "name": "ai_filter",
+                "status": 1,
+                "config": {"prompt": "keep only important", "input_scope": "both"},
+            }
+        ],
+    )
+
+    result = await runtime.process_entry_with_trace(
+        subscription=sub,
+        user=None,
+        entry=EntryContentContext(
+            title="title",
+            summary="summary",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item>raw</item>",
+        ),
+    )
+
+    assert result.allow is True
+    assert result.trace[0]["name"] == "ai_filter"
+    assert result.trace[0]["allow"] is True
+    assert result.trace[0]["reason"] == "invalid json"
+    assert "raw_xml" in provider.prompts[0]["prompt"]
 
 
 @pytest.mark.asyncio
@@ -529,6 +594,291 @@ async def test_dispatch_feed_entry_persists_raw_xml_in_history():
 
 
 @pytest.mark.asyncio
+async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    clean_content = (
+        "[ -50 Squad ] #エンドフィールド #WakeofSpringCC\n\n"
+        "via https://x.com/NoUgrad/status/2057138522574971385 | "
+        "Twitter following timeline (author: NoUGraD)"
+    )
+    html_body = (
+        '[ -50 Squad ]<br />#エンドフィールド #WakeofSpringCC<br />'
+        '<img src="https://example.com/image.jpg" />'
+        '<div class="rsshub-quote"><video src="https://example.com/video.mp4">'
+        "</video></div>"
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content=clean_content,
+        entry_title="[ -50 Squad ] #エンドフィールド #WakeofSpringCC",
+        entry_link="https://x.com/NoUgrad/status/2057138522574971385",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="[ -50 Squad ] #エンドフィールド #WakeofSpringCC",
+            summary=html_body,
+            content=html_body,
+            link="https://x.com/NoUgrad/status/2057138522574971385",
+            author="NoUGraD",
+            feed_title="Twitter following timeline",
+            feed_link="https://rsshub.example/twitter",
+            raw_xml="<item><description>raw</description></item>",
+        ),
+        media_items=[
+            ("image", "https://example.com/image.jpg"),
+            ("video", "https://example.com/video.mp4"),
+        ],
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert first_saved.content == clean_content
+    assert first_saved.raw_xml == "<item><description>raw</description></item>"
+    assert "<br" not in first_saved.content
+    assert "<img" not in first_saved.content
+    assert "<video" not in first_saved.content
+    request, _context = sender.requests[0]
+    assert request.message == clean_content
+
+
+@pytest.mark.asyncio
+async def test_dispatch_formats_raw_entry_with_effective_options_from_subscription():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        length_limit=4,
+        display_title=-1,
+        display_author=-1,
+        display_via=-2,
+        display_media=-1,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="fallback",
+        entry_title="Title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="Title",
+            summary="abcdef<br>&lt;img src=&quot;https://example.com/a.jpg&quot;&gt;",
+            content="abcdef<br>&lt;img src=&quot;https://example.com/a.jpg&quot;&gt;",
+            link="https://example.com/entry",
+            author="Author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+        ),
+        media_items=[("image", "https://example.com/a.jpg")],
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert first_saved.content == "a..."
+    assert first_saved.media_urls is None
+    request, _context = sender.requests[0]
+    assert request.message == "a..."
+    assert request.media is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_inherits_effective_options_from_user():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    user = User(id="user-1", notify=0)
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    user_repo = AsyncMock()
+    user_repo.get_by_id.return_value = user
+    history_repo = AsyncMock()
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        user_repo=user_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="fallback",
+        entry_title="Title",
+        entry_link="https://example.com/entry",
+        raw_entry=EntryContentContext(
+            title="Title",
+            summary="Body",
+            content="Body",
+            link="https://example.com/entry",
+            author="Author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+        ),
+    )
+
+    assert stats == {"success": 0, "failed": 0, "pending": 0}
+    assert sender.requests == []
+    history_repo.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_dispatch_uses_handler_output_when_raw_entry_is_processed():
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.xml_parse.default",
+                "type": "builtin",
+                "name": "xml_parse",
+                "status": 1,
+                "config": {},
+            }
+        ],
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="clean caller content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="title",
+            summary="Before<br />After",
+            content="Before<br />After",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item><title>title</title></item>",
+        ),
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    assert "Before\nAfter" in first_saved.content
+    assert first_saved.content != "clean caller content"
+    request, _context = sender.requests[0]
+    assert request.message == first_saved.content
+
+
+@pytest.mark.asyncio
+async def test_dispatch_ai_filter_false_writes_skipped_history_without_send():
+    sender = FakeSender()
+    provider = FakeProvider('{"allow":false,"reason":"广告"}')
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_filter.default",
+                "type": "builtin",
+                "name": "ai_filter",
+                "status": 1,
+                "config": {"prompt": "跳过广告", "input_scope": "text"},
+            }
+        ],
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        content_handler_runtime=ContentHandlerRuntime(FakeProviderContext(provider)),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        entry_guid="guid-1",
+        raw_entry=EntryContentContext(
+            title="title",
+            summary="summary",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+        ),
+    )
+
+    assert stats == {"success": 0, "failed": 0, "pending": 0}
+    assert sender.requests == []
+    history_repo.save.assert_awaited_once()
+    saved = history_repo.save.await_args.args[0]
+    assert saved.status == "skipped"
+    assert saved.max_retries == 0
+    assert saved.handler_trace[0]["allow"] is False
+    assert saved.handler_trace[0]["reason"] == "广告"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_pending_retries_marks_cancelled_history_failed():
     sender = FakeSender()
     sub = Subscription(
@@ -868,3 +1218,105 @@ async def test_dispatch_pending_retries_reuses_agent_history_without_subscriptio
     sub_repo.get_by_id.assert_not_awaited()
     assert history.status == "success"
     assert sender.requests[0][0].session_id == "telegram:Group:1"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_auto_mode_prefers_telegraph_when_multiple_media(monkeypatch):
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        send_mode=0,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    called: dict[str, object] = {}
+
+    async def fake_send(*args, **kwargs):
+        called["args"] = args
+        called["kwargs"] = kwargs
+        return {
+            "ok": True,
+            "used_telegraph": True,
+            "fallback_native": False,
+        }
+
+    monkeypatch.setattr(dispatcher, "_send_to_session", fake_send, raising=False)
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        media_items=[
+            ("image", "https://example.com/1.jpg"),
+            ("video", "https://example.com/2.mp4"),
+        ],
+    )
+
+    assert stats["success"] == 1
+    assert called["kwargs"]["media_items"] == [
+        ("image", "https://example.com/1.jpg"),
+        ("video", "https://example.com/2.mp4"),
+    ]
+    assert called["kwargs"]["send_mode"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_telegraph_failure_falls_back_to_native_send(monkeypatch):
+    sender = FakeSender()
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        send_mode=0,
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+    )
+
+    async def fake_send(*args, **kwargs):
+        return {
+            "ok": True,
+            "used_telegraph": False,
+            "telegraph_error": "create page failed",
+            "fallback_native": True,
+        }
+
+    monkeypatch.setattr(dispatcher, "_send_to_session", fake_send, raising=False)
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        media_items=[
+            ("image", "https://example.com/1.jpg"),
+            ("image", "https://example.com/2.jpg"),
+        ],
+    )
+
+    assert stats["success"] == 1

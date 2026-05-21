@@ -173,7 +173,6 @@ def mock_subscription() -> dict:
         "notify": True,
         "send_mode": 0,
         "length_limit": 0,
-        "link_preview": 0,
         "display_author": 0,
         "display_via": 0,
         "display_title": 0,

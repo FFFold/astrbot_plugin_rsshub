@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import asyncio
+import html as html_lib
+import re
 from collections.abc import Iterator
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -49,7 +51,7 @@ class HTMLParser:
     )
 
     def __init__(self, html: str, feed_link: str | None = None):
-        self.html = html
+        self.html = normalize_html_markup(html)
         self.feed_link = feed_link
         self.soup: BeautifulSoup | None = None
         self.media: list[ImageContent | VideoContent | AudioContent | FileContent] = []
@@ -466,6 +468,22 @@ async def parse_html(html: str, feed_link: str | None = None) -> ParsedResult:
     """
     parser = HTMLParser(html, feed_link)
     return await parser.parse()
+
+
+ESCAPED_TAG_RE = re.compile(r"&lt;\s*/?\s*[a-zA-Z][^&]{0,500}?&gt;")
+
+
+def normalize_html_markup(value: str) -> str:
+    """Decode entity-escaped HTML tags before parsing RSSHub descriptions."""
+    text = str(value or "")
+    for _ in range(2):
+        if not ESCAPED_TAG_RE.search(text):
+            break
+        decoded = html_lib.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
 
 
 # 别名，保持向后兼容

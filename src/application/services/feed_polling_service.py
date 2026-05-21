@@ -23,6 +23,11 @@ from ...domain.entities.content_types import AudioContent, FileContent, VideoCon
 from ...domain.entities.feed import Feed, normalize_entry_hashes
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
+from ...infrastructure.pipeline import (
+    EffectivePushOptions,
+    EntryFormatInput,
+    EntryTextFormatter,
+)
 from ...infrastructure.utils import get_logger
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
 from ..settings import FeedFetchSettings, RSSSettings
@@ -31,6 +36,7 @@ from .html_parser import HTMLParser
 from .notification_dispatcher import NotificationDispatcher
 
 logger = get_logger()
+_entry_text_formatter = EntryTextFormatter()
 
 DEFAULT_TRACKING_QUERY_PARAMS = frozenset(
     {
@@ -610,7 +616,7 @@ class FeedPollingService:
                 or title
             )
             parsed = await HTMLParser(raw_content, feed_link=feed.link).parse()
-            plain_content = parsed.html_tree.get_plain().strip()
+            plain_content = await _entry_text_formatter.clean_text(raw_content)
             if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
                 plain_content = self._remove_media_placeholders(plain_content)
             media_items = self._media_items_from_parsed(parsed.media)
@@ -622,13 +628,15 @@ class FeedPollingService:
             ]
             media_urls.extend(enclosure_urls)
             media_urls = list(dict.fromkeys(media_urls))
-            content = self._format_dispatch_content(
+            tags = tuple(self._entry_value(entry, "tags", []) or ())
+            content = await self._format_dispatch_content_async(
                 title=title,
                 body=plain_content,
                 link=link,
                 feed_title=feed.title,
                 feed_link=feed.link,
                 author=author,
+                tags=tags,
             )
             if self._media_fingerprint_service is not None and media_urls:
                 try:
@@ -662,8 +670,8 @@ class FeedPollingService:
                 subscription_ids=subscription_ids,
                 raw_entry=EntryContentContext(
                     title=title,
-                    summary=str(getattr(entry, "summary", "") or "").strip(),
-                    content=str(getattr(entry, "content", "") or "").strip(),
+                    summary=plain_content,
+                    content=plain_content,
                     link=link,
                     author=author,
                     feed_title=feed.title,
@@ -690,6 +698,8 @@ class FeedPollingService:
         feed_link: str,
         author: str,
     ) -> str:
+        body = body.strip()
+        title = title.strip()
         if title and body and body != title:
             content = f"{title}\n\n{body}"
         else:
@@ -698,6 +708,31 @@ class FeedPollingService:
         if author:
             via_suffix += f" (author: {author})"
         return f"{content}\n\n{via_suffix}"
+
+    @staticmethod
+    async def _format_dispatch_content_async(
+        *,
+        title: str,
+        body: str,
+        link: str,
+        feed_title: str,
+        feed_link: str,
+        author: str,
+        tags: tuple[str, ...] = (),
+    ) -> str:
+        return await _entry_text_formatter.format_entry(
+            EntryFormatInput(
+                title=title,
+                content=body,
+                summary=body,
+                link=link,
+                author=author,
+                feed_title=feed_title,
+                feed_link=feed_link,
+                tags=tags,
+            ),
+            EffectivePushOptions(),
+        )
 
     @staticmethod
     def _remove_media_placeholders(text: str) -> str:
