@@ -621,7 +621,7 @@ async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed(
         "Twitter following timeline (author: NoUGraD)"
     )
     html_body = (
-        '[ -50 Squad ]<br />#エンドフィールド #WakeofSpringCC<br />'
+        "[ -50 Squad ]<br />#エンドフィールド #WakeofSpringCC<br />"
         '<img src="https://example.com/image.jpg" />'
         '<div class="rsshub-quote"><video src="https://example.com/video.mp4">'
         "</video></div>"

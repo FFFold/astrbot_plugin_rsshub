@@ -51,9 +51,7 @@ class HandlerConfigField(BaseModel):
         options = None
         if field_type == "select":
             options = [
-                str(item).strip()
-                for item in (self.options or [])
-                if str(item).strip()
+                str(item).strip() for item in (self.options or []) if str(item).strip()
             ]
         return HandlerConfigField(
             key=str(self.key or "").strip(),
@@ -76,7 +74,9 @@ class HandlerMetadata(BaseModel):
     title: str = Field(default="", max_length=128)
     description: str = Field(default="", max_length=512)
     default_enabled: bool = False
-    config_schema: list[HandlerConfigField] = Field(default_factory=list, alias="schema")
+    config_schema: list[HandlerConfigField] = Field(
+        default_factory=list, alias="schema"
+    )
 
     @property
     def display_name(self) -> str:

@@ -171,4 +171,3 @@ async def _rebuild_sub_table(conn) -> None:
 async def upgrade(conn) -> None:
     await _rebuild_user_table(conn)
     await _rebuild_sub_table(conn)
-

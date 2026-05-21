@@ -236,7 +236,9 @@ class SenderStrategiesConfig(BaseModel):
             known_values = dict.fromkeys(SENDER_STRATEGY_KEYS, True)
             if "enabled_platforms" in data:
                 enabled = _enabled_from_sender_config(data) or set()
-                known_values.update({key: key in enabled for key in SENDER_STRATEGY_KEYS})
+                known_values.update(
+                    {key: key in enabled for key in SENDER_STRATEGY_KEYS}
+                )
             else:
                 known_values.update(
                     {
@@ -289,14 +291,16 @@ def _enabled_from_sender_config(data: dict[str, Any]) -> set[str] | None:
     if "enabled_platforms" in data:
         raw = data.get("enabled_platforms")
         if isinstance(raw, str):
-            return {part.strip() for part in raw.replace(",", "\n").splitlines() if part.strip()}
+            return {
+                part.strip()
+                for part in raw.replace(",", "\n").splitlines()
+                if part.strip()
+            }
         if isinstance(raw, (list, tuple, set)):
             return {str(item).strip() for item in raw if str(item).strip()}
         return set()
 
-    bool_keys = {
-        key for key in SENDER_STRATEGY_KEYS if isinstance(data.get(key), bool)
-    }
+    bool_keys = {key for key in SENDER_STRATEGY_KEYS if isinstance(data.get(key), bool)}
     if bool_keys:
         return {key for key in bool_keys if bool(data.get(key))}
     return None

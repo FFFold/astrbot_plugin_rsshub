@@ -170,7 +170,9 @@ class TestTOMLRoundtrip:
         assert payload.errors == []
         assert payload.records[0].options["send_mode"] == 0
 
-    def test_parse_legacy_send_mode_direct_message_is_migrated_to_direct_send(self) -> None:
+    def test_parse_legacy_send_mode_direct_message_is_migrated_to_direct_send(
+        self,
+    ) -> None:
         payload = parse_subscriptions_toml(
             """
             [[subscriptions]]

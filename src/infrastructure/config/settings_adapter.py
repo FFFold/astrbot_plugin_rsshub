@@ -86,23 +86,15 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
             or _get_value(value, "aiocqhttp_config", None)
         )
     telegram_config = PlatformStrategySettings(
-        enable_telegraph=bool(
-            _get_value(telegram_source, "enable_telegraph", False)
-        ),
-        telegraph_token=str(
-            _get_value(telegram_source, "telegraph_token", "") or ""
-        ),
+        enable_telegraph=bool(_get_value(telegram_source, "enable_telegraph", False)),
+        telegraph_token=str(_get_value(telegram_source, "telegraph_token", "") or ""),
         prefer_local_video=bool(
             _get_value(telegram_source, "prefer_local_video", False)
         ),
     )
     aiocqhttp_config = PlatformStrategySettings(
-        enable_telegraph=bool(
-            _get_value(aiocqhttp_source, "enable_telegraph", False)
-        ),
-        telegraph_token=str(
-            _get_value(aiocqhttp_source, "telegraph_token", "") or ""
-        ),
+        enable_telegraph=bool(_get_value(aiocqhttp_source, "enable_telegraph", False)),
+        telegraph_token=str(_get_value(aiocqhttp_source, "telegraph_token", "") or ""),
         prefer_local_video=bool(
             _get_value(aiocqhttp_source, "prefer_local_video", False)
         ),

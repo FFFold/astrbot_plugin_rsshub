@@ -130,4 +130,3 @@ class ApplicationSettings:
     route_knowledge: RouteKnowledgeSettings = field(
         default_factory=RouteKnowledgeSettings
     )
-

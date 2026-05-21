@@ -224,7 +224,9 @@ class NotificationDispatcher:
         self._push_history_repo = push_history_repo
         self._sender_provider = sender_provider
         self._push_job_queue = push_job_queue or SessionPushQueue()
-        self._content_handler_runtime = content_handler_runtime or ContentHandlerRuntime()
+        self._content_handler_runtime = (
+            content_handler_runtime or ContentHandlerRuntime()
+        )
         self._default_push_options = self._options_from_subscription_defaults(
             subscription_defaults or SubscriptionDefaults()
         )
@@ -259,7 +261,11 @@ class NotificationDispatcher:
     def _send_mode_from_subscription_defaults(defaults: SubscriptionDefaults) -> int:
         value = getattr(defaults, "send_mode", "自动")
         if isinstance(value, str):
-            return {"仅链接": SEND_MODE_LINK_ONLY, "自动": SEND_MODE_AUTO, "直接发送": SEND_MODE_DIRECT}.get(
+            return {
+                "仅链接": SEND_MODE_LINK_ONLY,
+                "自动": SEND_MODE_AUTO,
+                "直接发送": SEND_MODE_DIRECT,
+            }.get(
                 value.strip(),
                 SEND_MODE_AUTO,
             )
@@ -269,7 +275,9 @@ class NotificationDispatcher:
     def _options_from_subscription_defaults(
         defaults: SubscriptionDefaults,
     ) -> EffectivePushOptions:
-        def display_value(value: Any, mapping: dict[str, int], fallback: int = 0) -> int:
+        def display_value(
+            value: Any, mapping: dict[str, int], fallback: int = 0
+        ) -> int:
             if isinstance(value, str):
                 return mapping.get(value.strip(), fallback)
             try:
@@ -337,7 +345,9 @@ class NotificationDispatcher:
                 or 0
             ),
             display_via=int(
-                self._resolve_option("display_via", subscription, user, defaults.display_via)
+                self._resolve_option(
+                    "display_via", subscription, user, defaults.display_via
+                )
                 or 0
             ),
             display_title=int(
@@ -992,9 +1002,7 @@ class NotificationDispatcher:
                     feed_id=history.feed_id,
                     sub_id=history.sub_id,
                     send_mode=(
-                        SEND_MODE_AUTO
-                        if history.source_type == "agent"
-                        else None
+                        SEND_MODE_AUTO if history.source_type == "agent" else None
                     ),
                 )
 

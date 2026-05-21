@@ -94,10 +94,14 @@ class OneBotMessageSender(DefaultMessageSender):
         media_urls = MessageFormatter.collect_original_urls(prepared_media)
         client = TelegraphClient(
             access_token=token,
-            timeout_seconds=context.timeout_seconds if context else self._get_timeout_seconds(),
+            timeout_seconds=context.timeout_seconds
+            if context
+            else self._get_timeout_seconds(),
         )
         page_url = await client.create_media_page(
-            title=context.channel.title if context and context.channel.title else nickname,
+            title=context.channel.title
+            if context and context.channel.title
+            else nickname,
             content=request.message,
             media_urls=media_urls,
             channel=context.channel if context else None,
@@ -170,7 +174,9 @@ class OneBotMessageSender(DefaultMessageSender):
 
             if effective_prepared:
                 for item in effective_prepared:
-                    path = str(item.local_path) if item.local_path else item.original_url
+                    path = (
+                        str(item.local_path) if item.local_path else item.original_url
+                    )
                     if item.download_failed:
                         failed_media_urls.append(item.original_url)
                     match item.media_type:

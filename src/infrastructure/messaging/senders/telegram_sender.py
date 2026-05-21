@@ -88,10 +88,14 @@ class TelegramMessageSender(DefaultMessageSender):
         media_urls = MessageFormatter.collect_original_urls(prepared_media)
         client = TelegraphClient(
             access_token=token,
-            timeout_seconds=context.timeout_seconds if context else self._get_timeout_seconds(),
+            timeout_seconds=context.timeout_seconds
+            if context
+            else self._get_timeout_seconds(),
         )
         page_url = await client.create_media_page(
-            title=context.channel.title if context and context.channel.title else "RSSHub",
+            title=context.channel.title
+            if context and context.channel.title
+            else "RSSHub",
             content=request.message,
             media_urls=media_urls,
             channel=context.channel if context else None,
