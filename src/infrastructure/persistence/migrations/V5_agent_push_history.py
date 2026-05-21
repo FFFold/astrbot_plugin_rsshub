@@ -21,6 +21,8 @@ async def _index_exists(conn, index_name: str) -> bool:
 
 
 async def _rebuild_push_history_table(conn) -> None:
+    columns = await _column_names(conn, "rsshub_push_history")
+    handler_trace_expr = "handler_trace" if "handler_trace" in columns else "NULL"
     await conn.exec_driver_sql(
         "DROP INDEX IF EXISTS idx_rsshub_push_history_scope_guid"
     )
@@ -36,6 +38,7 @@ async def _rebuild_push_history_table(conn) -> None:
             content VARCHAR NOT NULL DEFAULT '',
             raw_xml TEXT,
             media_urls JSON,
+            handler_trace JSON,
             entry_title VARCHAR(1024) NOT NULL DEFAULT '',
             entry_link VARCHAR(4096) NOT NULL DEFAULT '',
             entry_guid VARCHAR(512),
@@ -57,9 +60,9 @@ async def _rebuild_push_history_table(conn) -> None:
         """
     )
     await conn.exec_driver_sql(
-        """
+        f"""
         INSERT INTO rsshub_push_history__new (
-            id, sub_id, user_id, feed_id, source_type, source_key, content, raw_xml, media_urls,
+            id, sub_id, user_id, feed_id, source_type, source_key, content, raw_xml, media_urls, handler_trace,
             entry_title, entry_link, entry_guid, feed_title, feed_link,
             platform_name, target_session, status, retry_count, max_retries,
             fail_reason, created_at, updated_at, completed_at
@@ -74,6 +77,7 @@ async def _rebuild_push_history_table(conn) -> None:
             content,
             raw_xml,
             media_urls,
+            {handler_trace_expr},
             entry_title,
             entry_link,
             entry_guid,
@@ -123,6 +127,12 @@ async def upgrade(conn) -> None:
             "ALTER TABLE rsshub_push_history ADD COLUMN raw_xml TEXT"
         )
         logger.info("迁移 V5: 为 rsshub_push_history 添加 raw_xml")
+
+    if "handler_trace" not in columns:
+        await conn.exec_driver_sql(
+            "ALTER TABLE rsshub_push_history ADD COLUMN handler_trace JSON"
+        )
+        logger.info("迁移 V5: 为 rsshub_push_history 添加 handler_trace")
 
     sub_info = await conn.exec_driver_sql("PRAGMA table_info(rsshub_push_history)")
     nullable = {

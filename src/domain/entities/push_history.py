@@ -6,6 +6,7 @@
 """
 
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -68,6 +69,10 @@ class PushHistory(BaseModel):
     content: str = Field(default="", description="格式化后的消息内容")
     raw_xml: str | None = Field(default=None, description="XML 推送原始内容")
     media_urls: list[str] | None = Field(default=None, description="媒体URL列表")
+    handler_trace: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="内容 handler 执行摘要",
+    )
 
     entry_title: str = Field(default="", max_length=1024, description="条目标题")
     entry_link: str = Field(default="", max_length=4096, description="条目链接")
@@ -84,7 +89,9 @@ class PushHistory(BaseModel):
     )
 
     status: str | None = Field(
-        default=None, max_length=16, description="状态: pending/success/failed/stopped"
+        default=None,
+        max_length=16,
+        description="状态: pending/success/failed/stopped/skipped",
     )
     retry_count: int = Field(default=0, description="重试次数")
     max_retries: int = Field(default=3, description="最大重试次数")
@@ -151,6 +158,15 @@ class PushHistory(BaseModel):
         self.completed_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
         self.fail_reason = normalize_display_fail_reason(reason)
+        return self
+
+    def mark_skipped(self, reason: str | None = None) -> "PushHistory":
+        """标记被内容 handler 跳过（不参与重试）。"""
+        self.status = "skipped"
+        self.completed_at = datetime.now(timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
+        self.max_retries = 0
+        self.fail_reason = None
         return self
 
     def is_pending(self) -> bool:

@@ -46,6 +46,16 @@ class EntryContentContext:
     media_items: tuple[tuple[str, str], ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class HandlerProcessResult:
+    """Content handler result plus runtime trace."""
+
+    entry: EntryContentContext
+    allow: bool = True
+    reason: str = ""
+    trace: tuple[dict[str, Any], ...] = ()
+
+
 class ContentHandlerRuntime:
     """Resolve and execute builtin entry handlers."""
 
@@ -81,31 +91,115 @@ class ContentHandlerRuntime:
         entry: EntryContentContext,
         session_id: str | None = None,
     ) -> EntryContentContext:
+        result = await self.process_entry_with_trace(
+            subscription=subscription,
+            user=user,
+            entry=entry,
+            session_id=session_id,
+        )
+        return result.entry
+
+    async def process_entry_with_trace(
+        self,
+        *,
+        subscription: Subscription,
+        user: User | None,
+        entry: EntryContentContext,
+        session_id: str | None = None,
+    ) -> HandlerProcessResult:
         result = entry
+        trace: list[dict[str, Any]] = []
         for spec in self.resolve_handlers(subscription=subscription, user=user):
             if not is_handler_enabled(spec):
+                trace.append(
+                    {
+                        "id": spec.id,
+                        "name": spec.name,
+                        "status": "disabled",
+                    }
+                )
                 continue
             if spec.type != "builtin":
                 logger.debug("跳过 external handler: %s", spec.id)
+                trace.append(
+                    {
+                        "id": spec.id,
+                        "name": spec.name,
+                        "status": "skipped",
+                        "reason": "external handler",
+                    }
+                )
                 continue
             try:
                 if spec.name == "xml_parse":
                     result = await self._run_xml_parse(result)
+                    trace.append(
+                        {
+                            "id": spec.id,
+                            "name": spec.name,
+                            "status": "ok",
+                        }
+                    )
+                elif spec.name == "ai_filter":
+                    allowed, reason = await self._run_ai_filter(
+                        result,
+                        spec.config,
+                        session_id=session_id,
+                    )
+                    trace.append(
+                        {
+                            "id": spec.id,
+                            "name": spec.name,
+                            "status": "ok",
+                            "allow": allowed,
+                            "reason": reason,
+                        }
+                    )
+                    if not allowed:
+                        return HandlerProcessResult(
+                            entry=result,
+                            allow=False,
+                            reason=reason,
+                            trace=tuple(trace),
+                        )
                 elif spec.name == "ai_transform":
                     result = await self._run_ai_transform(
                         result,
                         spec.config,
                         session_id=session_id,
                     )
+                    trace.append(
+                        {
+                            "id": spec.id,
+                            "name": spec.name,
+                            "status": "ok",
+                        }
+                    )
                 else:
                     logger.debug("未知内置 handler，已跳过: %s", spec.name)
+                    trace.append(
+                        {
+                            "id": spec.id,
+                            "name": spec.name,
+                            "status": "skipped",
+                            "reason": "unknown builtin handler",
+                        }
+                    )
             except Exception as exc:
                 logger.warning(
                     "handler 执行失败，已回退上一步结果: %s (%s)",
                     spec.id,
                     exc,
                 )
-        return result
+                trace.append(
+                    {
+                        "id": spec.id,
+                        "name": spec.name,
+                        "status": "error",
+                        "reason": str(exc),
+                    }
+                )
+        return HandlerProcessResult(entry=result, trace=tuple(trace))
 
     async def _run_xml_parse(self, entry: EntryContentContext) -> EntryContentContext:
         html_source = entry.content or entry.summary
@@ -187,9 +281,81 @@ class ContentHandlerRuntime:
             content=content or entry.content,
         )
 
+    async def _run_ai_filter(
+        self,
+        entry: EntryContentContext,
+        config: dict[str, Any],
+        *,
+        session_id: str | None = None,
+    ) -> tuple[bool, str]:
+        prompt = str((config or {}).get("prompt") or "").strip()
+        if not prompt or self._context is None:
+            return True, "ai_filter 未配置 prompt 或 provider 上下文"
+
+        provider = self._resolve_provider(session_id=session_id)
+        if provider is None:
+            logger.warning("ai_filter 放行：当前没有可用的对话模型 provider")
+            return True, "provider unavailable"
+
+        input_scope = str((config or {}).get("input_scope") or "text").strip()
+        if input_scope not in {"text", "raw_xml", "both"}:
+            input_scope = "text"
+        source_payload = {
+            "title": entry.title,
+            "summary": entry.summary,
+            "content": entry.content,
+            "link": entry.link,
+            "author": entry.author,
+            "feed_title": entry.feed_title,
+            "feed_link": entry.feed_link,
+        }
+        if input_scope in {"raw_xml", "both"}:
+            source_payload["raw_xml"] = entry.raw_xml
+        if input_scope == "raw_xml":
+            source_payload = {
+                "title": entry.title,
+                "link": entry.link,
+                "feed_title": entry.feed_title,
+                "raw_xml": entry.raw_xml,
+            }
+
+        request_prompt = (
+            "你是 RSS 内容过滤器。根据用户要求判断条目是否允许推送，只返回 JSON。"
+            '\n返回格式: {"allow":true,"reason":"..."}'
+            "\nallow=false 表示跳过推送；reason 用一句话说明原因。"
+            f"\n用户要求:\n{prompt}"
+            f"\n\n条目数据:\n{json.dumps(source_payload, ensure_ascii=False)}"
+        )
+        response = await provider.text_chat(
+            prompt=request_prompt,
+            session_id=session_id or "rsshub-handlers",
+            contexts=[],
+            persist=False,
+        )
+        payload = str(getattr(response, "completion_text", "") or "").strip()
+        if not payload:
+            logger.warning("ai_filter 放行：AI 返回为空")
+            return True, "empty response"
+        try:
+            parsed = json.loads(payload)
+        except Exception as exc:
+            logger.warning("ai_filter 放行：AI 返回非法 JSON: %s", exc)
+            return True, "invalid json"
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("allow"), bool):
+            logger.warning("ai_filter 放行：AI 返回结构无效")
+            return True, "invalid schema"
+        reason = str(parsed.get("reason") or "").strip()
+        try:
+            reason_max_length = int((config or {}).get("reason_max_length") or 120)
+        except (TypeError, ValueError):
+            reason_max_length = 120
+        if reason_max_length > 0 and len(reason) > reason_max_length:
+            reason = reason[:reason_max_length].rstrip()
+        return bool(parsed["allow"]), reason
+
     def _resolve_provider(self, *, session_id: str | None = None) -> Provider | None:
         getter = getattr(self._context, "get_using_provider", None)
         if getter is None:
             return None
         provider = getter(session_id) if session_id else getter()
-        return provider if isinstance(provider, Provider) else None
+        return provider if callable(getattr(provider, "text_chat", None)) else None

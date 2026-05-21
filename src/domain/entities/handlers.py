@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 HANDLER_STATUS_INHERIT = -100
 HANDLER_STATUS_DISABLED = 0
@@ -13,7 +13,149 @@ HANDLER_STATUS_ENABLED = 1
 SUPPORTED_HANDLER_TYPES = {"builtin", "external"}
 BUILTIN_HANDLER_DEFAULT_STATUS = {
     "xml_parse": True,
+    "ai_filter": True,
     "ai_transform": True,
+}
+SUPPORTED_HANDLER_FIELD_TYPES = {
+    "string",
+    "text",
+    "bool",
+    "int",
+    "float",
+    "select",
+    "list[string]",
+    "json",
+}
+
+
+class HandlerConfigField(BaseModel):
+    """Handler config field metadata."""
+
+    key: str = Field(..., min_length=1, max_length=64)
+    type: str = Field(..., description="字段类型")
+    label: str = Field(default="", max_length=128)
+    description: str = Field(default="", max_length=512)
+    required: bool = False
+    default: Any = None
+    options: list[str] | None = None
+
+    @property
+    def name(self) -> str:
+        """Frontend-friendly alias for key."""
+        return self.key
+
+    def normalized(self) -> HandlerConfigField:
+        field_type = str(self.type or "").strip().lower()
+        if field_type not in SUPPORTED_HANDLER_FIELD_TYPES:
+            field_type = "json"
+        options = None
+        if field_type == "select":
+            options = [
+                str(item).strip()
+                for item in (self.options or [])
+                if str(item).strip()
+            ]
+        return HandlerConfigField(
+            key=str(self.key or "").strip(),
+            type=field_type,
+            label=str(self.label or "").strip(),
+            description=str(self.description or "").strip(),
+            required=bool(self.required),
+            default=self.default,
+            options=options,
+        )
+
+
+class HandlerMetadata(BaseModel):
+    """Runtime-visible handler registry metadata."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str = Field(..., min_length=1, max_length=64)
+    type: str = Field(default="builtin")
+    title: str = Field(default="", max_length=128)
+    description: str = Field(default="", max_length=512)
+    default_enabled: bool = False
+    config_schema: list[HandlerConfigField] = Field(default_factory=list, alias="schema")
+
+    @property
+    def display_name(self) -> str:
+        """Public alias matching the handler spec wording."""
+        return self.title
+
+    @property
+    def fields(self) -> list[HandlerConfigField]:
+        """Frontend-friendly alias for schema."""
+        return self.config_schema
+
+    def normalized(self) -> HandlerMetadata:
+        return HandlerMetadata(
+            name=str(self.name or "").strip(),
+            type=str(self.type or "builtin").strip().lower() or "builtin",
+            title=str(self.title or "").strip(),
+            description=str(self.description or "").strip(),
+            default_enabled=bool(self.default_enabled),
+            config_schema=[
+                field.normalized() for field in self.config_schema if field.key
+            ],
+        )
+
+
+BUILTIN_HANDLER_REGISTRY: dict[str, HandlerMetadata] = {
+    "xml_parse": HandlerMetadata(
+        name="xml_parse",
+        title="XML/HTML 清洗",
+        description="解析 RSS 条目中的 HTML/XML 片段，提取纯文本并保留既有媒体解析结果。",
+        default_enabled=True,
+        config_schema=[],
+    ),
+    "ai_filter": HandlerMetadata(
+        name="ai_filter",
+        title="AI 过滤",
+        description="使用 AstrBot 当前 Provider 判断条目是否应该推送；返回 allow=false 时记录 skipped 且不发送。",
+        default_enabled=True,
+        config_schema=[
+            HandlerConfigField(
+                key="prompt",
+                type="text",
+                label="过滤要求",
+                description="告诉 AI 应该保留或跳过什么内容。",
+                required=True,
+                default="",
+            ),
+            HandlerConfigField(
+                key="input_scope",
+                type="select",
+                label="输入范围",
+                description="text 使用清洗文本，raw_xml 使用原始 XML，both 同时使用。",
+                default="text",
+                options=["text", "raw_xml", "both"],
+            ),
+            HandlerConfigField(
+                key="reason_max_length",
+                type="int",
+                label="原因最大长度",
+                description="记录 AI 过滤原因时保留的最大字符数。",
+                default=120,
+            ),
+        ],
+    ),
+    "ai_transform": HandlerMetadata(
+        name="ai_transform",
+        title="AI 改写",
+        description="使用 AstrBot 当前 Provider 按提示改写标题、摘要或正文，只保存提示词不保存 API key。",
+        default_enabled=True,
+        config_schema=[
+            HandlerConfigField(
+                key="prompt",
+                type="text",
+                label="改写要求",
+                description="例如总结为三条要点、清理广告、改写成中文摘要。",
+                required=True,
+                default="",
+            )
+        ],
+    ),
 }
 
 
@@ -48,7 +190,7 @@ class HandlerSpec(BaseModel):
             type=handler_type,
             name=str(self.name or "").strip(),
             status=status,
-            config=_normalize_handler_config(self.config),
+            config=normalize_handler_config(self.name, self.config),
         )
 
 
@@ -62,6 +204,105 @@ def _normalize_handler_config(value: Any) -> dict[str, Any]:
             continue
         normalized[normalized_key] = raw
     return normalized
+
+
+def list_handler_registry() -> list[dict[str, Any]]:
+    """Return builtin handler metadata for API/LLM clients."""
+    return [
+        _dump_handler_metadata(metadata.normalized())
+        for metadata in BUILTIN_HANDLER_REGISTRY.values()
+    ]
+
+
+def get_handler_metadata(name: str) -> dict[str, Any] | None:
+    """Return metadata for one builtin handler."""
+    metadata = BUILTIN_HANDLER_REGISTRY.get(str(name or "").strip())
+    return _dump_handler_metadata(metadata.normalized()) if metadata else None
+
+
+def _dump_handler_metadata(metadata: HandlerMetadata) -> dict[str, Any]:
+    """Dump metadata with both backend and frontend field aliases."""
+    data = metadata.model_dump(by_alias=True)
+    fields = []
+    for field in metadata.config_schema:
+        field_data = field.model_dump()
+        field_data["name"] = field.key
+        fields.append(field_data)
+    data["display_name"] = metadata.title
+    data["fields"] = fields
+    data["schema"] = fields
+    return data
+
+
+def normalize_handler_config(name: str, value: Any) -> dict[str, Any]:
+    """Normalize known builtin handler config against registry schema."""
+    raw = _normalize_handler_config(value)
+    metadata = BUILTIN_HANDLER_REGISTRY.get(str(name or "").strip())
+    if metadata is None:
+        return raw
+
+    normalized: dict[str, Any] = {}
+    for field in metadata.normalized().config_schema:
+        raw_value = raw.get(field.key, field.default)
+        if raw_value is None and not field.required:
+            continue
+        normalized[field.key] = _coerce_handler_config_value(field, raw_value)
+    return normalized
+
+
+def _coerce_handler_config_value(
+    field: HandlerConfigField,
+    value: Any,
+) -> Any:
+    field_type = field.type
+    if field_type in {"string", "text"}:
+        normalized = str(value or "").strip()
+        if field.required and not normalized:
+            raise ValueError(f"{field.key} 不能为空")
+        return normalized
+    if field_type == "bool":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes", "on", "启用", "是"}:
+            return True
+        if text in {"0", "false", "no", "off", "禁用", "否", ""}:
+            return False
+        raise ValueError(f"{field.key} 必须是布尔值")
+    if field_type == "int":
+        try:
+            return int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field.key} 必须是整数") from exc
+    if field_type == "float":
+        try:
+            return float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field.key} 必须是数字") from exc
+    if field_type == "select":
+        normalized = str(value or field.default or "").strip()
+        options = field.options or []
+        if options and normalized not in options:
+            raise ValueError(f"{field.key} 必须是以下之一: {', '.join(options)}")
+        return normalized
+    if field_type == "list[string]":
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except Exception:
+                parsed = [part.strip() for part in value.split(",")]
+            value = parsed
+        if not isinstance(value, list):
+            raise ValueError(f"{field.key} 必须是字符串数组")
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception as exc:
+            raise ValueError(f"{field.key} 必须是合法 JSON") from exc
+    return value
 
 
 def normalize_handlers(value: Any) -> list[HandlerSpec]:
@@ -98,6 +339,34 @@ def normalize_handlers(value: Any) -> list[HandlerSpec]:
     return normalized
 
 
+def validate_handlers(value: Any) -> list[HandlerSpec]:
+    """Normalize and validate user-provided handler payload strictly."""
+    if value is None or value == "":
+        return []
+    payload = value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return []
+        payload = json.loads(stripped)
+    if not isinstance(payload, list):
+        raise ValueError("handlers 必须是 JSON 数组")
+
+    normalized: list[HandlerSpec] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"handlers[{index}] 必须是 JSON 对象")
+        spec = HandlerSpec.model_validate(item).normalized()
+        if not spec.id or not spec.name:
+            raise ValueError(f"handlers[{index}] 缺少 id/name")
+        if spec.id in seen_ids:
+            raise ValueError(f"重复 handler id: {spec.id}")
+        seen_ids.add(spec.id)
+        normalized.append(spec)
+    return normalized
+
+
 def dump_handlers(value: Any) -> list[dict[str, Any]]:
     """Dump handler payload to stable JSON-serializable list."""
     return [spec.model_dump() for spec in normalize_handlers(value)]
@@ -124,13 +393,14 @@ def parse_handlers_input(value: Any) -> list[dict[str, Any]]:
     except Exception as exc:
         raise ValueError("handlers 必须是合法 JSON 数组") from exc
 
-    if not isinstance(payload, list):
-        raise ValueError("handlers 必须是 JSON 数组")
-    return dump_handlers(payload)
+    return [spec.model_dump() for spec in validate_handlers(payload)]
 
 
 def handler_default_enabled(name: str) -> bool:
     """Return the default enabled state for a builtin handler."""
+    metadata = BUILTIN_HANDLER_REGISTRY.get(str(name or "").strip())
+    if metadata is not None:
+        return metadata.default_enabled
     return BUILTIN_HANDLER_DEFAULT_STATUS.get(str(name or "").strip(), False)
 
 
