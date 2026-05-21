@@ -21,8 +21,9 @@ logger = get_logger()
 class InfrastructureMessageSenderAdapter:
     """Adapter from application send requests to concrete infrastructure senders."""
 
-    def __init__(self, sender) -> None:
+    def __init__(self, sender, *, sender_strategy=None) -> None:
         self._sender = sender
+        self._sender_strategy = sender_strategy
 
     async def send_to_user(
         self,
@@ -37,6 +38,12 @@ class InfrastructureMessageSenderAdapter:
             platform_name=context.platform_name if context else "",
             timeout_seconds=context.timeout_seconds if context else 30,
             proxy=context.proxy if context else "",
+            send_mode=context.send_mode if context else None,
+            sender_strategy=(
+                getattr(context, "sender_strategy", None)
+                if context and getattr(context, "sender_strategy", None) is not None
+                else self._sender_strategy
+            ),
         )
         result = await self._sender.send_to_user(
             InfraSendRequest(
@@ -65,6 +72,10 @@ class InfrastructureMessageSenderProvider:
         self._sender_strategies = sender_strategies
 
     def get(self, platform_name: str | None) -> MessageSender:
+        sender_strategy = _resolve_platform_strategy(
+            platform_name,
+            self._sender_strategies,
+        )
         sender_class = get_sender_for_platform(
             platform_name,
             sender_strategies=self._sender_strategies,
@@ -74,4 +85,21 @@ class InfrastructureMessageSenderProvider:
             platform_name,
             sender_class.__name__,
         )
-        return InfrastructureMessageSenderAdapter(sender_class())
+        return InfrastructureMessageSenderAdapter(
+            sender_class(),
+            sender_strategy=sender_strategy,
+        )
+
+
+def _resolve_platform_strategy(
+    platform_name: str | None,
+    sender_strategies: SenderStrategySettings | None,
+):
+    if sender_strategies is None or not platform_name:
+        return None
+    normalized = platform_name.strip().lower()
+    if normalized in {"telegram", "tg"}:
+        return sender_strategies.telegram_settings
+    if normalized in {"aiocqhttp", "onebot", "onebot11", "onebotv11"}:
+        return sender_strategies.aiocqhttp_settings
+    return None

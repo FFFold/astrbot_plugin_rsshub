@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass
@@ -56,6 +56,8 @@ class MessageContext:
     platform_name: str = ""
     timeout_seconds: int = 30
     proxy: str = ""
+    send_mode: int | None = None
+    sender_strategy: Any = None
 
 
 @dataclass

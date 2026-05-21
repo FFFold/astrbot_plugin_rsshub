@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,8 @@ class MessageContext:
     platform_name: str = ""
     timeout_seconds: int = 30
     proxy: str = ""
+    send_mode: int | None = None
+    sender_strategy: Any = None
 
 
 @dataclass(frozen=True)

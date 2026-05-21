@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -65,8 +66,12 @@ async def test_onebot_sender_fallback_text_includes_all_original_media_urls(monk
         "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Plain",
         _Plain,
     )
-    monkeypatch.setattr("astrbot.api.message_components.Image", _Image, raising=False)
-    monkeypatch.setattr("astrbot.api.message_components.Video", _Video, raising=False)
+    monkeypatch.setattr(
+        sys.modules["astrbot.api.message_components"], "Image", _Image, raising=False
+    )
+    monkeypatch.setattr(
+        sys.modules["astrbot.api.message_components"], "Video", _Video, raising=False
+    )
 
     request = SendRequest(
         session_id="default:GroupMessage:1",
@@ -102,3 +107,58 @@ async def test_onebot_sender_fallback_text_includes_all_original_media_urls(monk
     assert "媒体原始链接:" in fallback_text
     assert "https://example.com/video.mp4" in fallback_text
     assert "https://example.com/image.jpg" in fallback_text
+
+
+@pytest.mark.asyncio
+async def test_onebot_sender_prefers_remote_video_url_by_default(monkeypatch):
+    sender = OneBotMessageSender()
+    calls: list[tuple[str, list]] = []
+
+    async def fake_send_chain(session_id: str, chain: list):
+        calls.append((session_id, chain))
+        return SendResult(ok=True)
+
+    monkeypatch.setattr(sender, "_send_chain", fake_send_chain)
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Node",
+        _Node,
+    )
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Nodes",
+        _Nodes,
+    )
+    monkeypatch.setattr(
+        "astrbot_plugin_rsshub.src.infrastructure.messaging.senders.onebot_sender.Plain",
+        _Plain,
+    )
+    monkeypatch.setattr(
+        sys.modules["astrbot.api.message_components"], "Image", _Image, raising=False
+    )
+    monkeypatch.setattr(
+        sys.modules["astrbot.api.message_components"], "Video", _Video, raising=False
+    )
+
+    request = SendRequest(
+        session_id="default:GroupMessage:1",
+        message="entry content",
+        prepared_media=[
+            PreparedMedia(
+                media_type="video",
+                original_url="https://example.com/video.mp4",
+                local_path=Path("/tmp/video.mp4"),
+            ),
+        ],
+    )
+
+    result = await sender.send_to_user(
+        request,
+        context=MessageContext(
+            channel=ChannelInfo(title="Feed Title"),
+            platform_name="aiocqhttp",
+        ),
+    )
+
+    assert result.ok is True
+    assert len(calls) == 1
+    media_node = calls[0][1][0].nodes[1]
+    assert media_node.content[0].file == "https://example.com/video.mp4"
