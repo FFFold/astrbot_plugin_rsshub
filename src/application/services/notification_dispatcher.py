@@ -482,7 +482,9 @@ class NotificationDispatcher:
                     handler_trace = list(handler_result.trace) or None
 
                 effective_title = (
-                    processed_entry.title if processed_entry is not None else entry_title
+                    processed_entry.title
+                    if processed_entry is not None
+                    else entry_title
                 )
                 effective_link = (
                     processed_entry.link if processed_entry is not None else entry_link

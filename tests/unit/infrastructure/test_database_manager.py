@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
+    DatabaseManager,
+)
 from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
     cleanup_legacy_translation_tables,
     ensure_push_history_schema,
@@ -13,6 +16,14 @@ from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations.V11_remove_
     upgrade as upgrade_v11,
 )
 from sqlalchemy.ext.asyncio import create_async_engine
+
+
+def test_database_is_initialized_requires_session_maker():
+    db = DatabaseManager()
+    db._engine = object()
+    db._session_maker = None
+
+    assert db.is_initialized is False
 
 
 class _Result:

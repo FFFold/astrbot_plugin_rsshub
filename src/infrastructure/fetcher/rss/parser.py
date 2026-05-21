@@ -93,7 +93,9 @@ class RSSParser:
             if bozo_exception and not feed:
                 return [], f"RSS parse failed: {bozo_exception}"
 
-        parsed_entries = [self.parse_entry(entry, feed_link=feed_link) for entry in entries]
+        parsed_entries = [
+            self.parse_entry(entry, feed_link=feed_link) for entry in entries
+        ]
         self._attach_raw_xml(parsed_entries, xml_content)
         return parsed_entries, None
 
@@ -232,18 +234,22 @@ class RSSParser:
             for child in list(elem):
                 child_name = cls._local_name(child.tag)
                 child_text = "".join(child.itertext()).strip()
-                if child_name in {
-                    "guid",
-                    "id",
-                    "title",
-                    "description",
-                    "summary",
-                    "content",
-                    "author",
-                    "pubDate",
-                    "published",
-                    "updated",
-                } and child_text:
+                if (
+                    child_name
+                    in {
+                        "guid",
+                        "id",
+                        "title",
+                        "description",
+                        "summary",
+                        "content",
+                        "author",
+                        "pubDate",
+                        "published",
+                        "updated",
+                    }
+                    and child_text
+                ):
                     info[child_name] = child_text
                 if child_name == "link":
                     href = str(child.attrib.get("href", "") or "").strip()

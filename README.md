@@ -379,7 +379,7 @@ src/
 
 ## 🌐 管理界面
 
-本项目管理界面使用 **AstrBot Plugin Pages**（`pages/dashboard`），通过 AstrBot 面板访问。  
+本项目管理界面使用 **AstrBot Plugin Pages**（`pages/dashboard`），通过 AstrBot 面板访问。
 后端接口由 `WebApiHandler` 注册到 `/{plugin_name}/...` 路径下（当前为 `/astrbot_plugin_rsshub/...`）。
 
 管理页包含已有订阅管理、用户/Feed 列表、推送历史、默认订阅设置和 RSSHub Routes 知识库同步。WebUI 不创建新订阅，也不提供订阅导入/导出入口；新增、导入和导出订阅请使用聊天命令或 AI agent。用户状态仅保留「用户」和「已封禁」两种；窄屏下订阅表格会切换为卡片式布局，推送历史筛选、分页和知识库状态区域会自动换行，避免按钮或长文本重叠。

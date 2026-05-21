@@ -66,13 +66,11 @@ class TestRSSParser:
         assert len(entry1.enclosures) >= 1
         assert entry1.enclosures[0].url == "https://example.com/image1.jpg"
 
-    def test_parse_content_encoded_from_juya_ai_daily_fixture(
-        self, fixtures_dir: Path
-    ):
+    def test_parse_content_encoded_from_juya_ai_daily_fixture(self, fixtures_dir: Path):
         """测试解析 content:encoded 中的完整正文。"""
-        xml = (
-            fixtures_dir / "feeds" / "juya_ai_daily_minimal.xml"
-        ).read_text(encoding="utf-8")
+        xml = (fixtures_dir / "feeds" / "juya_ai_daily_minimal.xml").read_text(
+            encoding="utf-8"
+        )
 
         parser = RSSParser()
         entries, error = parser.parse(xml)

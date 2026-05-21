@@ -548,7 +548,9 @@ async def test_user_command_endpoints_reject_blank_user_id(
 @pytest.mark.asyncio
 async def test_update_subscription_passes_real_user_id():
     command = MagicMock()
-    command.execute = AsyncMock(return_value=SimpleNamespace(success=True, message="ok"))
+    command.execute = AsyncMock(
+        return_value=SimpleNamespace(success=True, message="ok")
+    )
     handler = _handler(polling_service=MagicMock(), update_sub_cmd=command)
 
     app = Quart(__name__)
@@ -649,7 +651,9 @@ async def test_list_subscriptions_returns_handlers_mode():
 @pytest.mark.asyncio
 async def test_unsubscribe_passes_real_user_id():
     command = MagicMock()
-    command.execute = AsyncMock(return_value=SimpleNamespace(success=True, message="ok"))
+    command.execute = AsyncMock(
+        return_value=SimpleNamespace(success=True, message="ok")
+    )
     handler = _handler(polling_service=MagicMock(), unsubscribe_cmd=command)
 
     app = Quart(__name__)

@@ -78,7 +78,9 @@ async def test_agent_xml_push_service_dry_run_returns_preview():
     assert result["dry_run"] is True
     preview = result["preview"]
     assert preview["entry_guid"].startswith("agent:")
-    assert "via https://example.com/post | Feed Name (author: Alice)" in preview["content"]
+    assert (
+        "via https://example.com/post | Feed Name (author: Alice)" in preview["content"]
+    )
     assert preview["media_urls"] == ["https://example.com/a.png"]
     dispatcher.dispatch_agent_entry.assert_not_awaited()
 

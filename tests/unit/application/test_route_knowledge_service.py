@@ -66,6 +66,7 @@ class _BadHashSource(_FakeSource):
             sha256=file.sha256,
         )
 
+
 class _FakeRepository:
     def __init__(self):
         self.docs: dict[str, _StoredDoc] = {}

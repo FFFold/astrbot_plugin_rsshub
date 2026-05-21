@@ -61,6 +61,7 @@ def test_application_settings_maps_fetch_config_and_ignores_pipeline_config():
     assert not hasattr(settings, "baidu")
     assert not hasattr(settings, "pipeline")
 
+
 def test_config_ignores_removed_translation_template_credentials():
     from astrbot_plugin_rsshub.src.infrastructure.config.config_manager import (
         RsshubPluginConfig,
@@ -578,6 +579,5 @@ def test_application_settings_normalizes_legacy_route_knowledge_urls():
         "FlanChanXwO/rsshub-routes-knowledgebase/main"
     )
     assert settings.route_knowledge.fallback_base_url == (
-        "https://raw.githubusercontent.com/"
-        "FlanChanXwO/rsshub-routes-knowledgebase/main"
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
     )
