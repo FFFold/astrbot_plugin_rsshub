@@ -29,8 +29,8 @@ from ...infrastructure.pipeline import (
     EntryTextFormatter,
 )
 from ...infrastructure.utils import get_logger
+from ...shared.settings import FeedFetchSettings, RSSSettings
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
-from ..settings import FeedFetchSettings, RSSSettings
 from .content_handlers import EntryContentContext
 from .html_parser import HTMLParser
 from .notification_dispatcher import NotificationDispatcher

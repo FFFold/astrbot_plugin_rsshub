@@ -8,7 +8,7 @@ from ....application.ports import (
     SendRequest,
     SendResult,
 )
-from ....application.settings import SenderStrategySettings
+from ....shared.settings import SenderStrategySettings
 from ...utils import get_logger
 from .factory import get_sender_for_platform
 from .types import ChannelInfo

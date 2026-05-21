@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ...infrastructure.utils import get_logger
+from ...shared.settings import RouteKnowledgeSettings
 from ..ports.route_knowledge import (
     RouteKnowledgeDocument,
     RouteKnowledgeFile,
@@ -19,7 +20,6 @@ from ..ports.route_knowledge import (
     RouteKnowledgeRepository,
     RouteKnowledgeSource,
 )
-from ..settings import RouteKnowledgeSettings
 
 MANAGED_DOC_PREFIX = "rsshub-routes/"
 logger = get_logger()

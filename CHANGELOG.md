@@ -14,7 +14,7 @@
 ### Changed
 
 - 将 LLM 工具注册模块从 `src/application/commands/llmtools.py` 调整为 `src/application/llmtools.py`，避免把非命令模块放在命令包下。
-- 拆分配置职责：`src/application/settings.py` 仅保留应用层 settings dataclass，AstrBot 配置解析与兼容读取迁移到 `src/infrastructure/config/settings_adapter.py`。
+- 拆分配置职责：运行态 settings dataclass 统一放在 `src/shared/settings.py`，AstrBot 配置解析与兼容读取保留在 `src/infrastructure/config/settings_adapter.py`。
 - Plugin Pages「设置」页更名为「默认订阅设置」，仅维护订阅默认值，不再暴露内容管道配置。
 - Plugin Pages 用户/订阅处理链编辑器改为 schema-driven：优先读取 `handlers/schema`，接口不可用时使用内置 fallback；两处编辑共用启停、排序、添加内置 handler、删除、字段编辑和原始 JSON 高级模式。
 - Plugin Pages 不再提供新增订阅、TOML 导入和订阅导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 完成。

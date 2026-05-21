@@ -77,7 +77,7 @@ Behavior invariants:
 - Do not add or use a `webadmin` fallback user. Web API endpoints that mutate or export user-owned resources must receive an explicit real `user_id`.
 - Do not restore legacy content-processing, translation, AI enrich pipeline settings, or `_conf_schema.json` content pipeline toggles. Current content processing belongs to the handlers chain.
 - Formatter responsibilities are formatting parsed entries/media for senders only; do not put translation, enrichment, route lookup, or subscription command fallback behavior into formatter code. AI filtering belongs in `ContentHandlerRuntime`.
-- Keep `src/application/settings.py` as application dataclasses only; AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
+- Runtime settings dataclasses live only in `src/shared/settings.py`; do not recreate `src/application/settings.py`. AstrBot config parsing and legacy compatibility belong in `src/infrastructure/config/settings_adapter.py`.
 
 ## Dev and test commands
 

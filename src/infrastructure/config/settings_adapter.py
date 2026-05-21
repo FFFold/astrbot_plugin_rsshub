@@ -120,8 +120,8 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     """Build application settings from an infrastructure config object.
 
     This is the adapter between the AstrBot-facing Pydantic config model and the
-    application-layer dataclasses. Keep AstrBot compatibility parsing here, not
-    in ``src.application.settings``.
+    shared runtime dataclasses. Keep AstrBot compatibility parsing here, not in
+    the application layer.
     """
     basic_cfg = _get_value(config, "basic_config")
     global_cfg = _get_value(config, "global_config")
