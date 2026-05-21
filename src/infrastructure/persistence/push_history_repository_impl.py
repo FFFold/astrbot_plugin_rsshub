@@ -250,7 +250,7 @@ class PushHistoryRepositoryImpl:
             total = (await session.execute(total_stmt)).scalar_one() or 0
 
             status_counts = {}
-            for status in ["pending", "success", "failed", "stopped"]:
+            for status in ["pending", "success", "failed", "stopped", "skipped"]:
                 stmt = (
                     select(func.count())
                     .select_from(PushHistoryORM)
@@ -277,6 +277,7 @@ class PushHistoryRepositoryImpl:
             content=orm.content,
             raw_xml=orm.raw_xml,
             media_urls=orm.media_urls,
+            handler_trace=orm.handler_trace,
             entry_title=orm.entry_title,
             entry_link=orm.entry_link,
             entry_guid=orm.entry_guid,
@@ -306,6 +307,7 @@ class PushHistoryRepositoryImpl:
             content=history.content,
             raw_xml=history.raw_xml,
             media_urls=history.media_urls,
+            handler_trace=history.handler_trace,
             entry_title=history.entry_title,
             entry_link=history.entry_link,
             entry_guid=history.entry_guid,

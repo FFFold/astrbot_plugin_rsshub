@@ -319,6 +319,7 @@ async def ensure_push_history_schema(conn) -> list[str]:
         "source_type": "ALTER TABLE rsshub_push_history ADD COLUMN source_type VARCHAR(16) NOT NULL DEFAULT 'feed'",
         "source_key": "ALTER TABLE rsshub_push_history ADD COLUMN source_key VARCHAR(255)",
         "raw_xml": "ALTER TABLE rsshub_push_history ADD COLUMN raw_xml TEXT",
+        "handler_trace": "ALTER TABLE rsshub_push_history ADD COLUMN handler_trace JSON",
     }
     for column, sql in required_columns.items():
         if column in columns:
@@ -381,6 +382,8 @@ async def ensure_user_subscription_prompt_schema(conn) -> list[str]:
     from .V8_subscription_handlers_mode import (
         _rebuild_sub_table as _rebuild_sub_table_v8,
     )
+    from .V11_remove_link_preview import _rebuild_sub_table as _rebuild_sub_table_v11
+    from .V11_remove_link_preview import _rebuild_user_table as _rebuild_user_table_v11
 
     before: dict[str, set[str]] = {}
     for table in ("rsshub_user", "rsshub_sub"):
@@ -416,6 +419,8 @@ async def ensure_user_subscription_prompt_schema(conn) -> list[str]:
         await _rebuild_sub_table_v6(conn)
         await _rebuild_sub_table_v7(conn)
     await _rebuild_sub_table_v8(conn)
+    await _rebuild_user_table_v11(conn)
+    await _rebuild_sub_table_v11(conn)
 
     changed: list[str] = []
     for table, previous in before.items():

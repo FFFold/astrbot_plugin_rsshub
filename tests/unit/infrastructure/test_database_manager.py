@@ -12,6 +12,9 @@ from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
 from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations.V6_ai_prompt_and_inherit_options import (
     upgrade as upgrade_v6,
 )
+from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations.V11_remove_link_preview import (
+    upgrade as upgrade_v11,
+)
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
@@ -61,11 +64,12 @@ async def test_ensure_push_history_schema_adds_missing_columns():
 
     applied = await ensure_push_history_schema(conn)
 
-    assert applied == ["source_type", "source_key", "raw_xml"]
+    assert applied == ["source_type", "source_key", "raw_xml", "handler_trace"]
     executed_sql = "\n".join(sql for sql, _ in conn.executed)
     assert "ADD COLUMN source_type" in executed_sql
     assert "ADD COLUMN source_key" in executed_sql
     assert "ADD COLUMN raw_xml" in executed_sql
+    assert "ADD COLUMN handler_trace" in executed_sql
 
 
 class _LegacyTableConn(_Conn):
@@ -121,7 +125,6 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
                 notify INTEGER NOT NULL DEFAULT 1,
                 send_mode INTEGER NOT NULL DEFAULT 0,
                 length_limit INTEGER NOT NULL DEFAULT 0,
-                link_preview INTEGER NOT NULL DEFAULT 0,
                 display_author INTEGER NOT NULL DEFAULT 0,
                 display_via INTEGER NOT NULL DEFAULT 0,
                 display_title INTEGER NOT NULL DEFAULT 0,
@@ -164,7 +167,6 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
                 length_limit INTEGER NOT NULL DEFAULT -100,
-                link_preview INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
                 display_via INTEGER NOT NULL DEFAULT -100,
                 display_title INTEGER NOT NULL DEFAULT -100,
@@ -184,21 +186,21 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
         await conn.exec_driver_sql(
             """
             INSERT INTO rsshub_user (
-                id, interval, notify, send_mode, length_limit, link_preview,
+                id, interval, notify, send_mode, length_limit,
                 display_author, display_via, display_title, display_entry_tags,
                 style, display_media, use_user_config, translate
             )
-            VALUES ('u1', 15, 0, 2, 500, 1, -1, -2, -1, 0, 1, -1, 1, 1)
+            VALUES ('u1', 15, 0, 2, 500, -1, -2, -1, 0, 1, -1, 1, 1)
             """
         )
         await conn.exec_driver_sql(
             """
             INSERT INTO rsshub_user (
-                id, interval, notify, send_mode, length_limit, link_preview,
+                id, interval, notify, send_mode, length_limit,
                 display_author, display_via, display_title, display_entry_tags,
                 style, display_media, use_user_config, translate
             )
-            VALUES ('u2', 20, 1, 0, 300, 0, 0, 0, 0, -1, 0, 0, 0, 1)
+            VALUES ('u2', 20, 1, 0, 300, 0, 0, 0, -1, 0, 0, 0, 1)
             """
         )
         await conn.exec_driver_sql(
@@ -208,22 +210,22 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
             """
             INSERT INTO rsshub_sub (
                 id, user_id, feed_id, interval, notify, send_mode,
-                length_limit, link_preview, display_author, display_via,
+                length_limit, display_author, display_via,
                 display_title, display_entry_tags, style, display_media,
                 use_sub_config, translate
             )
-            VALUES (1, 'u1', 1, 15, 0, 2, 500, 1, -1, -2, -1, 0, 1, -1, 1, 1)
+            VALUES (1, 'u1', 1, 15, 0, 2, 500, -1, -2, -1, 0, 1, -1, 1, 1)
             """
         )
         await conn.exec_driver_sql(
             """
             INSERT INTO rsshub_sub (
                 id, user_id, feed_id, interval, notify, send_mode,
-                length_limit, link_preview, display_author, display_via,
+                length_limit, display_author, display_via,
                 display_title, display_entry_tags, style, display_media,
                 use_sub_config, translate
             )
-            VALUES (2, 'u1', 1, 20, 1, 0, 300, 0, 0, 0, 0, -1, 0, 0, 0, 1)
+            VALUES (2, 'u1', 1, 20, 1, 0, 300, 0, 0, 0, -1, 0, 0, 0, 1)
             """
         )
 
@@ -244,8 +246,8 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
                 """
                 SELECT
                     id, interval, notify, send_mode, ai_prompt, length_limit,
-                    link_preview, display_author, display_via, display_title,
-                    display_entry_tags, style, display_media
+                    display_author, display_via, display_title, display_entry_tags,
+                    style, display_media
                 FROM rsshub_user ORDER BY id
                 """
             )
@@ -255,33 +257,19 @@ async def test_v6_rebuilds_user_and_sub_tables_for_ai_prompt_and_inherit_fields(
                 """
                 SELECT
                     id, interval, notify, send_mode, ai_prompt, length_limit,
-                    link_preview, display_author, display_via, display_title,
-                    display_entry_tags, style, display_media
+                    display_author, display_via, display_title, display_entry_tags,
+                    style, display_media
                 FROM rsshub_sub ORDER BY id
                 """
             )
         ).fetchall()
         assert user_row == [
-            ("u1", 15, 0, 2, "", 500, 1, -1, -2, -1, 0, 1, -1),
-            (
-                "u2",
-                -100,
-                -100,
-                -100,
-                "",
-                -100,
-                -100,
-                -100,
-                -100,
-                -100,
-                -100,
-                -100,
-                -100,
-            ),
+            ("u1", 15, 0, 2, "", 500, -1, -2, -1, 0, 1, -1),
+            ("u2", -100, -100, -100, "", -100, -100, -100, -100, -100, -100, -100),
         ]
         assert sub_rows == [
-            (1, 15, 0, 2, "", 500, 1, -1, -2, -1, 0, 1, -1),
-            (2, -100, -100, -100, "", -100, -100, -100, -100, -100, -100, -100, -100),
+            (1, 15, 0, 2, "", 500, -1, -2, -1, 0, 1, -1),
+            (2, -100, -100, -100, "", -100, -100, -100, -100, -100, -100, -100),
         ]
 
     await engine.dispose()
@@ -324,7 +312,6 @@ async def test_prompt_schema_self_heal_rebuilds_user_table_default_values():
                 send_mode INTEGER NOT NULL DEFAULT 0,
                 ai_prompt TEXT NOT NULL DEFAULT '',
                 length_limit INTEGER NOT NULL DEFAULT 0,
-                link_preview INTEGER NOT NULL DEFAULT 0,
                 display_author INTEGER NOT NULL DEFAULT 0,
                 display_via INTEGER NOT NULL DEFAULT 0,
                 display_title INTEGER NOT NULL DEFAULT 0,
@@ -379,7 +366,6 @@ async def test_prompt_schema_self_heal_rebuilds_sub_table_default_values():
                 send_mode INTEGER NOT NULL DEFAULT -100,
                 ai_prompt TEXT NOT NULL DEFAULT '',
                 length_limit INTEGER NOT NULL DEFAULT -100,
-                link_preview INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
                 display_via INTEGER NOT NULL DEFAULT -100,
                 display_title INTEGER NOT NULL DEFAULT -100,
@@ -454,5 +440,92 @@ async def test_prompt_schema_self_heal_adds_handlers_mode_and_backfills_semantic
             )
         ).fetchall()
         assert rows == [(1, "inherit"), (2, "override")]
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_v11_removes_legacy_link_preview_columns():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE rsshub_user (
+                id VARCHAR PRIMARY KEY,
+                state INTEGER NOT NULL DEFAULT 1,
+                interval INTEGER NOT NULL DEFAULT -100,
+                notify INTEGER NOT NULL DEFAULT -100,
+                send_mode INTEGER NOT NULL DEFAULT -100,
+                handlers TEXT NOT NULL DEFAULT '[]',
+                length_limit INTEGER NOT NULL DEFAULT -100,
+                link_preview INTEGER NOT NULL DEFAULT -100,
+                display_author INTEGER NOT NULL DEFAULT -100,
+                display_via INTEGER NOT NULL DEFAULT -100,
+                display_title INTEGER NOT NULL DEFAULT -100,
+                display_entry_tags INTEGER NOT NULL DEFAULT -100,
+                style INTEGER NOT NULL DEFAULT -100,
+                display_media INTEGER NOT NULL DEFAULT -100,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE rsshub_feed (
+                id INTEGER PRIMARY KEY,
+                link VARCHAR(4096) NOT NULL UNIQUE,
+                title VARCHAR(1024) NOT NULL
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE rsshub_sub (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                state INTEGER NOT NULL DEFAULT 1,
+                user_id VARCHAR NOT NULL,
+                feed_id INTEGER NOT NULL,
+                interval INTEGER NOT NULL DEFAULT -100,
+                notify INTEGER NOT NULL DEFAULT -100,
+                send_mode INTEGER NOT NULL DEFAULT -100,
+                handlers TEXT NOT NULL DEFAULT '[]',
+                length_limit INTEGER NOT NULL DEFAULT -100,
+                link_preview INTEGER NOT NULL DEFAULT -100,
+                display_author INTEGER NOT NULL DEFAULT -100,
+                display_via INTEGER NOT NULL DEFAULT -100,
+                display_title INTEGER NOT NULL DEFAULT -100,
+                display_entry_tags INTEGER NOT NULL DEFAULT -100,
+                style INTEGER NOT NULL DEFAULT -100,
+                display_media INTEGER NOT NULL DEFAULT -100,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            "INSERT INTO rsshub_user (id, link_preview, send_mode) VALUES ('u1', 1, 0)"
+        )
+        await conn.exec_driver_sql(
+            "INSERT INTO rsshub_feed (id, link, title) VALUES (1, 'https://example.com/rss', 'Feed')"
+        )
+        await conn.exec_driver_sql(
+            "INSERT INTO rsshub_sub (id, user_id, feed_id, link_preview, send_mode) VALUES (1, 'u1', 1, 1, 0)"
+        )
+
+        await upgrade_v11(conn)
+
+        user_columns = await _columns(conn, "rsshub_user")
+        sub_columns = await _columns(conn, "rsshub_sub")
+        assert "link_preview" not in user_columns
+        assert "link_preview" not in sub_columns
+        user_rows = (
+            await conn.exec_driver_sql("SELECT id, send_mode FROM rsshub_user")
+        ).fetchall()
+        sub_rows = (
+            await conn.exec_driver_sql("SELECT id, send_mode FROM rsshub_sub")
+        ).fetchall()
+        assert user_rows == [("u1", 0)]
+        assert sub_rows == [(1, 0)]
 
     await engine.dispose()

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from ....application.settings import SenderStrategySettings
+from ....shared.settings import SenderStrategySettings
 from ...config import get_config_manager
 from ...utils import get_logger
 from .base_sender import DefaultMessageSender

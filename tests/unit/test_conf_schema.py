@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+PLUGIN_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
-    schema = json.loads(Path("_conf_schema.json").read_text(encoding="utf-8"))
+    schema = json.loads((PLUGIN_ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
 
     assert set(schema) == {
         "basic_config",
@@ -19,10 +21,14 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert route_knowledge_items["kb_name"]["default"] == "RSSHub Routes"
     assert route_knowledge_items["embedding_provider_id"]["default"] == ""
     assert (
-        route_knowledge_items["embedding_provider_id"]["_special"] == "select_provider"
+        route_knowledge_items["embedding_provider_id"]["_special"]
+        == "select_provider:embedding"
     )
     assert route_knowledge_items["rerank_provider_id"]["default"] == ""
-    assert route_knowledge_items["rerank_provider_id"]["_special"] == "select_provider"
+    assert (
+        route_knowledge_items["rerank_provider_id"]["_special"]
+        == "select_provider:rerank"
+    )
     assert route_knowledge_items["source_mode"]["default"] == "mirror"
     assert route_knowledge_items["source_mode"]["options"] == [
         "mirror",
@@ -31,8 +37,8 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "local",
     ]
     source_options = [
-        "https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase",
-        "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/astrbot_plugin_rsshub/rsshub-routes-knowledgebase",
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
+        "https://ghfast.top/https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main",
     ]
     assert route_knowledge_items["source_base_url"]["default"] == source_options[0]
     assert route_knowledge_items["source_base_url"]["options"] == source_options
@@ -118,3 +124,22 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert enabled_platforms["default"] == sender_strategy_options
     assert enabled_platforms["options"] == sender_strategy_options
     assert enabled_platforms["items"]["type"] == "string"
+
+
+def test_conf_schema_exposes_single_platform_strategy_template_list():
+    schema = json.loads((PLUGIN_ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
+    sender_items = schema["sender_strategies"]["items"]
+
+    assert "telegram" not in sender_items
+    assert "aiocqhttp" not in sender_items
+    platform_strategies = sender_items["platform_strategies"]
+    assert platform_strategies["type"] == "template_list"
+    assert platform_strategies["default"] == []
+    assert "dict" not in json.dumps(schema)
+
+    templates = platform_strategies["templates"]
+    telegram_items = templates["telegram_strategy"]["items"]
+    onebot_items = templates["onebot_strategy"]["items"]
+    assert telegram_items["enable_telegraph"]["type"] == "bool"
+    assert telegram_items["telegraph_token"]["type"] == "string"
+    assert onebot_items["prefer_local_video"]["type"] == "bool"

@@ -1,13 +1,21 @@
-"""Application-level settings.
+"""Neutral runtime settings models.
 
-This module contains configuration values after infrastructure-specific config
-loading has already happened. Application services and commands may depend on
-these dataclasses without importing the AstrBot config adapter.
+These dataclasses are the single source of truth for application runtime
+configuration after infrastructure adapters have normalized raw AstrBot config.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class PlatformStrategySettings:
+    """Platform-specific sender strategy settings."""
+
+    enable_telegraph: bool = False
+    telegraph_token: str = ""
+    prefer_local_video: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,7 +68,6 @@ class SubscriptionDefaults:
     notify: bool = True
     send_mode: str = "自动"
     length_limit: int = 0
-    link_preview: str = "自动"
     display_author: str = "自动"
     display_via: str = "自动"
     display_title: str = "自动"
@@ -77,6 +84,12 @@ class SenderStrategySettings:
     aiocqhttp: bool = True
     qq_official: bool = True
     weixin_oc: bool = True
+    telegram_settings: PlatformStrategySettings = field(
+        default_factory=PlatformStrategySettings
+    )
+    aiocqhttp_settings: PlatformStrategySettings = field(
+        default_factory=PlatformStrategySettings
+    )
 
 
 @dataclass(frozen=True)

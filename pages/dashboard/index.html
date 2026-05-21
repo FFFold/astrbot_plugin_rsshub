@@ -554,7 +554,7 @@
           <select class="select-input" v-model="subscriptionDefaults.send_mode">
             <option value="仅链接">仅链接</option>
             <option value="自动">自动</option>
-            <option value="直接消息">直接消息</option>
+            <option value="直接发送">直接发送</option>
           </select>
         </div>
         <div class="setting-row">
@@ -562,13 +562,6 @@
           <div class="input-wrapper" style="max-width:120px;">
             <input type="number" v-model.number="subscriptionDefaults.length_limit" min="0" />
           </div>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">默认链接预览</span>
-          <select class="select-input" v-model="subscriptionDefaults.link_preview">
-            <option value="自动">自动</option>
-            <option value="强制启用">强制启用</option>
-          </select>
         </div>
         <div class="setting-row">
           <span class="setting-label">默认显示作者</span>
@@ -677,24 +670,59 @@
                 <option value="disabled">禁用全部处理链</option>
               </select>
             </div>
-            <label class="checkbox-row">
-              <input
-                type="checkbox"
-                v-model="editForm.xml_parse_enabled"
-                :disabled="editForm.handlers_mode !== 'override'"
-              />
-              <span>启用 XML/HTML 解析</span>
-            </label>
-            <label class="checkbox-row">
-              <input
-                type="checkbox"
-                v-model="editForm.ai_transform_enabled"
-                :disabled="editForm.handlers_mode !== 'override'"
-              />
-              <span>启用 AI 改写</span>
-            </label>
-            <div class="input-wrapper" v-if="editForm.ai_transform_enabled && editForm.handlers_mode === 'override'">
-              <textarea v-model="editForm.ai_transform_prompt" rows="4" placeholder="例如：请总结为三条要点"></textarea>
+            <template v-if="editForm.handlers_mode === 'override'">
+              <div class="handler-toolbar">
+                <select class="select-input" @change="addBuiltinHandler(editForm, $event.target.value); $event.target.value = ''">
+                  <option value="">添加内置 handler</option>
+                  <option v-for="schema in availableBuiltinHandlers(editForm)" :key="schema.id" :value="schema.type + '.' + schema.name">{{ schema.title }}</option>
+                </select>
+                <label class="checkbox-row">
+                  <input type="checkbox" v-model="editForm.handlers_advanced" />
+                  <span>原始 JSON</span>
+                </label>
+              </div>
+              <div v-if="!editForm.handlers_advanced" class="handler-list">
+                <div v-for="(handler, index) in editForm.handlers" :key="handler.id || index" class="handler-item">
+                  <div class="handler-item-header">
+                    <div>
+                      <div class="handler-title">{{ handlerTitle(handler) }}</div>
+                      <div class="handler-desc" v-if="handlerDescription(handler)">{{ handlerDescription(handler) }}</div>
+                    </div>
+                    <div class="handler-actions">
+                      <label class="toggle-switch">
+                        <input type="checkbox" :checked="handler.status !== 0" @change="handler.status = $event.target.checked ? 1 : 0; syncHandlersJson(editForm)" />
+                        <span class="toggle-slider"></span>
+                      </label>
+                      <button type="button" class="btn btn-text btn-small" @click="moveHandler(editForm, index, -1)" :disabled="index === 0">上移</button>
+                      <button type="button" class="btn btn-text btn-small" @click="moveHandler(editForm, index, 1)" :disabled="index === editForm.handlers.length - 1">下移</button>
+                      <button type="button" class="btn btn-text btn-small danger" @click="removeHandler(editForm, index)">删除</button>
+                    </div>
+                  </div>
+                  <div class="handler-fields" v-if="handlerFields(handler).length">
+                    <div class="form-group" v-for="field in handlerFields(handler)" :key="field.name">
+                      <label>{{ field.label }}</label>
+                      <select v-if="field.type === 'select'" class="select-input" :value="ensureHandlerConfig(handler, field)" @change="updateHandlerField(editForm, handler, field, $event.target.value)">
+                        <option v-for="option in field.options" :key="option.value !== undefined ? option.value : option" :value="option.value !== undefined ? option.value : option">{{ option.label || option }}</option>
+                      </select>
+                      <label v-else-if="field.type === 'bool'" class="toggle-switch">
+                        <input type="checkbox" :checked="ensureHandlerConfig(handler, field)" @change="updateHandlerField(editForm, handler, field, $event.target.checked)" />
+                        <span class="toggle-slider"></span>
+                      </label>
+                      <input v-else-if="field.type === 'int' || field.type === 'float'" type="number" :step="field.type === 'float' ? 'any' : '1'" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)" />
+                      <textarea v-else-if="field.type === 'text' || field.type === 'list[string]' || field.type === 'json'" :rows="field.type === 'text' ? 4 : 5" :placeholder="field.placeholder" :value="handlerFieldValue(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)"></textarea>
+                      <input v-else type="text" :placeholder="field.placeholder" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)" />
+                    </div>
+                  </div>
+                </div>
+                <div v-if="editForm.handlers.length === 0" class="handler-empty">未配置处理链</div>
+              </div>
+              <div v-else class="handler-json">
+                <textarea v-model="editForm.handlers_json" rows="10"></textarea>
+                <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(editForm)">应用 JSON</button>
+              </div>
+            </template>
+            <div v-else class="handler-empty">
+              {{ editForm.handlers_mode === 'inherit' ? '当前订阅继承用户处理链' : '当前订阅禁用全部处理链' }}
             </div>
           </div>
         </div>
@@ -721,7 +749,7 @@
             <option :value="-100">继承</option>
             <option :value="-1">仅链接</option>
             <option :value="0">自动</option>
-            <option :value="2">直接消息</option>
+            <option :value="1">直接发送</option>
           </select>
         </div>
         <div class="setting-row">
@@ -737,14 +765,6 @@
           <div class="input-wrapper" style="max-width:120px;">
             <input type="number" v-model.number="editForm.length_limit" min="0" max="10000" />
           </div>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">链接预览</span>
-          <select class="select-input" v-model.number="editForm.link_preview">
-            <option :value="-100">继承</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
         </div>
         <div class="setting-row">
           <span class="setting-label">显示作者</span>
@@ -873,16 +893,54 @@
         <div class="form-group">
           <label>内容处理链</label>
           <div class="handler-editor">
-            <label class="checkbox-row">
-              <input type="checkbox" v-model="userEditForm.xml_parse_enabled" />
-              <span>启用 XML/HTML 解析</span>
-            </label>
-            <label class="checkbox-row">
-              <input type="checkbox" v-model="userEditForm.ai_transform_enabled" />
-              <span>启用 AI 改写</span>
-            </label>
-            <div class="input-wrapper" v-if="userEditForm.ai_transform_enabled">
-              <textarea v-model="userEditForm.ai_transform_prompt" rows="4" placeholder="例如：请总结为三条要点"></textarea>
+            <div class="handler-toolbar">
+              <select class="select-input" @change="addBuiltinHandler(userEditForm, $event.target.value); $event.target.value = ''">
+                <option value="">添加内置 handler</option>
+                <option v-for="schema in availableBuiltinHandlers(userEditForm)" :key="schema.id" :value="schema.type + '.' + schema.name">{{ schema.title }}</option>
+              </select>
+              <label class="checkbox-row">
+                <input type="checkbox" v-model="userEditForm.handlers_advanced" />
+                <span>原始 JSON</span>
+              </label>
+            </div>
+            <div v-if="!userEditForm.handlers_advanced" class="handler-list">
+              <div v-for="(handler, index) in userEditForm.handlers" :key="handler.id || index" class="handler-item">
+                <div class="handler-item-header">
+                  <div>
+                    <div class="handler-title">{{ handlerTitle(handler) }}</div>
+                    <div class="handler-desc" v-if="handlerDescription(handler)">{{ handlerDescription(handler) }}</div>
+                  </div>
+                  <div class="handler-actions">
+                    <label class="toggle-switch">
+                      <input type="checkbox" :checked="handler.status !== 0" @change="handler.status = $event.target.checked ? 1 : 0; syncHandlersJson(userEditForm)" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <button type="button" class="btn btn-text btn-small" @click="moveHandler(userEditForm, index, -1)" :disabled="index === 0">上移</button>
+                    <button type="button" class="btn btn-text btn-small" @click="moveHandler(userEditForm, index, 1)" :disabled="index === userEditForm.handlers.length - 1">下移</button>
+                    <button type="button" class="btn btn-text btn-small danger" @click="removeHandler(userEditForm, index)">删除</button>
+                  </div>
+                </div>
+                <div class="handler-fields" v-if="handlerFields(handler).length">
+                  <div class="form-group" v-for="field in handlerFields(handler)" :key="field.name">
+                    <label>{{ field.label }}</label>
+                    <select v-if="field.type === 'select'" class="select-input" :value="ensureHandlerConfig(handler, field)" @change="updateHandlerField(userEditForm, handler, field, $event.target.value)">
+                      <option v-for="option in field.options" :key="option.value !== undefined ? option.value : option" :value="option.value !== undefined ? option.value : option">{{ option.label || option }}</option>
+                    </select>
+                    <label v-else-if="field.type === 'bool'" class="toggle-switch">
+                      <input type="checkbox" :checked="ensureHandlerConfig(handler, field)" @change="updateHandlerField(userEditForm, handler, field, $event.target.checked)" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <input v-else-if="field.type === 'int' || field.type === 'float'" type="number" :step="field.type === 'float' ? 'any' : '1'" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)" />
+                    <textarea v-else-if="field.type === 'text' || field.type === 'list[string]' || field.type === 'json'" :rows="field.type === 'text' ? 4 : 5" :placeholder="field.placeholder" :value="handlerFieldValue(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)"></textarea>
+                    <input v-else type="text" :placeholder="field.placeholder" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)" />
+                  </div>
+                </div>
+              </div>
+              <div v-if="userEditForm.handlers.length === 0" class="handler-empty">未配置处理链</div>
+            </div>
+            <div v-else class="handler-json">
+              <textarea v-model="userEditForm.handlers_json" rows="10"></textarea>
+              <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(userEditForm)">应用 JSON</button>
             </div>
           </div>
         </div>
@@ -909,7 +967,7 @@
             <option :value="-100">继承</option>
             <option :value="-1">仅链接</option>
             <option :value="0">自动</option>
-            <option :value="2">直接消息</option>
+            <option :value="1">直接发送</option>
           </select>
         </div>
         <div class="setting-row">
@@ -921,14 +979,6 @@
       </div>
       <div class="panel-section">
         <h4>显示选项</h4>
-        <div class="setting-row">
-          <span class="setting-label">链接预览</span>
-          <select class="select-input" v-model.number="userEditForm.link_preview">
-            <option :value="-100">继承</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
         <div class="setting-row">
           <span class="setting-label">显示作者</span>
           <select class="select-input" v-model.number="userEditForm.display_author">

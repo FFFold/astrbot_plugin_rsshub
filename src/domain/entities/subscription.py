@@ -51,9 +51,11 @@ class Subscription(BaseModel):
     next_check_time: datetime | None = Field(default=None, description="下次检查时间")
 
     notify: int = Field(default=INHERIT_VALUE, description="是否通知")
-    send_mode: int = Field(default=INHERIT_VALUE, description="发送模式")
+    send_mode: int = Field(
+        default=INHERIT_VALUE,
+        description="发送模式: -100=继承, -1=仅链接, 0=自动, 1=直接发送",
+    )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
-    link_preview: int = Field(default=INHERIT_VALUE, description="链接预览")
     display_author: int = Field(default=INHERIT_VALUE, description="显示作者")
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
     display_title: int = Field(default=INHERIT_VALUE, description="显示标题")

@@ -19,7 +19,6 @@ class UserDTO:
     notify: int
     send_mode: int
     length_limit: int
-    link_preview: int
     display_author: int
     display_via: int
     display_title: int

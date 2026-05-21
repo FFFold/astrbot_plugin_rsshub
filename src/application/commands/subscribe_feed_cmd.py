@@ -11,10 +11,10 @@ from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.value_objects.feed_url import FeedUrl
 from ...infrastructure.utils import get_logger
+from ...shared.settings import FeedFetchSettings
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcherFactory
-from ..settings import FeedFetchSettings
 
 logger = get_logger()
 

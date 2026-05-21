@@ -12,6 +12,7 @@ import {
   getStats,
   checkUpdates,
   getPluginSettings,
+  getHandlerSchema,
   setPluginSettings,
   getUsers,
   getFeeds,
@@ -29,6 +30,27 @@ import { initTheme } from './js/theme.js';
 
 let toastTimer = null;
 let routeKbPollTimer = null;
+
+const FALLBACK_HANDLER_SCHEMA = {
+  handlers: [
+    {
+      type: 'builtin',
+      name: 'xml_parse',
+      title: 'XML/HTML 解析',
+      description: '解析 XML/HTML 标签内容为正文和媒体组件',
+      fields: [],
+    },
+    {
+      type: 'builtin',
+      name: 'ai_transform',
+      title: 'AI 改写',
+      description: '调用 AstrBot LLM 能力对正文做改写、总结或格式化',
+      fields: [
+        { name: 'prompt', label: '提示词', type: 'text', default: '', placeholder: '例如：请总结为三条要点' },
+      ],
+    },
+  ],
+};
 
 function normalizeUserState(state) {
   return Number(state) < 0 ? -1 : 1;
@@ -60,40 +82,72 @@ function normalizeHandlers(handlers) {
     .filter(item => item.id && item.name);
 }
 
+function normalizeHandlerSchema(schema) {
+  const items = Array.isArray(schema?.handlers) ? schema.handlers : Array.isArray(schema) ? schema : FALLBACK_HANDLER_SCHEMA.handlers;
+  return items
+    .filter(item => item && typeof item === 'object')
+    .map(item => {
+      const type = String(item.type || 'builtin').trim() || 'builtin';
+      const name = String(item.name || item.id || '').trim();
+      return {
+        type,
+        name,
+        id: String(item.id || `${type}.${name}`).trim(),
+        title: String(item.title || item.label || name || '未命名 Handler'),
+        description: String(item.description || ''),
+        fields: Array.isArray(item.fields) ? item.fields.map(field => ({
+          name: String(field.name || '').trim(),
+          label: String(field.label || field.title || field.name || ''),
+          type: String(field.type || 'string').trim(),
+          default: field.default,
+          required: Boolean(field.required),
+          placeholder: String(field.placeholder || ''),
+          options: Array.isArray(field.options) ? field.options : [],
+        })).filter(field => field.name) : [],
+      };
+    })
+    .filter(item => item.name);
+}
+
+function getHandlerSchemaEntry(schema, handler) {
+  return schema.find(item => item.type === handler.type && item.name === handler.name)
+    || schema.find(item => item.name === handler.name)
+    || null;
+}
+
+function defaultValueForField(field) {
+  if (field.default !== undefined) return cloneJsonValue(field.default);
+  if (field.type === 'bool') return false;
+  if (field.type === 'int' || field.type === 'float') return 0;
+  if (field.type === 'list[string]') return [];
+  if (field.type === 'json') return {};
+  return '';
+}
+
+function cloneJsonValue(value) {
+  if (value === undefined || value === null) return value;
+  if (typeof value !== 'object') return value;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return Array.isArray(value) ? [...value] : { ...value };
+  }
+}
+
 function handlersToEditorState(handlers) {
   const normalized = normalizeHandlers(handlers);
-  const aiTransform = normalized.find(item => item.type === 'builtin' && item.name === 'ai_transform');
-  const xmlParse = normalized.find(item => item.type === 'builtin' && item.name === 'xml_parse');
   return {
     handlers: normalized,
-    xml_parse_enabled: Boolean(xmlParse && xmlParse.status !== 0),
-    ai_transform_enabled: Boolean(aiTransform && aiTransform.status !== 0),
-    ai_transform_prompt: aiTransform?.config?.prompt || '',
+    handlers_advanced: false,
     handlers_json: JSON.stringify(normalized, null, 2),
   };
 }
 
 function buildHandlersFromEditorState(form) {
-  const handlers = [];
-  if (form.xml_parse_enabled) {
-    handlers.push({
-      id: 'builtin.xml_parse.default',
-      type: 'builtin',
-      name: 'xml_parse',
-      status: 1,
-      config: {},
-    });
+  if (form.handlers_advanced) {
+    return normalizeHandlers(JSON.parse(form.handlers_json || '[]'));
   }
-  if (form.ai_transform_enabled && String(form.ai_transform_prompt || '').trim()) {
-    handlers.push({
-      id: 'builtin.ai_transform.default',
-      type: 'builtin',
-      name: 'ai_transform',
-      status: 1,
-      config: { prompt: String(form.ai_transform_prompt || '').trim() },
-    });
-  }
-  return handlers;
+  return normalizeHandlers(form.handlers);
 }
 
 const store = PetiteVue.reactive({
@@ -116,11 +170,11 @@ const store = PetiteVue.reactive({
   editForm: {
     id: 0, feed_id: 0, feed_title: '', feed_link: '', user_id: '',
     title: '', tags: '', target_session: '', interval: 10,
-    notify: -100, state_: true, send_mode: -100, length_limit: -100, link_preview: -100,
+    notify: -100, state_: true, send_mode: -100, length_limit: -100,
     display_author: -100, display_via: -100, display_title: -100,
     display_entry_tags: -100, style: -100, display_media: -100,
     handlers_mode: 'inherit',
-    handlers: [], handlers_json: '[]', xml_parse_enabled: true, ai_transform_enabled: false, ai_transform_prompt: '',
+    handlers: [], handlers_json: '[]', handlers_advanced: false,
   },
 
   // Detail
@@ -140,7 +194,6 @@ const store = PetiteVue.reactive({
     notify: true,
     send_mode: '自动',
     length_limit: 0,
-    link_preview: '自动',
     display_author: '自动',
     display_via: '自动',
     display_title: '自动',
@@ -170,7 +223,6 @@ const store = PetiteVue.reactive({
     notify: -100,
     send_mode: -100,
     length_limit: -100,
-    link_preview: -100,
     display_author: -100,
     display_via: -100,
       display_title: -100,
@@ -180,10 +232,9 @@ const store = PetiteVue.reactive({
       default_target_session: '',
       handlers: [],
       handlers_json: '[]',
-      xml_parse_enabled: true,
-      ai_transform_enabled: false,
-      ai_transform_prompt: '',
+      handlers_advanced: false,
     },
+  handlerSchema: normalizeHandlerSchema(FALLBACK_HANDLER_SCHEMA),
 
   // Feedback
   toast: { show: false, message: '', type: 'success' },
@@ -252,6 +303,15 @@ const store = PetiteVue.reactive({
       this.showToast('加载设置失败: ' + err.message, 'error');
     } finally {
       this.pluginSettingsLoading = false;
+    }
+  },
+
+  async loadHandlerSchema() {
+    try {
+      const result = await getHandlerSchema();
+      this.handlerSchema = normalizeHandlerSchema(result);
+    } catch {
+      this.handlerSchema = normalizeHandlerSchema(FALLBACK_HANDLER_SCHEMA);
     }
   },
 
@@ -409,7 +469,6 @@ const store = PetiteVue.reactive({
       notify: sub.notify ?? -100,
       send_mode: sub.send_mode ?? -100,
       length_limit: sub.length_limit ?? -100,
-      link_preview: sub.link_preview ?? -100,
       display_author: sub.display_author ?? -100,
       display_via: sub.display_via ?? -100,
       display_title: sub.display_title ?? -100,
@@ -470,7 +529,6 @@ const store = PetiteVue.reactive({
       options.state = this.editForm.state_ ? 1 : 0;
       options.notify = this.editForm.notify;
       options.send_mode = this.editForm.send_mode;
-      options.link_preview = this.editForm.link_preview;
       options.display_author = this.editForm.display_author;
       options.display_via = this.editForm.display_via;
       options.display_title = this.editForm.display_title;
@@ -690,7 +748,6 @@ const store = PetiteVue.reactive({
       notify: user.notify ?? -100,
       send_mode: user.send_mode ?? -100,
       length_limit: user.length_limit ?? -100,
-      link_preview: user.link_preview ?? -100,
       display_author: user.display_author ?? -100,
       display_via: user.display_via ?? -100,
       display_title: user.display_title ?? -100,
@@ -715,7 +772,6 @@ const store = PetiteVue.reactive({
         notify: this.userEditForm.notify,
         send_mode: this.userEditForm.send_mode,
         length_limit: this.userEditForm.length_limit,
-        link_preview: this.userEditForm.link_preview,
         display_author: this.userEditForm.display_author,
         display_via: this.userEditForm.display_via,
         display_title: this.userEditForm.display_title,
@@ -777,6 +833,110 @@ const store = PetiteVue.reactive({
     }
   },
 
+  handlerKey(handler) {
+    return `${handler.type || 'builtin'}.${handler.name || handler.id || ''}`;
+  },
+
+  handlerTitle(handler) {
+    const schema = getHandlerSchemaEntry(this.handlerSchema, handler);
+    return schema?.title || handler.name || handler.id || '未命名 Handler';
+  },
+
+  handlerDescription(handler) {
+    return getHandlerSchemaEntry(this.handlerSchema, handler)?.description || '';
+  },
+
+  handlerFields(handler) {
+    return getHandlerSchemaEntry(this.handlerSchema, handler)?.fields || [];
+  },
+
+  availableBuiltinHandlers(form) {
+    const active = new Set((form.handlers || []).map(item => this.handlerKey(item)));
+    return this.handlerSchema.filter(item => !active.has(`${item.type}.${item.name}`));
+  },
+
+  addBuiltinHandler(form, key) {
+    const schema = this.handlerSchema.find(item => `${item.type}.${item.name}` === key);
+    if (!schema) return;
+    const config = {};
+    for (const field of schema.fields || []) config[field.name] = defaultValueForField(field);
+    form.handlers.push({
+      id: `${schema.type}.${schema.name}.${Date.now()}`,
+      type: schema.type,
+      name: schema.name,
+      status: 1,
+      config,
+    });
+    this.syncHandlersJson(form);
+  },
+
+  removeHandler(form, index) {
+    form.handlers.splice(index, 1);
+    this.syncHandlersJson(form);
+  },
+
+  moveHandler(form, index, direction) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= form.handlers.length) return;
+    const [item] = form.handlers.splice(index, 1);
+    form.handlers.splice(nextIndex, 0, item);
+    this.syncHandlersJson(form);
+  },
+
+  syncHandlersJson(form) {
+    form.handlers_json = JSON.stringify(normalizeHandlers(form.handlers), null, 2);
+  },
+
+  applyHandlersJson(form) {
+    try {
+      form.handlers = normalizeHandlers(JSON.parse(form.handlers_json || '[]'));
+      form.handlers_json = JSON.stringify(form.handlers, null, 2);
+      this.showToast('处理链 JSON 已应用');
+    } catch (err) {
+      this.showToast('处理链 JSON 格式错误: ' + err.message, 'error');
+    }
+  },
+
+  ensureHandlerConfig(handler, field) {
+    if (!handler.config || typeof handler.config !== 'object') handler.config = {};
+    if (handler.config[field.name] === undefined) handler.config[field.name] = defaultValueForField(field);
+    return handler.config[field.name];
+  },
+
+  updateHandlerField(form, handler, field, value) {
+    if (!handler.config || typeof handler.config !== 'object') handler.config = {};
+    if (field.type === 'int') {
+      handler.config[field.name] = Number.isFinite(Number(value)) ? parseInt(value, 10) : 0;
+    } else if (field.type === 'float') {
+      handler.config[field.name] = Number.isFinite(Number(value)) ? parseFloat(value) : 0;
+    } else if (field.type === 'list[string]') {
+      handler.config[field.name] = String(value || '').split('\n').map(item => item.trim()).filter(Boolean);
+    } else if (field.type === 'json') {
+      try {
+        handler.config[field.name] = JSON.parse(value || 'null');
+      } catch {
+        handler.config[field.name] = value;
+      }
+    } else {
+      handler.config[field.name] = value;
+    }
+    this.syncHandlersJson(form);
+  },
+
+  handlerFieldValue(handler, field) {
+    const value = this.ensureHandlerConfig(handler, field);
+    if (field.type === 'list[string]') return Array.isArray(value) ? value.join('\n') : String(value || '');
+    if (field.type === 'json') {
+      if (typeof value === 'string') return value;
+      try {
+        return JSON.stringify(value, null, 2);
+      } catch {
+        return String(value ?? '');
+      }
+    }
+    return value;
+  },
+
   formatDate,
   formatUserState,
 });
@@ -788,6 +948,7 @@ let pollTimer = null;
 initTheme();
 ready()
   .then(() => {
+    store.loadHandlerSchema();
     store.loadData();
     pollTimer = setInterval(async () => {
       const { changed } = await checkUpdates();

@@ -8,7 +8,7 @@ import pytest
 from astrbot_plugin_rsshub.src.application.services.feed_polling_service import (
     FeedPollingService,
 )
-from astrbot_plugin_rsshub.src.application.settings import RSSSettings
+from astrbot_plugin_rsshub.src.shared.settings import RSSSettings
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
 
@@ -336,6 +336,57 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
         "via https://example.com/1 | Timeline (author: Author)"
         in call_kwargs["content"]
     )
+    assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_poll_feed_dispatch_decodes_entity_escaped_html_summary():
+    feed = Feed(id=1, link="https://example.com/rss.xml", title="Timeline")
+    entry = EntryParsed(
+        guid="guid-1",
+        title="Title",
+        link="https://example.com/1",
+        summary=(
+            "Title&lt;br&gt;Body&lt;br&gt;"
+            '&lt;img src="https://example.com/image.jpg"&gt;'
+        ),
+        author="Author",
+    )
+    feed_repo = MagicMock()
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    feed_repo.save = AsyncMock(side_effect=lambda value: value)
+
+    fetcher = AsyncMock()
+    fetcher.fetch.return_value = _web_feed()
+    fetcher.close = AsyncMock()
+
+    parser = MagicMock()
+    parser.parse.return_value = ([entry], None)
+
+    dispatcher = AsyncMock()
+    dispatcher.dispatch_to_feed_subscribers.return_value = {
+        "success": 1,
+        "failed": 0,
+        "pending": 0,
+    }
+
+    service = FeedPollingService(
+        feed_repo=feed_repo,
+        subscription_repo=MagicMock(),
+        fetcher_factory=MagicMock(return_value=fetcher),
+        parser=parser,
+        notification_dispatcher=dispatcher,
+        rss_settings=RSSSettings(bootstrap_skip_history=False),
+    )
+
+    result = await service.poll_feed(1, notify_new_entries=True)
+
+    assert result.success is True
+    call_kwargs = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
+    assert "&lt;br" not in call_kwargs["content"]
+    assert "&lt;img" not in call_kwargs["content"]
+    assert "<img" not in call_kwargs["content"]
+    assert "Body" in call_kwargs["content"]
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
 
 

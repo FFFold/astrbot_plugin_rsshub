@@ -61,6 +61,11 @@ export async function getPluginSettings() {
   return await handleResponse(result);
 }
 
+export async function getHandlerSchema() {
+  const result = await bridge.apiGet('handlers/schema');
+  return await handleResponse(result);
+}
+
 export async function setPluginSettings({ subscription_defaults = {} } = {}) {
   const result = await bridge.apiPost('plugin-settings', { subscription_defaults });
   return await handleResponse(result);

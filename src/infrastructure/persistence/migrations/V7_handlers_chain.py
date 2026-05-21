@@ -38,7 +38,6 @@ async def _rebuild_user_table(conn) -> None:
             send_mode INTEGER NOT NULL DEFAULT -100,
             handlers TEXT NOT NULL DEFAULT '[]',
             length_limit INTEGER NOT NULL DEFAULT -100,
-            link_preview INTEGER NOT NULL DEFAULT -100,
             display_author INTEGER NOT NULL DEFAULT -100,
             display_via INTEGER NOT NULL DEFAULT -100,
             display_title INTEGER NOT NULL DEFAULT -100,
@@ -56,8 +55,8 @@ async def _rebuild_user_table(conn) -> None:
         """
         INSERT INTO rsshub_user__new (
             id, state, interval, notify, send_mode, handlers, length_limit,
-            link_preview, display_author, display_via, display_title,
-            display_entry_tags, style, display_media, default_target_session,
+            display_author, display_via, display_title, display_entry_tags,
+            style, display_media, default_target_session,
             needs_binding_notice, created_at, updated_at
         )
         SELECT
@@ -74,7 +73,6 @@ async def _rebuild_user_table(conn) -> None:
                     || '}}}}]'
             END,
             COALESCE(length_limit, -100),
-            COALESCE(link_preview, -100),
             COALESCE(display_author, -100),
             COALESCE(display_via, -100),
             COALESCE(display_title, -100),
@@ -118,7 +116,6 @@ async def _rebuild_sub_table(conn) -> None:
             send_mode INTEGER NOT NULL DEFAULT -100,
             handlers TEXT NOT NULL DEFAULT '[]',
             length_limit INTEGER NOT NULL DEFAULT -100,
-            link_preview INTEGER NOT NULL DEFAULT -100,
             display_author INTEGER NOT NULL DEFAULT -100,
             display_via INTEGER NOT NULL DEFAULT -100,
             display_title INTEGER NOT NULL DEFAULT -100,
@@ -137,8 +134,8 @@ async def _rebuild_sub_table(conn) -> None:
         INSERT INTO rsshub_sub__new (
             id, state, user_id, feed_id, title, tags, target_session, platform_name,
             interval, next_check_time, notify, send_mode, handlers, length_limit,
-            link_preview, display_author, display_via, display_title,
-            display_entry_tags, style, display_media, created_at, updated_at
+            display_author, display_via, display_title, display_entry_tags,
+            style, display_media, created_at, updated_at
         )
         SELECT
             id,
@@ -161,7 +158,6 @@ async def _rebuild_sub_table(conn) -> None:
                     || '}}}}]'
             END,
             COALESCE(length_limit, -100),
-            COALESCE(link_preview, -100),
             COALESCE(display_author, -100),
             COALESCE(display_via, -100),
             COALESCE(display_title, -100),

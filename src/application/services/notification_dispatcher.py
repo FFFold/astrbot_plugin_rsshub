@@ -12,18 +12,31 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from ...domain.constants import (
+    INHERIT_VALUE,
+    SEND_MODE_AUTO,
+    SEND_MODE_DIRECT,
+    SEND_MODE_LINK_ONLY,
+)
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.repositories.user_repository import UserRepository
-from ...infrastructure.pipeline import MessageFormatter
+from ...infrastructure.pipeline import (
+    EffectivePushOptions,
+    EntryFormatInput,
+    EntryTextFormatter,
+    MessageFormatter,
+)
 from ...infrastructure.utils import get_logger
+from ...shared.settings import SubscriptionDefaults
 from ..ports import MessageContext, MessageSenderProvider, SendRequest
 from .content_handlers import ContentHandlerRuntime, EntryContentContext
 from .session_push_queue import PushJob, SessionPushQueue
 
 logger = get_logger()
 _message_formatter = MessageFormatter()
+_entry_text_formatter = EntryTextFormatter()
 
 # 不可恢复错误关键词（匹配时不计入重试，直接标记为 failed）
 UNRECOVERABLE_ERROR_PATTERNS: tuple[str, ...] = (
@@ -204,6 +217,7 @@ class NotificationDispatcher:
         user_repo: UserRepository | None = None,
         push_job_queue: SessionPushQueue | None = None,
         content_handler_runtime: ContentHandlerRuntime | None = None,
+        subscription_defaults: SubscriptionDefaults | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._user_repo = user_repo
@@ -212,6 +226,12 @@ class NotificationDispatcher:
         self._push_job_queue = push_job_queue or SessionPushQueue()
         self._content_handler_runtime = (
             content_handler_runtime or ContentHandlerRuntime()
+        )
+        self._default_push_options = self._options_from_subscription_defaults(
+            subscription_defaults or SubscriptionDefaults()
+        )
+        self._default_send_mode = self._send_mode_from_subscription_defaults(
+            subscription_defaults or SubscriptionDefaults()
         )
 
     @staticmethod
@@ -226,6 +246,161 @@ class NotificationDispatcher:
     @staticmethod
     def _feed_source_key(feed_id: int, sub_id: int | None) -> str:
         return f"feed:{feed_id}:sub:{sub_id or 0}"
+
+    @staticmethod
+    def _normalize_send_mode_value(value: Any) -> int:
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError):
+            return SEND_MODE_AUTO
+        if normalized in {SEND_MODE_LINK_ONLY, SEND_MODE_AUTO, SEND_MODE_DIRECT}:
+            return normalized
+        return SEND_MODE_AUTO
+
+    @staticmethod
+    def _send_mode_from_subscription_defaults(defaults: SubscriptionDefaults) -> int:
+        value = getattr(defaults, "send_mode", "自动")
+        if isinstance(value, str):
+            return {
+                "仅链接": SEND_MODE_LINK_ONLY,
+                "自动": SEND_MODE_AUTO,
+                "直接发送": SEND_MODE_DIRECT,
+            }.get(
+                value.strip(),
+                SEND_MODE_AUTO,
+            )
+        return NotificationDispatcher._normalize_send_mode_value(value)
+
+    @staticmethod
+    def _options_from_subscription_defaults(
+        defaults: SubscriptionDefaults,
+    ) -> EffectivePushOptions:
+        def display_value(
+            value: Any, mapping: dict[str, int], fallback: int = 0
+        ) -> int:
+            if isinstance(value, str):
+                return mapping.get(value.strip(), fallback)
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        return EffectivePushOptions(
+            notify=bool(getattr(defaults, "notify", True)),
+            length_limit=max(0, int(getattr(defaults, "length_limit", 0) or 0)),
+            display_author=display_value(
+                getattr(defaults, "display_author", "自动"),
+                {"禁用": -1, "自动": 0, "强制": 1},
+            ),
+            display_via=display_value(
+                getattr(defaults, "display_via", "自动"),
+                {"完全禁用": -2, "仅链接": -1, "自动": 0, "强制": 1},
+            ),
+            display_title=display_value(
+                getattr(defaults, "display_title", "自动"),
+                {"禁用": -1, "自动": 0, "强制": 1},
+            ),
+            display_entry_tags=bool(getattr(defaults, "display_entry_tags", False)),
+            style=display_value(
+                getattr(defaults, "style", "RSStT"),
+                {"RSStT": 0, "flowerss": 1},
+            ),
+            display_media=bool(getattr(defaults, "display_media", True)),
+        )
+
+    def _resolve_send_mode(self, subscription: Any = None, user: Any = None) -> int:
+        if subscription is not None:
+            sub_value = getattr(subscription, "send_mode", INHERIT_VALUE)
+            if sub_value != INHERIT_VALUE:
+                return self._normalize_send_mode_value(sub_value)
+        if user is not None:
+            user_value = getattr(user, "send_mode", INHERIT_VALUE)
+            if user_value != INHERIT_VALUE:
+                return self._normalize_send_mode_value(user_value)
+        return self._default_send_mode
+
+    def _resolve_effective_push_options(
+        self,
+        subscription: Any = None,
+        user: Any = None,
+    ) -> EffectivePushOptions:
+        defaults = self._default_push_options
+        return EffectivePushOptions(
+            notify=bool(
+                self._resolve_option("notify", subscription, user, int(defaults.notify))
+            ),
+            length_limit=max(
+                0,
+                int(
+                    self._resolve_option(
+                        "length_limit", subscription, user, defaults.length_limit
+                    )
+                    or 0
+                ),
+            ),
+            display_author=int(
+                self._resolve_option(
+                    "display_author", subscription, user, defaults.display_author
+                )
+                or 0
+            ),
+            display_via=int(
+                self._resolve_option(
+                    "display_via", subscription, user, defaults.display_via
+                )
+                or 0
+            ),
+            display_title=int(
+                self._resolve_option(
+                    "display_title", subscription, user, defaults.display_title
+                )
+                or 0
+            ),
+            display_entry_tags=bool(
+                self._resolve_option(
+                    "display_entry_tags",
+                    subscription,
+                    user,
+                    0 if defaults.display_entry_tags else -1,
+                )
+                != -1
+            ),
+            style=int(
+                self._resolve_option("style", subscription, user, defaults.style) or 0
+            ),
+            display_media=bool(
+                self._resolve_option(
+                    "display_media",
+                    subscription,
+                    user,
+                    0 if defaults.display_media else -1,
+                )
+                != -1
+            ),
+        )
+
+    @staticmethod
+    def _resolve_option(
+        key: str,
+        subscription: Any = None,
+        user: Any = None,
+        default: Any = None,
+    ) -> Any:
+        for owner in (subscription, user):
+            if owner is None or not hasattr(owner, key):
+                continue
+            value = getattr(owner, key)
+            if value != INHERIT_VALUE:
+                return value
+        return default
+
+    @staticmethod
+    def _build_link_only_content(*, entry_title: str, entry_link: str) -> str:
+        title = str(entry_title or "").strip()
+        link = str(entry_link or "").strip()
+        if title and link:
+            return f"{title}\n{link}"
+        return title or link
 
     async def dispatch_to_feed_subscribers(
         self,
@@ -299,13 +474,22 @@ class NotificationDispatcher:
                     else None
                 )
                 processed_entry = raw_entry
-                if processed_entry is not None:
-                    processed_entry = await self._content_handler_runtime.process_entry(
-                        subscription=sub,
-                        user=user,
-                        entry=processed_entry,
-                        session_id=str(sub.target_session or "").strip() or None,
+                handler_trace: list[dict[str, Any]] | None = None
+                handler_allowed = True
+                handler_reason = ""
+                if raw_entry is not None:
+                    handler_result = (
+                        await self._content_handler_runtime.process_entry_with_trace(
+                            subscription=sub,
+                            user=user,
+                            entry=raw_entry,
+                            session_id=str(sub.target_session or "").strip() or None,
+                        )
                     )
+                    processed_entry = handler_result.entry
+                    handler_allowed = handler_result.allow
+                    handler_reason = handler_result.reason
+                    handler_trace = list(handler_result.trace) or None
 
                 effective_title = (
                     processed_entry.title
@@ -315,11 +499,71 @@ class NotificationDispatcher:
                 effective_link = (
                     processed_entry.link if processed_entry is not None else entry_link
                 )
-                effective_content = (
-                    self._format_entry_content(processed_entry)
-                    if processed_entry is not None
-                    else content
+                effective_options = self._resolve_effective_push_options(sub, user)
+                if not effective_options.notify:
+                    logger.debug("订阅 %s 已关闭通知，跳过条目推送", sub.id)
+                    continue
+                effective_content = await self._format_effective_entry_content(
+                    fallback_content=content,
+                    raw_entry=processed_entry,
+                    entry_title=effective_title,
+                    entry_link=effective_link,
+                    feed_title=feed_title,
+                    feed_link=feed_link,
+                    options=effective_options,
                 )
+                if not handler_allowed:
+                    history = PushHistory(
+                        sub_id=sub.id,
+                        user_id=sub.user_id,
+                        feed_id=feed_id,
+                        source_type="feed",
+                        source_key=self._feed_source_key(feed_id, sub.id),
+                        content=effective_content,
+                        raw_xml=(
+                            str(processed_entry.raw_xml or "").strip()
+                            if processed_entry is not None
+                            else None
+                        )
+                        or None,
+                        media_urls=(
+                            persisted_media_urls
+                            if effective_options.display_media and persisted_media_urls
+                            else None
+                        ),
+                        handler_trace=handler_trace,
+                        entry_title=effective_title,
+                        entry_link=effective_link,
+                        entry_guid=entry_guid,
+                        feed_title=feed_title,
+                        feed_link=feed_link,
+                        platform_name=sub.platform_name,
+                        target_session=sub.target_session,
+                        status="skipped",
+                        retry_count=0,
+                        max_retries=0,
+                    )
+                    history.mark_skipped(handler_reason)
+                    await self._push_history_repo.save(history)
+                    logger.info(
+                        "订阅 %s 条目被 handler 跳过: %s",
+                        sub.id,
+                        handler_reason,
+                    )
+                    continue
+                effective_send_mode = self._resolve_send_mode(sub, user)
+                effective_media_urls = media_urls
+                effective_media_items = media_items
+                if not effective_options.display_media:
+                    effective_media_urls = None
+                    effective_media_items = None
+                if effective_send_mode == SEND_MODE_LINK_ONLY:
+                    effective_content = self._build_link_only_content(
+                        entry_title=effective_title,
+                        entry_link=effective_link,
+                    )
+                    effective_media_urls = None
+                    effective_media_items = None
 
                 # 发送前指纹保护（dispatch_guard）
                 # 检查是否已有相同 entry_guid 的成功推送记录
@@ -353,7 +597,12 @@ class NotificationDispatcher:
                         else None
                     )
                     or None,
-                    media_urls=persisted_media_urls or None,
+                    media_urls=(
+                        persisted_media_urls
+                        if effective_options.display_media and persisted_media_urls
+                        else None
+                    ),
+                    handler_trace=handler_trace,
                     entry_title=effective_title,
                     entry_link=effective_link,
                     entry_guid=entry_guid,
@@ -373,13 +622,14 @@ class NotificationDispatcher:
                 result = await self.send_to_session(
                     target=self._target_from_subscription(sub),
                     content=effective_content,
-                    media_urls=media_urls,
-                    media_items=media_items,
+                    media_urls=effective_media_urls,
+                    media_items=effective_media_items,
                     job_description=f"feed={feed_id}, sub={sub.id}",
                     channel_title=feed_title,
                     channel_link=feed_link,
                     feed_id=feed_id,
                     sub_id=sub.id,
+                    send_mode=effective_send_mode,
                 )
 
                 # 4. 更新推送状态
@@ -492,6 +742,7 @@ class NotificationDispatcher:
             channel_link=feed_link,
             feed_id=None,
             sub_id=None,
+            send_mode=SEND_MODE_AUTO,
         )
 
         stats = {"success": 0, "failed": 0, "pending": 0}
@@ -530,6 +781,37 @@ class NotificationDispatcher:
         channel_link: str = "",
         feed_id: int | None = None,
         sub_id: int | None = None,
+        send_mode: int | None = None,
+        sender_strategy: Any = None,
+    ) -> dict[str, Any]:
+        return await self._send_to_session(
+            target=target,
+            content=content,
+            media_urls=media_urls,
+            media_items=media_items,
+            job_description=job_description,
+            channel_title=channel_title,
+            channel_link=channel_link,
+            feed_id=feed_id,
+            sub_id=sub_id,
+            send_mode=send_mode,
+            sender_strategy=sender_strategy,
+        )
+
+    async def _send_to_session(
+        self,
+        *,
+        target: SendTarget,
+        content: str,
+        media_urls: list[str] | None,
+        media_items: list[tuple[str, str]] | None = None,
+        job_description: str = "",
+        channel_title: str = "",
+        channel_link: str = "",
+        feed_id: int | None = None,
+        sub_id: int | None = None,
+        send_mode: int | None = None,
+        sender_strategy: Any = None,
     ) -> dict[str, Any]:
         """
         发送通知到指定目标
@@ -577,6 +859,8 @@ class NotificationDispatcher:
                         channel_title=channel_title,
                         channel_link=channel_link,
                         platform_name=target.platform_name or "",
+                        send_mode=self._normalize_send_mode_value(send_mode),
+                        sender_strategy=sender_strategy,
                     ),
                 )
 
@@ -628,21 +912,37 @@ class NotificationDispatcher:
             return {"ok": False, "error": str(e)}
 
     @staticmethod
-    def _format_entry_content(entry: EntryContentContext) -> str:
-        title = str(entry.title or "").strip()
-        body = str(entry.content or entry.summary or "").strip()
-        link = str(entry.link or "").strip()
-        feed_title = str(entry.feed_title or "").strip()
-        feed_link = str(entry.feed_link or "").strip()
-        author = str(entry.author or "").strip()
-        if title and body and body != title:
-            content = f"{title}\n\n{body}"
-        else:
-            content = body or title
-        via_suffix = f"via {link} | {feed_title or feed_link}"
-        if author:
-            via_suffix += f" (author: {author})"
-        return f"{content}\n\n{via_suffix}"
+    async def _format_effective_entry_content(
+        *,
+        fallback_content: str,
+        raw_entry: EntryContentContext | None,
+        entry_title: str,
+        entry_link: str,
+        feed_title: str,
+        feed_link: str,
+        options: EffectivePushOptions,
+    ) -> str:
+        if raw_entry is None:
+            cleaned = await _entry_text_formatter.clean_text(fallback_content)
+            if options.length_limit > 0:
+                cleaned = _entry_text_formatter._truncate(
+                    cleaned,
+                    options.length_limit,
+                )
+            return cleaned
+        return await _entry_text_formatter.format_entry(
+            EntryFormatInput(
+                title=raw_entry.title or entry_title,
+                content=raw_entry.content or raw_entry.summary,
+                summary=raw_entry.summary,
+                link=raw_entry.link or entry_link,
+                author=raw_entry.author,
+                feed_title=raw_entry.feed_title or feed_title,
+                feed_link=raw_entry.feed_link or feed_link,
+                tags=tuple(getattr(raw_entry, "tags", ()) or ()),
+            ),
+            options,
+        )
 
     async def dispatch_pending_retries(self, limit: int = 100) -> dict[str, int]:
         """
@@ -701,6 +1001,9 @@ class NotificationDispatcher:
                     channel_link=history.feed_link,
                     feed_id=history.feed_id,
                     sub_id=history.sub_id,
+                    send_mode=(
+                        SEND_MODE_AUTO if history.source_type == "agent" else None
+                    ),
                 )
 
                 error_msg = result.get("error", "")

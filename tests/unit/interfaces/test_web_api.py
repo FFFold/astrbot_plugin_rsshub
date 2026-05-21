@@ -165,6 +165,25 @@ async def test_plugin_settings_endpoint_updates_subscription_defaults():
 
 
 @pytest.mark.asyncio
+async def test_handlers_endpoint_returns_registry_schema():
+    handler = _handler(polling_service=MagicMock())
+
+    app = Quart(__name__)
+    async with app.test_request_context(
+        "/astrbot_plugin_rsshub/handlers",
+        method="GET",
+    ):
+        response = await handler.handle_handlers()
+
+    payload = await response.get_json()
+    assert payload["ok"] is True
+    names = {item["name"] for item in payload["items"]}
+    assert {"xml_parse", "ai_filter", "ai_transform"} <= names
+    ai_filter = next(item for item in payload["items"] if item["name"] == "ai_filter")
+    assert any(field["type"] == "select" for field in ai_filter["schema"])
+
+
+@pytest.mark.asyncio
 async def test_plugin_settings_endpoint_ignores_removed_translation_payload():
     raw_config = _WritableConfig()
     config = RsshubPluginConfig.from_astrbot_config({})
@@ -245,6 +264,15 @@ async def test_push_history_endpoint_filters_by_user_session_and_status():
                 content="hello",
                 raw_xml="<entry><p>Hello</p></entry>",
                 media_urls=["https://example.com/a.jpg"],
+                handler_trace=[
+                    {
+                        "id": "builtin.ai_filter.default",
+                        "name": "ai_filter",
+                        "status": "ok",
+                        "allow": False,
+                        "reason": "广告",
+                    }
+                ],
                 entry_title="日报",
                 entry_link="https://example.com/post",
                 entry_guid="guid-11",
@@ -297,6 +325,7 @@ async def test_push_history_endpoint_filters_by_user_session_and_status():
     assert payload["ok"] is True
     assert payload["total"] == 1
     assert payload["items"][0]["raw_xml"] == "<entry><p>Hello</p></entry>"
+    assert payload["items"][0]["handler_trace"][0]["name"] == "ai_filter"
     assert payload["items"][0]["fail_reason"] == "boom"
     assert "sub_id" not in payload["items"][0]
     push_history_repo.get_by_user.assert_awaited_once_with(
@@ -327,6 +356,7 @@ async def test_push_history_endpoint_keeps_empty_fail_reason_empty_for_success()
                 content="ok",
                 raw_xml=None,
                 media_urls=None,
+                handler_trace=None,
                 entry_title="成功记录",
                 entry_link="https://example.com/post",
                 entry_guid="guid-12",
@@ -566,7 +596,6 @@ async def test_list_subscriptions_returns_handlers_mode():
                 handlers_mode="disabled",
                 handlers=[],
                 length_limit=300,
-                link_preview=0,
                 display_author=1,
                 display_via=0,
                 display_title=1,

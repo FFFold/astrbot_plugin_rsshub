@@ -16,7 +16,7 @@ class TestSubscribeFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
         )
-        from astrbot_plugin_rsshub.src.application.settings import FeedFetchSettings
+        from astrbot_plugin_rsshub.src.shared.settings import FeedFetchSettings
         from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
         from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 

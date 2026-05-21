@@ -47,7 +47,7 @@ class TestTOMLRoundtrip:
             title="Timeline",
             tags="twitter,art",
             notify=1,
-            send_mode=2,
+            send_mode=1,
         )
 
         content = serialize_subscriptions_to_toml(
@@ -64,7 +64,7 @@ class TestTOMLRoundtrip:
         assert record.options["title"] == "Timeline"
         assert record.options["tags"] == "twitter,art"
         assert record.options["notify"] == 1
-        assert record.options["send_mode"] == 2
+        assert record.options["send_mode"] == 1
 
     def test_roundtrip_multiple_subscriptions(self) -> None:
         subscriptions = [
@@ -122,9 +122,8 @@ class TestTOMLRoundtrip:
             ],
             interval=15,
             notify=1,
-            send_mode=2,
+            send_mode=1,
             length_limit=500,
-            link_preview=1,
             display_author=1,
             display_via=0,
             display_title=1,
@@ -149,16 +148,56 @@ class TestTOMLRoundtrip:
             "display_via": 0,
             "interval": 15,
             "length_limit": 500,
-            "link_preview": 1,
             "notify": 1,
             "platform_name": "telegram",
-            "send_mode": 2,
+            "send_mode": 1,
             "style": 3,
             "tags": "alerts,news",
             "title": "Configured",
             "handlers": '[{"id":"builtin.ai_transform.default","type":"builtin","name":"ai_transform","status":1,"config":{"prompt":"总结为三条要点"}}]',
             "handlers_mode": "override",
         }
+
+    def test_parse_legacy_send_mode_telegraph_is_migrated_to_auto(self) -> None:
+        payload = parse_subscriptions_toml(
+            """
+            [[subscriptions]]
+            link = "https://example.com/feed.xml"
+            send_mode = 1
+            """
+        )
+
+        assert payload.errors == []
+        assert payload.records[0].options["send_mode"] == 0
+
+    def test_parse_legacy_send_mode_direct_message_is_migrated_to_direct_send(
+        self,
+    ) -> None:
+        payload = parse_subscriptions_toml(
+            """
+            [[subscriptions]]
+            link = "https://example.com/feed.xml"
+            send_mode = 2
+            """
+        )
+
+        assert payload.errors == []
+        assert payload.records[0].options["send_mode"] == 1
+
+    def test_parse_legacy_link_preview_is_ignored(self) -> None:
+        payload = parse_subscriptions_toml(
+            """
+            version = 2
+
+            [[subscriptions]]
+            link = "https://example.com/feed.xml"
+            link_preview = 1
+            send_mode = 1
+            """
+        )
+
+        assert payload.errors == []
+        assert payload.records[0].options == {"send_mode": 1}
 
 
 class TestTOMLParsing:

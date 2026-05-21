@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...application.ports import MessageSenderProvider
+from ...application.services.content_handlers import EntryContentContext
 from ...application.services.notification_dispatcher import (
     NotificationDispatcher,
     SendTarget,
@@ -16,6 +17,7 @@ from ...application.services.notification_dispatcher import (
 from ...application.services.session_push_queue import SessionPushQueue
 from ...domain.repositories.push_history_repository import PushHistoryRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
+from ..pipeline import EffectivePushOptions, EntryFormatInput, EntryTextFormatter
 from ..utils import get_logger
 from .senders.provider import InfrastructureMessageSenderProvider
 
@@ -24,6 +26,35 @@ if TYPE_CHECKING:
     from ...domain.entities.subscription import Subscription
 
 logger = get_logger()
+_entry_text_formatter = EntryTextFormatter()
+
+
+def _entry_get(entry: Any, key: str, default: Any = None) -> Any:
+    if hasattr(entry, "get"):
+        return entry.get(key, default)
+    return getattr(entry, key, default)
+
+
+def _entry_text(entry: Any, *keys: str) -> str:
+    for key in keys:
+        value = _entry_get(entry, key)
+        if value is None:
+            continue
+        return str(value)
+    return ""
+
+
+def _entry_raw_xml(entry: Any) -> str:
+    for key in ("raw_xml", "raw", "xml"):
+        value = _entry_get(entry, key)
+        if value is None:
+            continue
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").strip()
+        raw_xml = str(value).strip()
+        if raw_xml:
+            return raw_xml
+    return ""
 
 
 class NotificationServiceImpl:
@@ -69,20 +100,41 @@ class NotificationServiceImpl:
         total_count = 0
 
         for entry in entries:
-            entry_title = str(entry.get("title") or "")
-            entry_link = str(entry.get("link") or entry.get("guid") or "")
-            entry_guid = str(entry.get("guid") or entry.get("id") or "")
-            summary = str(entry.get("summary") or entry.get("description") or "")
+            entry_title = _entry_text(entry, "title")
+            entry_link = _entry_text(entry, "link", "guid")
+            entry_guid = _entry_text(entry, "guid", "id")
+            summary = _entry_text(entry, "summary", "description")
+            entry_content = _entry_text(entry, "content", "content_encoded")
+            author = _entry_text(entry, "author")
+            raw_xml = _entry_raw_xml(entry)
 
             media_urls: list[str] = []
-            media_content = entry.get("media_content") or entry.get("enclosures") or []
+            media_content = (
+                _entry_get(entry, "media_content")
+                or _entry_get(entry, "enclosures")
+                or []
+            )
             for mc in media_content:
-                if isinstance(mc, dict):
-                    url = mc.get("url") or mc.get("href") or ""
-                    if url:
-                        media_urls.append(url)
+                url = _entry_get(mc, "url") or _entry_get(mc, "href") or ""
+                if url:
+                    media_urls.append(str(url))
 
-            content = f"{entry_title}\n\n{summary}" if summary else entry_title
+            content = await _entry_text_formatter.format_entry(
+                EntryFormatInput(
+                    title=entry_title,
+                    content=entry_content or summary,
+                    summary=summary,
+                    link=entry_link,
+                    author=author,
+                    feed_title=feed.title,
+                    feed_link=feed.link,
+                    tags=tuple(_entry_get(entry, "tags", []) or ()),
+                ),
+                EffectivePushOptions(),
+            )
+            clean_body = await _entry_text_formatter.clean_text(
+                entry_content or summary
+            )
 
             stats = await self._dispatcher.dispatch_to_feed_subscribers(
                 feed_id=feed.id if feed.id else 0,
@@ -93,6 +145,17 @@ class NotificationServiceImpl:
                 feed_link=feed.link,
                 media_urls=media_urls,
                 entry_guid=entry_guid,
+                raw_entry=EntryContentContext(
+                    title=entry_title,
+                    summary=clean_body,
+                    content=clean_body,
+                    link=entry_link,
+                    author=author,
+                    feed_title=feed.title,
+                    feed_link=feed.link,
+                    raw_xml=raw_xml,
+                    media_urls=tuple(media_urls),
+                ),
             )
             success_count += stats.get("success", 0)
             total_count += (

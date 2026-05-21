@@ -18,7 +18,7 @@ from astrbot_plugin_rsshub.src.application.services.route_knowledge_service impo
     managed_doc_name,
     should_inject_route_knowledge_prompt,
 )
-from astrbot_plugin_rsshub.src.application.settings import RouteKnowledgeSettings
+from astrbot_plugin_rsshub.src.shared.settings import RouteKnowledgeSettings
 
 
 def _sha(text: str) -> str:

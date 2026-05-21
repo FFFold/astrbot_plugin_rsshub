@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from quart import Response, jsonify, request
 
+from ..domain.entities.handlers import list_handler_registry
 from ..infrastructure.config import RsshubPluginConfig, set_config
 from ..infrastructure.config.settings_adapter import build_application_settings
 
@@ -127,6 +128,13 @@ class WebApiHandler:
                 "/plugin-settings",
                 self.handle_get_plugin_settings,
                 "获取插件设置",
+            ),
+            ("GET", "/handlers", self.handle_handlers, "获取 handler registry"),
+            (
+                "GET",
+                "/handlers/schema",
+                self.handle_handlers_schema,
+                "获取 handler schema",
             ),
             (
                 "POST",
@@ -288,7 +296,6 @@ class WebApiHandler:
                     "handlers_mode": s.handlers_mode,
                     "handlers": s.handlers,
                     "length_limit": s.length_limit,
-                    "link_preview": s.link_preview,
                     "display_author": s.display_author,
                     "display_via": s.display_via,
                     "display_title": s.display_title,
@@ -333,7 +340,6 @@ class WebApiHandler:
                     "send_mode": u.send_mode,
                     "handlers": u.handlers,
                     "length_limit": u.length_limit,
-                    "link_preview": u.link_preview,
                     "display_author": u.display_author,
                     "display_via": u.display_via,
                     "display_title": u.display_title,
@@ -615,6 +621,15 @@ class WebApiHandler:
             }
         )
 
+    async def handle_handlers(self):
+        """获取 handler registry metadata/schema。"""
+        return jsonify({"ok": True, "items": list_handler_registry()})
+
+    async def handle_handlers_schema(self):
+        """获取 Plugin Pages 使用的 handler schema。"""
+        handlers = list_handler_registry()
+        return jsonify({"ok": True, "items": handlers, "handlers": handlers})
+
     async def handle_set_plugin_settings(self):
         """更新插件级订阅默认值"""
         if self._config is None:
@@ -873,6 +888,7 @@ class WebApiHandler:
                     "content": h.content,
                     "raw_xml": h.raw_xml,
                     "media_urls": h.media_urls,
+                    "handler_trace": getattr(h, "handler_trace", None),
                     "entry_title": h.entry_title,
                     "entry_link": h.entry_link,
                     "entry_guid": h.entry_guid,

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...application.settings import (
+from ...shared.settings import (
     ApplicationSettings,
     BasicSettings,
     FeedFetchSettings,
+    PlatformStrategySettings,
     RouteKnowledgeSettings,
     RSSSettings,
     SchedulerSettings,
@@ -51,6 +52,11 @@ _SENDER_STRATEGY_KEYS: tuple[str, ...] = (
     "weixin_oc",
 )
 
+_PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
+    "telegram": "telegram_strategy",
+    "aiocqhttp": "onebot_strategy",
+}
+
 
 def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
     if value is None:
@@ -64,18 +70,78 @@ def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
     return None
 
 
+def _first_template_item(value: Any) -> Any:
+    if isinstance(value, list):
+        return next((item for item in value if isinstance(item, dict)), None)
+    return value
+
+
+def _first_strategy_template(value: Any, template_key: str) -> Any:
+    if not isinstance(value, list):
+        return None
+    return next(
+        (
+            item
+            for item in value
+            if isinstance(item, dict) and item.get("__template_key") == template_key
+        ),
+        None,
+    )
+
+
 def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
     enabled = _enabled_sender_strategy_names(value)
+    platform_strategies = _get_value(value, "platform_strategies", None)
+    telegram_source = _first_strategy_template(
+        platform_strategies,
+        _PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
+    )
+    if not isinstance(telegram_source, dict):
+        telegram_source = _first_template_item(_get_value(value, "telegram", None))
+    if not isinstance(telegram_source, dict):
+        telegram_source = _first_template_item(
+            _get_value(value, "telegram_settings", None)
+            or _get_value(value, "telegram_config", None)
+        )
+    aiocqhttp_source = _first_strategy_template(
+        platform_strategies,
+        _PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
+    )
+    if not isinstance(aiocqhttp_source, dict):
+        aiocqhttp_source = _first_template_item(_get_value(value, "aiocqhttp", None))
+    if not isinstance(aiocqhttp_source, dict):
+        aiocqhttp_source = _first_template_item(
+            _get_value(value, "aiocqhttp_settings", None)
+            or _get_value(value, "aiocqhttp_config", None)
+        )
+    telegram_config = PlatformStrategySettings(
+        enable_telegraph=bool(_get_value(telegram_source, "enable_telegraph", False)),
+        telegraph_token=str(_get_value(telegram_source, "telegraph_token", "") or ""),
+        prefer_local_video=bool(
+            _get_value(telegram_source, "prefer_local_video", False)
+        ),
+    )
+    aiocqhttp_config = PlatformStrategySettings(
+        enable_telegraph=bool(_get_value(aiocqhttp_source, "enable_telegraph", False)),
+        telegraph_token=str(_get_value(aiocqhttp_source, "telegraph_token", "") or ""),
+        prefer_local_video=bool(
+            _get_value(aiocqhttp_source, "prefer_local_video", False)
+        ),
+    )
     if enabled is not None:
         enabled = {item for item in enabled if item in _SENDER_STRATEGY_KEYS}
         return SenderStrategySettings(
-            **{key: key in enabled for key in _SENDER_STRATEGY_KEYS}
+            **{key: key in enabled for key in _SENDER_STRATEGY_KEYS},
+            telegram_settings=telegram_config,
+            aiocqhttp_settings=aiocqhttp_config,
         )
     return SenderStrategySettings(
         telegram=bool(_get_value(value, "telegram", True)),
         aiocqhttp=bool(_get_value(value, "aiocqhttp", True)),
         qq_official=bool(_get_value(value, "qq_official", True)),
         weixin_oc=bool(_get_value(value, "weixin_oc", True)),
+        telegram_settings=telegram_config,
+        aiocqhttp_settings=aiocqhttp_config,
     )
 
 
@@ -83,8 +149,8 @@ def build_application_settings(config: Any) -> ApplicationSettings:
     """Build application settings from an infrastructure config object.
 
     This is the adapter between the AstrBot-facing Pydantic config model and the
-    application-layer dataclasses. Keep AstrBot compatibility parsing here, not
-    in ``src.application.settings``.
+    shared runtime dataclasses. Keep AstrBot compatibility parsing here, not in
+    the application layer.
     """
     basic_cfg = _get_value(config, "basic_config")
     global_cfg = _get_value(config, "global_config")
@@ -170,7 +236,6 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             notify=bool(_get_value(global_cfg, "notify", True)),
             send_mode=str(_get_value(global_cfg, "send_mode", "自动") or "自动"),
             length_limit=int(_get_value(global_cfg, "length_limit", 0) or 0),
-            link_preview=str(_get_value(global_cfg, "link_preview", "自动") or "自动"),
             display_author=str(
                 _get_value(global_cfg, "display_author", "自动") or "自动"
             ),

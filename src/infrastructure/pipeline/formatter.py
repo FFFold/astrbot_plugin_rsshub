@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from ..messaging.senders.types import PreparedMedia
 
 
-class MessageFormatter:
-    """消息格式化器
+class MessageChainFormatter:
+    """消息链格式化器
 
     根据平台特性将预处理后的媒体和文本组合为最终消息链。
     排序规则统一在此管理，senders 只调用 build_chain() 后发送。
@@ -112,7 +112,6 @@ class MessageFormatter:
 
     # ------------------------------------------------------------------
     # Telegram：media → caption（含失败链接）→ tails
-    # caption = text，截断到 1024 字符（平台限制）
     # ------------------------------------------------------------------
 
     def _build_telegram_chain(
@@ -121,7 +120,7 @@ class MessageFormatter:
         text: str,
         failed_urls: list[str],
     ) -> list:
-        """Telegram 消息链：media → Plain(caption) → tails，caption 截断 1024"""
+        """Telegram 消息链：media → Plain(caption) → tails"""
         from astrbot.api.message_components import File, Image, Plain, Record, Video
 
         chain: list = []
@@ -152,8 +151,7 @@ class MessageFormatter:
                         )
 
         if has_media:
-            # Telegram caption 限制 1024，超出则截断
-            caption = text[:1024] if text else ""
+            caption = text if text else ""
             if failed_urls:
                 caption = self._append_failed_links(caption, failed_urls)
             if caption:
@@ -188,3 +186,7 @@ class MessageFormatter:
         lines.append("媒体原始链接:")
         lines.extend(unique)
         return "\n".join(lines)
+
+
+# 兼容旧导入名；新代码优先使用 MessageChainFormatter。
+MessageFormatter = MessageChainFormatter

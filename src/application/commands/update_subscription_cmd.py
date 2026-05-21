@@ -10,7 +10,12 @@ from ...domain.repositories.subscription_repository import SubscriptionRepositor
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 
-REMOVED_OPTIONS = {"translate", "translate_target_lang", "use_sub_config", "ai_prompt"}
+REMOVED_OPTIONS = {
+    "translate",
+    "translate_target_lang",
+    "use_sub_config",
+    "ai_prompt",
+}
 STRING_OPTIONS = {
     "title",
     "tags",

@@ -17,7 +17,7 @@ from ..dto.subscription_export_record import (
 )
 
 EXPORT_FORMAT = "astrbot-rsshub-subscriptions"
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 
 # 导出时排除的字段（这些是运行时计算的）
 EXPORT_EXCLUDED_FIELDS = {"id", "sid", "sub_id"}
@@ -105,6 +105,7 @@ def _parse_int_value(
     *,
     key: str,
     index: int,
+    legacy_send_mode: bool = False,
 ) -> tuple[int | None, str | None]:
     """解析整数值
 
@@ -120,6 +121,11 @@ def _parse_int_value(
         return None, f"subscriptions[{index}].{key} must be an integer"
 
     if isinstance(raw, int):
+        if key == "send_mode" and legacy_send_mode:
+            if raw == 2:
+                return 1, None
+            if raw == 1:
+                return 0, None
         return raw, None
 
     if isinstance(raw, str):
@@ -128,7 +134,13 @@ def _parse_int_value(
             return None, f"subscriptions[{index}].{key} cannot be empty"
         if not re.fullmatch(r"[+-]?\d+", stripped):
             return None, f"subscriptions[{index}].{key} must be an integer"
-        return int(stripped), None
+        parsed = int(stripped)
+        if key == "send_mode" and legacy_send_mode:
+            if parsed == 2:
+                return 1, None
+            if parsed == 1:
+                return 0, None
+        return parsed, None
 
     return None, f"subscriptions[{index}].{key} must be an integer"
 
@@ -172,10 +184,11 @@ def parse_subscriptions_toml(content: str) -> SubscriptionImportPayload:
         )
 
     version = data.get("version")
-    if version is not None and version != EXPORT_VERSION:
+    if version is not None and version not in {1, EXPORT_VERSION}:
         payload.warnings.append(
             f"Unexpected version={version!r}; parser will try best-effort import"
         )
+    legacy_send_mode = version in {None, 1}
 
     subs = data.get("subscriptions")
     if not isinstance(subs, list):
@@ -263,7 +276,12 @@ def parse_subscriptions_toml(content: str) -> SubscriptionImportPayload:
         for key in INT_FIELDS:
             if key not in raw:
                 continue
-            parsed, error = _parse_int_value(raw.get(key), key=key, index=i)
+            parsed, error = _parse_int_value(
+                raw.get(key),
+                key=key,
+                index=i,
+                legacy_send_mode=legacy_send_mode,
+            )
             if error:
                 payload.errors.append(error)
                 has_error = True

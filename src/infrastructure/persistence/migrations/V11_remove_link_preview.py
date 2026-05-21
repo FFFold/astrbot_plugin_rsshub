@@ -1,4 +1,4 @@
-"""V6 add AI prompt fields and remove legacy config flags."""
+"""V11 remove deprecated link_preview columns."""
 
 from __future__ import annotations
 
@@ -24,78 +24,13 @@ def _select_expr(columns: set[str], column: str, default_sql: str) -> str:
     return column if column in columns else default_sql
 
 
-async def _column_default_map(conn, table: str) -> dict[str, object]:
-    result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
-    return {str(row[1]): row[4] for row in result.fetchall()}
-
-
-def _sqlite_default_is(value: object, expected: str) -> bool:
-    if value == int(expected):
-        return True
-    return str(value).strip("'\"") == expected
-
-
-def _legacy_user_option_expr(
-    columns: set[str],
-    column: str,
-    enabled_default_sql: str,
-    inherit_default_sql: str = "-100",
-) -> str:
-    if "use_user_config" not in columns:
-        return f"COALESCE({_select_expr(columns, column, inherit_default_sql)}, {inherit_default_sql})"
-    value_expr = _select_expr(columns, column, enabled_default_sql)
-    return (
-        "CASE WHEN COALESCE(use_user_config, 0) = 0 "
-        f"THEN {inherit_default_sql} "
-        f"ELSE COALESCE({value_expr}, {enabled_default_sql}) END"
-    )
-
-
-def _legacy_sub_option_expr(
-    columns: set[str],
-    column: str,
-    enabled_default_sql: str,
-    inherit_default_sql: str = "-100",
-) -> str:
-    if "use_sub_config" not in columns:
-        return f"COALESCE({_select_expr(columns, column, inherit_default_sql)}, {inherit_default_sql})"
-    value_expr = _select_expr(columns, column, enabled_default_sql)
-    return (
-        "CASE WHEN COALESCE(use_sub_config, 0) = 0 "
-        f"THEN {inherit_default_sql} "
-        f"ELSE COALESCE({value_expr}, {enabled_default_sql}) END"
-    )
-
-
 async def _rebuild_user_table(conn) -> None:
     if not await _table_exists(conn, "rsshub_user"):
         return
 
     columns = await _column_names(conn, "rsshub_user")
-    legacy_columns = {
-        "use_user_config",
-        "translate",
-        "translate_target_lang",
-    }
-    if "ai_prompt" in columns and not legacy_columns.intersection(columns):
-        defaults = await _column_default_map(conn, "rsshub_user")
-        inherit_columns = {
-            "interval",
-            "notify",
-            "send_mode",
-            "length_limit",
-            "display_author",
-            "display_via",
-            "display_title",
-            "display_entry_tags",
-            "style",
-            "display_media",
-        }
-        if all(
-            _sqlite_default_is(defaults.get(column), "-100")
-            for column in inherit_columns
-        ):
-            return
+    if "link_preview" not in columns:
+        return
 
     await conn.exec_driver_sql(
         """
@@ -105,7 +40,7 @@ async def _rebuild_user_table(conn) -> None:
             interval INTEGER NOT NULL DEFAULT -100,
             notify INTEGER NOT NULL DEFAULT -100,
             send_mode INTEGER NOT NULL DEFAULT -100,
-            ai_prompt TEXT NOT NULL DEFAULT '',
+            handlers TEXT NOT NULL DEFAULT '[]',
             length_limit INTEGER NOT NULL DEFAULT -100,
             display_author INTEGER NOT NULL DEFAULT -100,
             display_via INTEGER NOT NULL DEFAULT -100,
@@ -123,25 +58,25 @@ async def _rebuild_user_table(conn) -> None:
     await conn.exec_driver_sql(
         f"""
         INSERT INTO rsshub_user__new (
-            id, state, interval, notify, send_mode, ai_prompt, length_limit,
+            id, state, interval, notify, send_mode, handlers, length_limit,
             display_author, display_via, display_title, display_entry_tags,
-            style, display_media, default_target_session,
-            needs_binding_notice, created_at, updated_at
+            style, display_media, default_target_session, needs_binding_notice,
+            created_at, updated_at
         )
         SELECT
             id,
             COALESCE({_select_expr(columns, "state", "1")}, 1),
-            {_legacy_user_option_expr(columns, "interval", "10")},
-            {_legacy_user_option_expr(columns, "notify", "1")},
-            {_legacy_user_option_expr(columns, "send_mode", "0")},
-            COALESCE({_select_expr(columns, "ai_prompt", "''")}, ''),
-            {_legacy_user_option_expr(columns, "length_limit", "0")},
-            {_legacy_user_option_expr(columns, "display_author", "0")},
-            {_legacy_user_option_expr(columns, "display_via", "0")},
-            {_legacy_user_option_expr(columns, "display_title", "0")},
-            {_legacy_user_option_expr(columns, "display_entry_tags", "-1")},
-            {_legacy_user_option_expr(columns, "style", "0")},
-            {_legacy_user_option_expr(columns, "display_media", "0")},
+            COALESCE({_select_expr(columns, "interval", "-100")}, -100),
+            COALESCE({_select_expr(columns, "notify", "-100")}, -100),
+            COALESCE({_select_expr(columns, "send_mode", "-100")}, -100),
+            COALESCE({_select_expr(columns, "handlers", "'[]'")}, '[]'),
+            COALESCE({_select_expr(columns, "length_limit", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_author", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_via", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_title", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_entry_tags", "-100")}, -100),
+            COALESCE({_select_expr(columns, "style", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_media", "-100")}, -100),
             {_select_expr(columns, "default_target_session", "NULL")},
             COALESCE({_select_expr(columns, "needs_binding_notice", "0")}, 0),
             COALESCE({_select_expr(columns, "created_at", "CURRENT_TIMESTAMP")}, CURRENT_TIMESTAMP),
@@ -151,7 +86,7 @@ async def _rebuild_user_table(conn) -> None:
     )
     await conn.exec_driver_sql("DROP TABLE rsshub_user")
     await conn.exec_driver_sql("ALTER TABLE rsshub_user__new RENAME TO rsshub_user")
-    logger.info("迁移 V6: 重建 rsshub_user，添加 ai_prompt 并移除旧配置/翻译字段")
+    logger.info("迁移 V11: 重建 rsshub_user，移除 link_preview 字段")
 
 
 async def _rebuild_sub_table(conn) -> None:
@@ -159,30 +94,8 @@ async def _rebuild_sub_table(conn) -> None:
         return
 
     columns = await _column_names(conn, "rsshub_sub")
-    legacy_columns = {
-        "use_sub_config",
-        "translate",
-        "translate_target_lang",
-    }
-    inherit_columns = {
-        "interval",
-        "notify",
-        "send_mode",
-        "length_limit",
-        "display_author",
-        "display_via",
-        "display_title",
-        "display_entry_tags",
-        "style",
-        "display_media",
-    }
-    if "ai_prompt" in columns and not legacy_columns.intersection(columns):
-        defaults = await _column_default_map(conn, "rsshub_sub")
-        if all(
-            _sqlite_default_is(defaults.get(column), "-100")
-            for column in inherit_columns
-        ):
-            return
+    if "link_preview" not in columns:
+        return
 
     await conn.exec_driver_sql(
         """
@@ -199,7 +112,8 @@ async def _rebuild_sub_table(conn) -> None:
             next_check_time DATETIME,
             notify INTEGER NOT NULL DEFAULT -100,
             send_mode INTEGER NOT NULL DEFAULT -100,
-            ai_prompt TEXT NOT NULL DEFAULT '',
+            handlers_mode TEXT NOT NULL DEFAULT 'inherit',
+            handlers TEXT NOT NULL DEFAULT '[]',
             length_limit INTEGER NOT NULL DEFAULT -100,
             display_author INTEGER NOT NULL DEFAULT -100,
             display_via INTEGER NOT NULL DEFAULT -100,
@@ -218,9 +132,9 @@ async def _rebuild_sub_table(conn) -> None:
         f"""
         INSERT INTO rsshub_sub__new (
             id, state, user_id, feed_id, title, tags, target_session, platform_name,
-            interval, next_check_time, notify, send_mode, ai_prompt, length_limit,
-            display_author, display_via, display_title, display_entry_tags,
-            style, display_media, created_at, updated_at
+            interval, next_check_time, notify, send_mode, handlers_mode, handlers,
+            length_limit, display_author, display_via, display_title,
+            display_entry_tags, style, display_media, created_at, updated_at
         )
         SELECT
             id,
@@ -231,18 +145,19 @@ async def _rebuild_sub_table(conn) -> None:
             COALESCE({_select_expr(columns, "tags", "''")}, ''),
             {_select_expr(columns, "target_session", "NULL")},
             {_select_expr(columns, "platform_name", "NULL")},
-            {_legacy_sub_option_expr(columns, "interval", "10")},
+            COALESCE({_select_expr(columns, "interval", "-100")}, -100),
             {_select_expr(columns, "next_check_time", "NULL")},
-            {_legacy_sub_option_expr(columns, "notify", "1")},
-            {_legacy_sub_option_expr(columns, "send_mode", "0")},
-            COALESCE({_select_expr(columns, "ai_prompt", "''")}, ''),
-            {_legacy_sub_option_expr(columns, "length_limit", "0")},
-            {_legacy_sub_option_expr(columns, "display_author", "0")},
-            {_legacy_sub_option_expr(columns, "display_via", "0")},
-            {_legacy_sub_option_expr(columns, "display_title", "0")},
-            {_legacy_sub_option_expr(columns, "display_entry_tags", "-1")},
-            {_legacy_sub_option_expr(columns, "style", "0")},
-            {_legacy_sub_option_expr(columns, "display_media", "0")},
+            COALESCE({_select_expr(columns, "notify", "-100")}, -100),
+            COALESCE({_select_expr(columns, "send_mode", "-100")}, -100),
+            COALESCE({_select_expr(columns, "handlers_mode", "'inherit'")}, 'inherit'),
+            COALESCE({_select_expr(columns, "handlers", "'[]'")}, '[]'),
+            COALESCE({_select_expr(columns, "length_limit", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_author", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_via", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_title", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_entry_tags", "-100")}, -100),
+            COALESCE({_select_expr(columns, "style", "-100")}, -100),
+            COALESCE({_select_expr(columns, "display_media", "-100")}, -100),
             COALESCE({_select_expr(columns, "created_at", "CURRENT_TIMESTAMP")}, CURRENT_TIMESTAMP),
             COALESCE({_select_expr(columns, "updated_at", "CURRENT_TIMESTAMP")}, CURRENT_TIMESTAMP)
         FROM rsshub_sub
@@ -250,7 +165,7 @@ async def _rebuild_sub_table(conn) -> None:
     )
     await conn.exec_driver_sql("DROP TABLE rsshub_sub")
     await conn.exec_driver_sql("ALTER TABLE rsshub_sub__new RENAME TO rsshub_sub")
-    logger.info("迁移 V6: 重建 rsshub_sub，添加 ai_prompt 并移除旧配置/翻译字段")
+    logger.info("迁移 V11: 重建 rsshub_sub，移除 link_preview 字段")
 
 
 async def upgrade(conn) -> None:

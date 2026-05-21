@@ -66,7 +66,6 @@ class GetUserSettingsCommand:
             "send_mode": user.send_mode,
             "handlers": user.handlers,
             "length_limit": user.length_limit,
-            "link_preview": user.link_preview,
             "display_author": user.display_author,
             "display_via": user.display_via,
             "display_title": user.display_title,
