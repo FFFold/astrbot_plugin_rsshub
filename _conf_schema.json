@@ -314,7 +314,7 @@
   "sender_strategies": {
     "type": "object",
     "description": "平台发送策略配置",
-    "hint": "选择启用专用发送策略的平台；未选择的平台使用默认发送器。Telegram / OneBot 的 Telegraph 策略使用模板列表按需添加；当前每个平台只读取第一条模板。",
+    "hint": "选择启用专用发送策略的平台；未选择的平台使用默认发送器。平台策略使用一个统一模板列表按需添加，模板类型可不同；同类模板当前只读取第一条。",
     "items": {
       "enabled_platforms": {
         "type": "list",
@@ -336,10 +336,10 @@
           "type": "string"
         }
       },
-      "telegram": {
+      "platform_strategies": {
         "type": "template_list",
-        "description": "Telegram 平台策略",
-        "hint": "按需添加 Telegram 策略模板；当前只读取第一条，多条会被忽略。",
+        "description": "平台策略模板",
+        "hint": "按需添加 Telegram / OneBot 策略模板；同类模板当前只读取第一条，多条同类模板会被忽略。",
         "default": [],
         "templates": {
           "telegram_strategy": {
@@ -362,15 +362,7 @@
                 "default": false
               }
             }
-          }
-        }
-      },
-      "aiocqhttp": {
-        "type": "template_list",
-        "description": "OneBot 平台策略",
-        "hint": "按需添加 OneBot 策略模板；当前只读取第一条，多条会被忽略。",
-        "default": [],
-        "templates": {
+          },
           "onebot_strategy": {
             "name": "OneBot 策略",
             "hint": "Telegraph 自动分流与视频来源策略",

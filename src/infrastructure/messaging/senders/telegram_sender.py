@@ -37,6 +37,24 @@ class TelegramMessageSender(DefaultMessageSender):
             return strategy.get(key, default)
         return getattr(strategy, key, default)
 
+    @staticmethod
+    def _strategy_from_templates(sender_strategies, template_key: str):
+        templates = (
+            sender_strategies.get("platform_strategies")
+            if isinstance(sender_strategies, dict)
+            else getattr(sender_strategies, "platform_strategies", None)
+        )
+        if not isinstance(templates, list):
+            return None
+        return next(
+            (
+                item
+                for item in templates
+                if isinstance(item, dict) and item.get("__template_key") == template_key
+            ),
+            None,
+        )
+
     @classmethod
     def _get_timeout_seconds(cls) -> int:
         """Telegram 可能需要更长的超时"""
@@ -56,15 +74,19 @@ class TelegramMessageSender(DefaultMessageSender):
             try:
                 config = get_config_manager()
                 sender_strategies = getattr(config, "sender_strategies", None)
-                strategy = (
-                    sender_strategies.get("telegram")
-                    if isinstance(sender_strategies, dict)
-                    else getattr(
-                        sender_strategies,
-                        "telegram_settings",
-                        getattr(sender_strategies, "telegram", None),
-                    )
+                strategy = cls._strategy_from_templates(
+                    sender_strategies, "telegram_strategy"
                 )
+                if strategy is None:
+                    strategy = (
+                        sender_strategies.get("telegram")
+                        if isinstance(sender_strategies, dict)
+                        else getattr(
+                            sender_strategies,
+                            "telegram_settings",
+                            getattr(sender_strategies, "telegram", None),
+                        )
+                    )
             except Exception:
                 strategy = None
 

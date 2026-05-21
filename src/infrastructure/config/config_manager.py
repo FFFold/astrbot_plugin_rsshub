@@ -19,6 +19,11 @@ SENDER_STRATEGY_KEYS: tuple[str, ...] = (
     "weixin_oc",
 )
 
+PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
+    "telegram": "telegram_strategy",
+    "aiocqhttp": "onebot_strategy",
+}
+
 
 class PlatformSenderStrategyConfig(BaseModel):
     """平台专属 sender 策略。"""
@@ -45,6 +50,25 @@ class PlatformSenderStrategyConfig(BaseModel):
         if data == type(self)().model_dump():
             return []
         return [{"__template_key": template_key, **data}]
+
+    def to_template_item(self, template_key: str) -> dict[str, Any] | None:
+        data = self.model_dump()
+        if data == type(self)().model_dump():
+            return None
+        return {"__template_key": template_key, **data}
+
+
+def _first_strategy_template(data: Any, template_key: str) -> dict[str, Any] | None:
+    if not isinstance(data, list):
+        return None
+    return next(
+        (
+            item
+            for item in data
+            if isinstance(item, dict) and item.get("__template_key") == template_key
+        ),
+        None,
+    )
 
 
 class BasicConfig(BaseModel):
@@ -247,14 +271,27 @@ class SenderStrategiesConfig(BaseModel):
                         if key in SENDER_STRATEGY_KEYS and isinstance(value, bool)
                     }
                 )
+            platform_strategies = data.get("platform_strategies")
+            telegram_source = _first_strategy_template(
+                platform_strategies,
+                PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
+            )
+            if telegram_source is None:
+                telegram_source = data.get("telegram") or data.get("telegram_config")
+            aiocqhttp_source = _first_strategy_template(
+                platform_strategies,
+                PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
+            )
+            if aiocqhttp_source is None:
+                aiocqhttp_source = data.get("aiocqhttp") or data.get("aiocqhttp_config")
             return cls.model_validate(
                 {
                     **known_values,
                     "telegram_config": PlatformSenderStrategyConfig.from_dict(
-                        data.get("telegram") or data.get("telegram_config")
+                        telegram_source
                     ),
                     "aiocqhttp_config": PlatformSenderStrategyConfig.from_dict(
-                        data.get("aiocqhttp") or data.get("aiocqhttp_config")
+                        aiocqhttp_source
                     ),
                 }
             )
@@ -280,10 +317,21 @@ class SenderStrategiesConfig(BaseModel):
         return [key for key in SENDER_STRATEGY_KEYS if getattr(self, key)]
 
     def to_config_dict(self) -> dict[str, Any]:
+        platform_strategies = [
+            item
+            for item in (
+                self.telegram_settings.to_template_item(
+                    PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"]
+                ),
+                self.aiocqhttp_settings.to_template_item(
+                    PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"]
+                ),
+            )
+            if item is not None
+        ]
         return {
             "enabled_platforms": self.to_enabled_platforms(),
-            "telegram": self.telegram_settings.to_template_list("telegram_strategy"),
-            "aiocqhttp": self.aiocqhttp_settings.to_template_list("onebot_strategy"),
+            "platform_strategies": platform_strategies,
         }
 
 

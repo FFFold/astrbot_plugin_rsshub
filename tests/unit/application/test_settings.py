@@ -193,7 +193,7 @@ def test_sender_strategies_parse_delimited_string_config():
     assert config.sender_strategies.weixin_oc is False
 
 
-def test_config_save_writes_sender_strategies_template_lists_with_enabled_platforms():
+def test_config_save_writes_single_sender_strategy_template_list_with_enabled_platforms():
     from astrbot_plugin_rsshub.src.infrastructure.config.config_manager import (
         RsshubPluginConfig,
     )
@@ -214,8 +214,7 @@ def test_config_save_writes_sender_strategies_template_lists_with_enabled_platfo
     assert astrbot_config.saved is True
     assert astrbot_config["sender_strategies"] == {
         "enabled_platforms": ["telegram", "qq_official"],
-        "telegram": [],
-        "aiocqhttp": [],
+        "platform_strategies": [],
     }
 
 
@@ -250,7 +249,7 @@ def test_sender_strategies_parse_platform_strategy_objects_without_breaking_enab
     assert config.sender_strategies.aiocqhttp_settings.prefer_local_video is False
 
 
-def test_sender_strategies_parse_template_lists_and_use_first_item_only():
+def test_sender_strategies_parse_unified_template_list_and_use_first_item_per_type():
     from astrbot_plugin_rsshub.src.infrastructure.config.config_manager import (
         RsshubPluginConfig,
     )
@@ -259,7 +258,7 @@ def test_sender_strategies_parse_template_lists_and_use_first_item_only():
         {
             "sender_strategies": {
                 "enabled_platforms": ["telegram", "aiocqhttp"],
-                "telegram": [
+                "platform_strategies": [
                     {
                         "__template_key": "telegram_strategy",
                         "enable_telegraph": True,
@@ -270,8 +269,6 @@ def test_sender_strategies_parse_template_lists_and_use_first_item_only():
                         "enable_telegraph": False,
                         "telegraph_token": "second-token",
                     },
-                ],
-                "aiocqhttp": [
                     {
                         "__template_key": "onebot_strategy",
                         "prefer_local_video": True,
@@ -286,7 +283,7 @@ def test_sender_strategies_parse_template_lists_and_use_first_item_only():
     assert config.sender_strategies.aiocqhttp_settings.prefer_local_video is True
 
 
-def test_config_save_writes_non_default_sender_strategy_as_template_list():
+def test_config_save_writes_non_default_sender_strategy_to_unified_template_list():
     from astrbot_plugin_rsshub.src.infrastructure.config.config_manager import (
         RsshubPluginConfig,
     )
@@ -301,7 +298,7 @@ def test_config_save_writes_non_default_sender_strategy_as_template_list():
         {
             "sender_strategies": {
                 "enabled_platforms": ["telegram"],
-                "telegram": [
+                "platform_strategies": [
                     {
                         "__template_key": "telegram_strategy",
                         "enable_telegraph": True,
@@ -315,7 +312,7 @@ def test_config_save_writes_non_default_sender_strategy_as_template_list():
 
     config.save(astrbot_config)
 
-    assert astrbot_config["sender_strategies"]["telegram"] == [
+    assert astrbot_config["sender_strategies"]["platform_strategies"] == [
         {
             "__template_key": "telegram_strategy",
             "enable_telegraph": True,
@@ -323,7 +320,48 @@ def test_config_save_writes_non_default_sender_strategy_as_template_list():
             "prefer_local_video": False,
         }
     ]
-    assert astrbot_config["sender_strategies"]["aiocqhttp"] == []
+
+
+def test_application_settings_maps_unified_sender_strategy_templates():
+    from astrbot_plugin_rsshub.src.infrastructure.config.settings_adapter import (
+        build_application_settings,
+    )
+
+    settings = build_application_settings(
+        {
+            "sender_strategies": {
+                "enabled_platforms": ["telegram", "aiocqhttp"],
+                "platform_strategies": [
+                    {
+                        "__template_key": "onebot_strategy",
+                        "enable_telegraph": True,
+                        "telegraph_token": "onebot-token",
+                        "prefer_local_video": True,
+                    },
+                    {
+                        "__template_key": "telegram_strategy",
+                        "enable_telegraph": True,
+                        "telegraph_token": "telegram-token",
+                    },
+                    {
+                        "__template_key": "telegram_strategy",
+                        "enable_telegraph": False,
+                        "telegraph_token": "ignored-token",
+                    },
+                ],
+            }
+        }
+    )
+
+    assert settings.sender_strategies.telegram_settings.enable_telegraph is True
+    assert settings.sender_strategies.telegram_settings.telegraph_token == (
+        "telegram-token"
+    )
+    assert settings.sender_strategies.aiocqhttp_settings.enable_telegraph is True
+    assert settings.sender_strategies.aiocqhttp_settings.telegraph_token == (
+        "onebot-token"
+    )
+    assert settings.sender_strategies.aiocqhttp_settings.prefer_local_video is True
 
 
 def test_global_config_maps_new_send_mode_direct_send_to_db_values():

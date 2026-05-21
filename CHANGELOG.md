@@ -24,7 +24,7 @@
 - Plugin Pages 订阅列表新增前端分页；订阅和推送历史分页控件统一上移到列表顶部，仅在存在跨页数据时显示。
 - Plugin Pages 默认订阅设置和知识库页改为居中窄容器；移除会遮挡表单的桌面端悬浮保存按钮，统一保留底部保存入口。
 - Plugin Pages 用户状态收敛为「用户」和「已封禁」两种；历史非负状态作为普通用户兼容显示，新写入只允许 `1` 或 `-1`。
-- `sender_strategies.enabled_platforms` 配置由四个布尔子项收敛为平台多选列表，并兼容读取旧版 object bool map；`aiocqhttp` / `telegram` 平台策略改为 `template_list` 按需添加，用于 Telegraph 自动分流和 OneBot 视频策略。
+- `sender_strategies.enabled_platforms` 配置由四个布尔子项收敛为平台多选列表，并兼容读取旧版 object bool map；平台策略统一改为 `sender_strategies.platform_strategies` 单个 `template_list`，可按需添加 `telegram_strategy` / `onebot_strategy`，用于 Telegraph 自动分流和 OneBot 视频策略。
 - `_conf_schema.json` 中的固定配置项改为下拉/多选，有限范围的数值项改为滑块；Routes KB 同步源收敛为内置 GitHub Raw 与 `ghfast.top` raw 代理选项，避免用户手动输入不兼容镜像格式。
 - `rsshub_sub` / `rsshub_user` 配置继承语义收敛：移除 `use_sub_config` / `use_user_config` 开关列，改由具体字段 `-100` 统一表示继承；用户级配置默认继承全局配置。
 - `send_mode` 语义调整为 `-1=仅链接`、`0=自动`、`1=直接发送`；旧值 `1=Telegraph` 兼容归一到自动，旧值 `2=直接消息` 兼容归一到直接发送。
@@ -443,7 +443,7 @@
   - `/sub` `/unsub` `/sub_list` 命令均支持共享模式
 - 新增可配置的发送策略：
   - 支持在配置中开启/关闭特定平台的发送策略
-  - 新增 `sender_strategies` 配置项，包含 `telegram` 和 `aiocqhttp` 两个子项
+  - 当时新增的 `sender_strategies.telegram` / `sender_strategies.aiocqhttp` 子项已在后续版本迁移为 `enabled_platforms` + `platform_strategies`
   - 新增 `/rss_conf sender_strategy_telegram <true/false>` 命令控制 Telegram 策略
   - 新增 `/rss_conf sender_strategy_aiocqhttp <true/false>` 命令控制 OneBot 策略
   - 关闭特定平台策略后将自动使用默认发送策略

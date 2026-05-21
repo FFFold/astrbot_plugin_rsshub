@@ -126,20 +126,20 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
     assert enabled_platforms["items"]["type"] == "string"
 
 
-def test_conf_schema_exposes_platform_strategy_template_lists():
+def test_conf_schema_exposes_single_platform_strategy_template_list():
     schema = json.loads((PLUGIN_ROOT / "_conf_schema.json").read_text(encoding="utf-8"))
     sender_items = schema["sender_strategies"]["items"]
 
-    assert "aiocqhttp" in sender_items
-    assert "telegram" in sender_items
-    assert sender_items["telegram"]["type"] == "template_list"
-    assert sender_items["telegram"]["default"] == []
-    assert sender_items["aiocqhttp"]["type"] == "template_list"
-    assert sender_items["aiocqhttp"]["default"] == []
+    assert "telegram" not in sender_items
+    assert "aiocqhttp" not in sender_items
+    platform_strategies = sender_items["platform_strategies"]
+    assert platform_strategies["type"] == "template_list"
+    assert platform_strategies["default"] == []
     assert "dict" not in json.dumps(schema)
 
-    telegram_items = sender_items["telegram"]["templates"]["telegram_strategy"]["items"]
-    onebot_items = sender_items["aiocqhttp"]["templates"]["onebot_strategy"]["items"]
+    templates = platform_strategies["templates"]
+    telegram_items = templates["telegram_strategy"]["items"]
+    onebot_items = templates["onebot_strategy"]["items"]
     assert telegram_items["enable_telegraph"]["type"] == "bool"
     assert telegram_items["telegraph_token"]["type"] == "string"
     assert onebot_items["prefer_local_video"]["type"] == "bool"

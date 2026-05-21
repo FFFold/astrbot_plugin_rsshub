@@ -52,6 +52,11 @@ _SENDER_STRATEGY_KEYS: tuple[str, ...] = (
     "weixin_oc",
 )
 
+_PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
+    "telegram": "telegram_strategy",
+    "aiocqhttp": "onebot_strategy",
+}
+
 
 def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
     if value is None:
@@ -71,15 +76,39 @@ def _first_template_item(value: Any) -> Any:
     return value
 
 
+def _first_strategy_template(value: Any, template_key: str) -> Any:
+    if not isinstance(value, list):
+        return None
+    return next(
+        (
+            item
+            for item in value
+            if isinstance(item, dict) and item.get("__template_key") == template_key
+        ),
+        None,
+    )
+
+
 def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
     enabled = _enabled_sender_strategy_names(value)
-    telegram_source = _first_template_item(_get_value(value, "telegram", None))
+    platform_strategies = _get_value(value, "platform_strategies", None)
+    telegram_source = _first_strategy_template(
+        platform_strategies,
+        _PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
+    )
+    if not isinstance(telegram_source, dict):
+        telegram_source = _first_template_item(_get_value(value, "telegram", None))
     if not isinstance(telegram_source, dict):
         telegram_source = _first_template_item(
             _get_value(value, "telegram_settings", None)
             or _get_value(value, "telegram_config", None)
         )
-    aiocqhttp_source = _first_template_item(_get_value(value, "aiocqhttp", None))
+    aiocqhttp_source = _first_strategy_template(
+        platform_strategies,
+        _PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
+    )
+    if not isinstance(aiocqhttp_source, dict):
+        aiocqhttp_source = _first_template_item(_get_value(value, "aiocqhttp", None))
     if not isinstance(aiocqhttp_source, dict):
         aiocqhttp_source = _first_template_item(
             _get_value(value, "aiocqhttp_settings", None)

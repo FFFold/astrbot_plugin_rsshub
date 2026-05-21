@@ -187,7 +187,7 @@ Plugin Pages 的用户/订阅处理链编辑器会优先读取 Web API `handlers
 
 `sender_strategies.enabled_platforms` 现在是平台多选列表，默认启用 `telegram`、`aiocqhttp`、`qq_official`、`weixin_oc`。未选中的平台会回退到默认发送器。
 
-> 兼容说明：旧版 `sender_strategies.telegram = true` 这类布尔对象配置仍可读取；保存后会写回 `sender_strategies.enabled_platforms`。`sender_strategies.telegram` / `sender_strategies.aiocqhttp` 使用 `template_list` 按需添加平台策略，当前每个平台只读取第一条模板。
+> 兼容说明：旧版 `sender_strategies.telegram = true` 这类布尔对象配置仍可读取；保存后会写回 `sender_strategies.enabled_platforms`。平台策略统一写入 `sender_strategies.platform_strategies` 这个 `template_list`，可添加 `telegram_strategy` / `onebot_strategy` 等不同模板；当前每类模板只读取第一条。
 
 平台专属 sender 策略模板目前用于 `telegram` 和 `aiocqhttp`：
 
