@@ -272,7 +272,7 @@ def test_sender_strategies_parse_unified_template_list_and_use_first_item_per_ty
                     {
                         "__template_key": "onebot_strategy",
                         "prefer_local_video": True,
-                    }
+                    },
                 ],
             }
         }
