@@ -4,6 +4,7 @@
 
 ### Added
 
+- 新增 `/rsshelp`、`/sub_status`、`/sub_stop`、`/rsshub_kb_init`、`/rsshub_kb_sync`、`/rsshub_kb_status`、`/rsshub_kb_task` 等命令。
 - 新增 AstrBot Plugin Pages 管理面板，覆盖订阅、用户、Feed、推送历史、默认订阅设置、处理器、数据管理和 RSSHub Routes 知识库同步。
 - 新增 schema-driven 内容处理链，内置 `ai_filter` 与 `ai_transform`；`ai_transform` 支持 `plaintext` 与 `xml` scope，XML 改写会经过校验和重新解析。
 - 新增推送排版策略：`style=0` 自动，`style=1` RSSRT，`style=2` 原始顺序；原始顺序会尽量按 RSS/HTML 解析树保留图文相邻关系。
@@ -16,18 +17,14 @@
 - 配置体系重构：启动级配置保留在 `_conf_schema.json`，订阅默认值和处理链配置迁移到 Plugin Pages；类型化运行时配置收口到 `src/infrastructure/config/`。
 - 数据模型收口：用户/订阅配置统一使用 `-100` 表示继承，移除旧 `use_sub_config` / `use_user_config` / 翻译列；迁移脚本压缩为当前 v2 基线。
 - 发送链路重构：格式化器只负责解析后的文本和媒体，平台差异放在 sender adapter；OneBot、QQ Official、Weixin OC、Telegram 使用各自平台策略。
-- QQ Official 单图可与文本合发，多媒体/视频按平台策略拆发；Weixin OC 始终逐条发送；OneBot classic 使用合并转发并保留文本 Nodes 回退。
 - Plugin Pages 不再提供新增订阅或订阅 TOML 导入/导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 工具完成。
 - 文档体系重建为 `docs/README.md`、`docs/project/`、`docs/dev/`、`docs/usage/`，README 只保留入口和用户向说明。
 
 ### Fixed
 
 - 修复部分 RSS 源只推送图片不推送正文的问题，补齐 `content:encoded`、HTML 文本提取、图文 layout fragment 和平台发送顺序处理。
-- 修复 HTML `<video>` / `<audio>` 媒体类型丢失、视频被按图片处理或正文残留占位文本的问题。
 - 修复失败重试和推送历史审计链路：推送历史保存媒体 URL、原始 XML、handler trace，并限制失败原因长度。
 - 修复 Routes KB raw URL 拼接，支持代理前缀形式的 GitHub Raw 镜像。
-- 修复 Plugin Pages 中重复提交、批量操作残留、下载受 sandbox 限制、行点击联动和窄屏布局等管理体验问题。
-- 修复 `rsshelp` 展示方式，改为预生成帮助图并统一成更接近 RSSHub 的样式。
 
 ### Removed
 
