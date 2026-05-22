@@ -125,12 +125,6 @@
         "hint": "首次监控是否跳过历史条目",
         "default": true
       },
-      "debug_payload": {
-        "type": "bool",
-        "description": "推送调试字段",
-        "hint": "是否在推送中附加调试字段",
-        "default": false
-      },
       "history_entry_limit": {
         "type": "int",
         "description": "历史条目推送限制",
@@ -311,6 +305,27 @@
       }
     }
   },
+  "content_handlers": {
+    "type": "object",
+    "description": "内容处理器全局 AI 配置",
+    "hint": "供内置 ai_filter / ai_transform 使用；API Key 仍由 AstrBot Provider 管理，插件只保存 Provider 与人格 ID",
+    "items": {
+      "ai_provider_id": {
+        "type": "string",
+        "description": "AI 内容处理 Provider",
+        "_special": "select_provider",
+        "hint": "留空时使用当前会话正在使用的对话模型 Provider",
+        "default": ""
+      },
+      "ai_persona_id": {
+        "type": "string",
+        "description": "AI 内容处理人格",
+        "_special": "select_persona",
+        "hint": "可选；选择后仅把该人格 system prompt 注入内置 AI handler，不改变会话人格",
+        "default": ""
+      }
+    }
+  },
   "sender_strategies": {
     "type": "object",
     "description": "平台发送策略配置",
@@ -323,14 +338,12 @@
         "default": [
           "telegram",
           "aiocqhttp",
-          "qq_official",
-          "weixin_oc"
+          "qq_official"
         ],
         "options": [
           "telegram",
           "aiocqhttp",
-          "qq_official",
-          "weixin_oc"
+          "qq_official"
         ],
         "items": {
           "type": "string"
@@ -355,28 +368,13 @@
                 "type": "string",
                 "description": "Telegraph Access Token",
                 "default": ""
-              },
-              "prefer_local_video": {
-                "type": "bool",
-                "description": "优先本地视频",
-                "default": false
               }
             }
           },
           "onebot_strategy": {
             "name": "OneBot 策略",
-            "hint": "Telegraph 自动分流与视频来源策略",
+            "hint": "OneBot 视频来源策略",
             "items": {
-              "enable_telegraph": {
-                "type": "bool",
-                "description": "启用 Telegraph 自动分流",
-                "default": false
-              },
-              "telegraph_token": {
-                "type": "string",
-                "description": "Telegraph Access Token",
-                "default": ""
-              },
               "prefer_local_video": {
                 "type": "bool",
                 "description": "优先本地视频",

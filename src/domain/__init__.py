@@ -3,7 +3,7 @@
 包含业务实体、值对象、领域事件和领域异常。
 """
 
-from .constants import INHERIT_VALUE
+from ..shared.constants import INHERIT_VALUE
 from .entities.feed import Feed
 from .entities.push_history import PushHistory
 from .entities.subscription import Subscription

@@ -5,7 +5,7 @@
 
 迁移脚本命名规范:
     V{数字}_{描述}.py
-    例如: V1_init.py, V2_add_target_session.py
+    例如: V1_init.py
 
 迁移脚本必须实现:
     async def upgrade(conn) -> None:
@@ -26,7 +26,7 @@ from ...utils import get_logger
 
 logger = get_logger()
 
-# 匹配迁移文件名: V1_init.py, V10_add_index.py
+# 匹配迁移文件名: V1_init.py
 _MIGRATION_PATTERN = re.compile(r"^V(\d+)_.+\.py$")
 
 
@@ -181,13 +181,10 @@ class MigrationRunner:
         applied: set[int] = set()
         for row in result.fetchall():
             version_str = str(row[0])
-            # 尝试解析整数版本号（兼容旧版字符串版本如 v1.0.0）
             try:
-                # 新版格式: 直接是整数字符串
                 applied.add(int(version_str))
             except ValueError:
-                # 旧版格式: v1.0.0 等，跳过（由兼容性迁移处理）
-                logger.debug("跳过旧版迁移记录: %s", version_str)
+                logger.debug("忽略非整数迁移记录: %s", version_str)
                 continue
 
         return applied
@@ -360,72 +357,3 @@ async def cleanup_legacy_translation_tables(conn) -> list[str]:
     return dropped
 
 
-async def ensure_user_subscription_prompt_schema(conn) -> list[str]:
-    """补齐用户/订阅配置表的 handlers 与 handlers_mode 字段并清理旧配置字段。
-
-    旧库可能已经记录过迁移版本，但表结构仍保留 ai_prompt 或 use_*_config。
-    这里按顺序复用 V6/V7 的幂等重建逻辑做启动自愈。
-    """
-
-    from .V6_ai_prompt_and_inherit_options import (
-        _column_names,
-        _table_exists,
-    )
-    from .V6_ai_prompt_and_inherit_options import (
-        _rebuild_sub_table as _rebuild_sub_table_v6,
-    )
-    from .V6_ai_prompt_and_inherit_options import (
-        _rebuild_user_table as _rebuild_user_table_v6,
-    )
-    from .V7_handlers_chain import _rebuild_sub_table as _rebuild_sub_table_v7
-    from .V7_handlers_chain import _rebuild_user_table as _rebuild_user_table_v7
-    from .V8_subscription_handlers_mode import (
-        _rebuild_sub_table as _rebuild_sub_table_v8,
-    )
-    from .V11_remove_link_preview import _rebuild_sub_table as _rebuild_sub_table_v11
-    from .V11_remove_link_preview import _rebuild_user_table as _rebuild_user_table_v11
-
-    before: dict[str, set[str]] = {}
-    for table in ("rsshub_user", "rsshub_sub"):
-        if await _table_exists(conn, table):
-            before[table] = await _column_names(conn, table)
-
-    user_columns = before.get("rsshub_user", set())
-    sub_columns = before.get("rsshub_sub", set())
-
-    user_needs_v6_v7 = bool(user_columns) and (
-        "handlers" not in user_columns
-        or "ai_prompt" in user_columns
-        or {
-            "use_user_config",
-            "translate",
-            "translate_target_lang",
-        }.intersection(user_columns)
-    )
-    sub_needs_v6_v7 = bool(sub_columns) and (
-        "handlers" not in sub_columns
-        or "ai_prompt" in sub_columns
-        or {
-            "use_sub_config",
-            "translate",
-            "translate_target_lang",
-        }.intersection(sub_columns)
-    )
-
-    if user_needs_v6_v7:
-        await _rebuild_user_table_v6(conn)
-        await _rebuild_user_table_v7(conn)
-    if sub_needs_v6_v7:
-        await _rebuild_sub_table_v6(conn)
-        await _rebuild_sub_table_v7(conn)
-    await _rebuild_sub_table_v8(conn)
-    await _rebuild_user_table_v11(conn)
-    await _rebuild_sub_table_v11(conn)
-
-    changed: list[str] = []
-    for table, previous in before.items():
-        current = await _column_names(conn, table)
-        if previous != current:
-            changed.append(table)
-            logger.info("数据库 schema 自愈: 更新 %s handlers/继承字段结构", table)
-    return changed

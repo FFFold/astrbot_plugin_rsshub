@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-from sqlmodel import asc, select
+from sqlmodel import asc, or_, select
 
 from ...domain.entities.handlers import dump_handlers, handlers_json
 from ...domain.entities.subscription import Subscription
 from ..utils import get_logger
 from .database import get_database
-from .models import SubORM
+from .models import FeedORM, SubORM
 
 logger = get_logger()
 
@@ -59,6 +59,53 @@ class SubscriptionRepositoryImpl:
         db = get_database()
         async with db.get_session() as session:
             stmt = select(SubORM).where(SubORM.state == 1).order_by(asc(SubORM.id))
+            result = await session.execute(stmt)
+            orms = result.scalars().all()
+            return [self._to_entity(orm) for orm in orms]
+
+    async def list_for_dashboard(
+        self,
+        *,
+        user_ids: list[str] | None = None,
+        feed_ids: list[int] | None = None,
+        sub_ids: list[int] | None = None,
+        keywords: list[str] | None = None,
+    ) -> list[Subscription]:
+        """Dashboard 订阅列表筛选查询。"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(SubORM).join(FeedORM, FeedORM.id == SubORM.feed_id, isouter=True)
+            has_filters = any(
+                values
+                for values in (user_ids, feed_ids, sub_ids, keywords)
+            )
+
+            if not has_filters:
+                stmt = stmt.where(SubORM.state == 1)
+
+            if user_ids:
+                stmt = stmt.where(SubORM.user_id.in_(user_ids))
+            if feed_ids:
+                stmt = stmt.where(SubORM.feed_id.in_(feed_ids))
+            if sub_ids:
+                stmt = stmt.where(SubORM.id.in_(sub_ids))
+            if keywords:
+                stmt = stmt.where(
+                    or_(
+                        *[
+                            or_(
+                                SubORM.title.ilike(f"%{keyword}%"),
+                                SubORM.tags.ilike(f"%{keyword}%"),
+                                SubORM.user_id.ilike(f"%{keyword}%"),
+                                FeedORM.title.ilike(f"%{keyword}%"),
+                                FeedORM.link.ilike(f"%{keyword}%"),
+                            )
+                            for keyword in keywords
+                        ]
+                    )
+                )
+
+            stmt = stmt.order_by(asc(SubORM.id))
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
@@ -126,6 +173,12 @@ class SubscriptionRepositoryImpl:
             if not orm:
                 return None
             for key, value in kwargs.items():
+                if key == "handlers":
+                    orm.handlers = handlers_json(value)
+                    continue
+                if key == "handlers_mode":
+                    orm.handlers_mode = str(value or "").strip().lower()
+                    continue
                 if hasattr(orm, key):
                     setattr(orm, key, value)
             session.add(orm)
@@ -179,7 +232,7 @@ class SubscriptionRepositoryImpl:
             notify=sub.notify,
             send_mode=sub.send_mode,
             handlers_mode=sub.handlers_mode,
-            handlers=handlers_json(sub.handlers),
+            handlers=handlers_json(sub.get_handlers()),
             length_limit=sub.length_limit,
             display_author=sub.display_author,
             display_via=sub.display_via,

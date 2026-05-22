@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..constants import INHERIT_VALUE
+from ...shared.constants import INHERIT_VALUE
 from .handlers import dump_handlers, normalize_handlers
 
 HANDLERS_MODE_INHERIT = "inherit"
@@ -60,7 +60,7 @@ class Subscription(BaseModel):
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
     display_title: int = Field(default=INHERIT_VALUE, description="显示标题")
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(default=INHERIT_VALUE, description="样式")
+    style: int = Field(default=INHERIT_VALUE, description="推送排版策略")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
     handlers_mode: str = Field(
         default=HANDLERS_MODE_INHERIT,
@@ -98,13 +98,23 @@ class Subscription(BaseModel):
             return payload
         return value
 
-    @property
-    def handlers(self) -> list[dict[str, Any]]:
+    def get_handlers(self) -> list[dict[str, Any]]:
         return dump_handlers(self.handler_specs)
 
-    @handlers.setter
-    def handlers(self, value: Any) -> None:
+    def set_handlers(self, value: Any) -> "Subscription":
         self.handler_specs = dump_handlers(normalize_handlers(value))
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    def clear_handlers(self) -> "Subscription":
+        self.handler_specs = []
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    @property
+    def handlers(self) -> list[dict[str, Any]]:
+        """Backward-compatible read-only alias."""
+        return self.get_handlers()
 
     def is_active(self) -> bool:
         """检查订阅是否启用"""
@@ -149,4 +159,4 @@ class Subscription(BaseModel):
 
     def get_effective_handlers(self) -> list[dict[str, Any]]:
         """获取规范化后的 handlers。"""
-        return dump_handlers(self.handler_specs)
+        return self.get_handlers()

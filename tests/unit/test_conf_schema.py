@@ -13,10 +13,17 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
 
     assert set(schema) == {
         "basic_config",
+        "content_handlers",
         "ffmpeg",
         "route_knowledge",
         "sender_strategies",
     }
+    content_handler_items = schema["content_handlers"]["items"]
+    assert content_handler_items["ai_provider_id"]["_special"] == "select_provider"
+    assert content_handler_items["ai_provider_id"]["default"] == ""
+    assert content_handler_items["ai_persona_id"]["_special"] == "select_persona"
+    assert content_handler_items["ai_persona_id"]["default"] == ""
+
     route_knowledge_items = schema["route_knowledge"]["items"]
     assert route_knowledge_items["kb_name"]["default"] == "RSSHub Routes"
     assert route_knowledge_items["embedding_provider_id"]["default"] == ""
@@ -116,7 +123,6 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "telegram",
         "aiocqhttp",
         "qq_official",
-        "weixin_oc",
     ]
     assert sender_strategies["type"] == "object"
     enabled_platforms = sender_strategies["items"]["enabled_platforms"]
@@ -142,4 +148,7 @@ def test_conf_schema_exposes_single_platform_strategy_template_list():
     onebot_items = templates["onebot_strategy"]["items"]
     assert telegram_items["enable_telegraph"]["type"] == "bool"
     assert telegram_items["telegraph_token"]["type"] == "string"
+    assert "prefer_local_video" not in telegram_items
+    assert "enable_telegraph" not in onebot_items
+    assert "telegraph_token" not in onebot_items
     assert onebot_items["prefer_local_video"]["type"] == "bool"

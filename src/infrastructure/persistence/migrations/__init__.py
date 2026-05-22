@@ -8,7 +8,6 @@ from .migration_runner import (
     MigrationRunner,
     cleanup_legacy_translation_tables,
     ensure_push_history_schema,
-    ensure_user_subscription_prompt_schema,
     run_migrations,
 )
 
@@ -16,6 +15,5 @@ __all__ = [
     "MigrationRunner",
     "run_migrations",
     "ensure_push_history_schema",
-    "ensure_user_subscription_prompt_schema",
     "cleanup_legacy_translation_tables",
 ]

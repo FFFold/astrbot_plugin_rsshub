@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 from astrbot.api import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
-
-try:
-    from astrbot.api.provider import ProviderRequest
-except Exception:  # pragma: no cover - fallback for test/mocking env
-    ProviderRequest = object  # type: ignore
 
 try:
     from astrbot.core.star.filter import GreedyStr
@@ -24,26 +17,16 @@ from astrbot.api.message_components import Image
 
 from .bootstrap import PluginDeps, PluginRuntime, create_plugin_runtime
 from .src.application.llmtools import LLM_TOOL_NAMES, build_llm_tools
-from .src.application.services.route_knowledge_service import (
-    build_route_knowledge_prompt,
-    should_inject_route_knowledge_prompt,
-)
 from .src.application.services.session_push_queue import SessionPushQueue
+from .src.infrastructure.config import ApplicationSettings
 from .src.infrastructure.schedule import RSSScheduler
 from .src.infrastructure.utils import get_logger
 from .src.interfaces import WebApiHandler
 from .src.interfaces import handlers as _h
-from .src.shared.settings import ApplicationSettings
 
 logger = get_logger()
-_HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
-_HELP_GENERATOR = (
-    Path(__file__).resolve().parent / "scripts" / "generate_rsshelp_image.py"
-)
-_on_llm_request = getattr(
-    filter, "on_llm_request", lambda *_args, **_kwargs: lambda fn: fn
-)
 
+_HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
 
 class RSSHubPlugin(Star):
     """RSS订阅推送插件"""
@@ -79,25 +62,13 @@ class RSSHubPlugin(Star):
             self.context.add_llm_tools(
                 *build_llm_tools(
                     deps=self._deps,
-                    plugin_context=self.context,
+                    plugin_context=self,
                 )
             )
             self._bind_llm_tool_origin()
             self._registered_llm_tools = list(LLM_TOOL_NAMES)
         except Exception as e:
             logger.exception("RSSHub 插件初始化失败: %s", e)
-
-    @_on_llm_request()
-    async def on_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
-        """Inject route-KB usage instructions only for RSSHub route lookup intent."""
-        prompt = str(getattr(req, "prompt", "") or "")
-        if not should_inject_route_knowledge_prompt(prompt):
-            return
-        current = str(getattr(req, "system_prompt", "") or "")
-        hint = build_route_knowledge_prompt(self._app_settings.route_knowledge.kb_name)
-        if hint in current:
-            return
-        req.system_prompt = f"{current}\n\n{hint}" if current else hint
 
     async def terminate(self):
         logger.info("正在停止 RSSHub 插件...")
@@ -253,7 +224,7 @@ class RSSHubPlugin(Star):
         - /sub_session set <key> <value>
         """
         result = await _h.handle_sub_set_session(
-            event, key, value, self._deps, self.context
+            event, key, value, self._deps, self
         )
         if result.get("plain"):
             yield event.plain_result(result["plain"])
@@ -265,7 +236,7 @@ class RSSHubPlugin(Star):
         用法:
         - /sub_session get [key]
         """
-        result = await _h.handle_sub_get_session(event, key, self._deps, self.context)
+        result = await _h.handle_sub_get_session(event, key, self._deps, self)
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 
@@ -334,15 +305,13 @@ class RSSHubPlugin(Star):
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 
-    @filter.command("rsshelp", alias={"RSS 帮助", "帮助"})
+    @filter.command("rsshelp", alias={"RSS帮助", "rss帮助"})
     async def rsshelp(self, event: AstrMessageEvent):
         """查看 RSSHub 命令帮助图片。"""
-        if not _HELP_IMAGE_PATH.exists():
-            _ensure_help_image()
         if _HELP_IMAGE_PATH.exists():
             yield event.chain_result([Image(file=str(_HELP_IMAGE_PATH.resolve()))])
             return
-        yield event.plain_result("帮助图片未生成成功，请稍后重试。")
+        yield event.plain_result("没有找到帮助图片")
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("rsshub_kb_init")
@@ -360,6 +329,7 @@ class RSSHubPlugin(Star):
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("rsshub_kb_status")
     async def rsshub_kb_status(self, event: AstrMessageEvent):
         """查看 RSSHub Routes 知识库状态。"""
@@ -367,6 +337,7 @@ class RSSHubPlugin(Star):
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("rsshub_kb_task")
     async def rsshub_kb_task(self, event: AstrMessageEvent):
         """查看最近 RSSHub Routes 知识库同步任务。"""
@@ -388,18 +359,3 @@ class RSSHubPlugin(Star):
         result = await _h.handle_test_sub(event, str(args), self._deps)
         if result.get("plain"):
             yield event.plain_result(result["plain"])
-
-
-def _ensure_help_image() -> None:
-    if not _HELP_GENERATOR.exists():
-        return
-    try:
-        subprocess.run(
-            [sys.executable, str(_HELP_GENERATOR)],
-            cwd=str(Path(__file__).resolve().parent),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except Exception:
-        logger.exception("生成帮助图片失败")

@@ -1,20 +1,36 @@
-"""Adapt AstrBot plugin config into application settings."""
+"""Config loading and runtime settings adaptation."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ...shared.settings import (
+from ...shared.constants import (
+    INHERIT_VALUE,
+    PLATFORM_ONEBOT,
+    PLATFORM_QQ_OFFICIAL,
+    PLATFORM_STRATEGY_TEMPLATE_KEYS,
+    PLATFORM_TELEGRAM,
+    SENDER_STRATEGY_ENABLED_PLATFORMS,
+)
+from .datamodels import (
     ApplicationSettings,
     BasicSettings,
+    ContentHandlerSettings,
     FeedFetchSettings,
+    FFmpegSettings,
     PlatformStrategySettings,
     RouteKnowledgeSettings,
+    RsshubPluginConfig,
     RSSSettings,
     SchedulerSettings,
     SenderStrategySettings,
     SubscriptionDefaults,
 )
+
+if TYPE_CHECKING:
+    from astrbot.api import AstrBotConfig
+
+MAX_INTERVAL_MINUTES = 1440
 
 
 def _get_value(source: Any, key: str, default: Any = None) -> Any:
@@ -45,17 +61,9 @@ def _normalize_route_knowledge_base_url(value: Any) -> str:
     return raw.replace(old, new)
 
 
-_SENDER_STRATEGY_KEYS: tuple[str, ...] = (
-    "telegram",
-    "aiocqhttp",
-    "qq_official",
-    "weixin_oc",
-)
+_SENDER_STRATEGY_KEYS: tuple[str, ...] = SENDER_STRATEGY_ENABLED_PLATFORMS
 
-_PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
-    "telegram": "telegram_strategy",
-    "aiocqhttp": "onebot_strategy",
-}
+_PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = PLATFORM_STRATEGY_TEMPLATE_KEYS
 
 
 def _enabled_sender_strategy_names(value: Any) -> set[str] | None:
@@ -117,13 +125,8 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
     telegram_config = PlatformStrategySettings(
         enable_telegraph=bool(_get_value(telegram_source, "enable_telegraph", False)),
         telegraph_token=str(_get_value(telegram_source, "telegraph_token", "") or ""),
-        prefer_local_video=bool(
-            _get_value(telegram_source, "prefer_local_video", False)
-        ),
     )
     aiocqhttp_config = PlatformStrategySettings(
-        enable_telegraph=bool(_get_value(aiocqhttp_source, "enable_telegraph", False)),
-        telegraph_token=str(_get_value(aiocqhttp_source, "telegraph_token", "") or ""),
         prefer_local_video=bool(
             _get_value(aiocqhttp_source, "prefer_local_video", False)
         ),
@@ -136,24 +139,37 @@ def _build_sender_strategy_settings(value: Any) -> SenderStrategySettings:
             aiocqhttp_settings=aiocqhttp_config,
         )
     return SenderStrategySettings(
-        telegram=bool(_get_value(value, "telegram", True)),
-        aiocqhttp=bool(_get_value(value, "aiocqhttp", True)),
-        qq_official=bool(_get_value(value, "qq_official", True)),
-        weixin_oc=bool(_get_value(value, "weixin_oc", True)),
+        telegram=bool(_get_value(value, PLATFORM_TELEGRAM, True)),
+        aiocqhttp=bool(_get_value(value, PLATFORM_ONEBOT, True)),
+        qq_official=bool(_get_value(value, PLATFORM_QQ_OFFICIAL, True)),
         telegram_settings=telegram_config,
         aiocqhttp_settings=aiocqhttp_config,
     )
 
 
-def build_application_settings(config: Any) -> ApplicationSettings:
-    """Build application settings from an infrastructure config object.
+def _build_content_handler_settings(value: Any) -> ContentHandlerSettings:
+    return ContentHandlerSettings(
+        ai_provider_id=str(_get_value(value, "ai_provider_id", "") or ""),
+        ai_persona_id=str(_get_value(value, "ai_persona_id", "") or ""),
+    )
 
-    This is the adapter between the AstrBot-facing Pydantic config model and the
-    shared runtime dataclasses. Keep AstrBot compatibility parsing here, not in
-    the application layer.
-    """
+
+def load_astrbot_plugin_config(raw: dict[str, Any] | None) -> RsshubPluginConfig:
+    return RsshubPluginConfig.from_astrbot_config(raw)
+
+
+def save_astrbot_plugin_config(
+    config: RsshubPluginConfig,
+    astrbot_config: AstrBotConfig,
+) -> None:
+    config.save(astrbot_config)
+
+
+def build_application_settings(config: Any) -> ApplicationSettings:
     basic_cfg = _get_value(config, "basic_config")
     global_cfg = _get_value(config, "global_config")
+    ffmpeg_cfg = _get_value(config, "ffmpeg")
+    content_handlers_cfg = _get_value(config, "content_handlers")
     sender_cfg = _get_value(config, "sender_strategies")
     route_knowledge_cfg = _get_value(config, "route_knowledge")
 
@@ -179,6 +195,35 @@ def build_application_settings(config: Any) -> ApplicationSettings:
                 _get_value(config, "minimal_interval", 1),
             )
             or 1
+        ),
+        failed_queue_capacity=max(
+            0,
+            int(
+                _get_value(
+                    basic_cfg,
+                    "failed_queue_capacity",
+                    _get_value(config, "failed_queue_capacity", 50),
+                )
+                or 0
+            ),
+        ),
+        failed_queue_max_retries=max(
+            0,
+            int(
+                _get_value(
+                    basic_cfg,
+                    "failed_queue_max_retries",
+                    _get_value(config, "failed_queue_max_retries", 3),
+                )
+                or 0
+            ),
+        ),
+        deduplicate_multi_bot=bool(
+            _get_value(
+                basic_cfg,
+                "deduplicate_multi_bot",
+                _get_value(config, "deduplicate_multi_bot", True),
+            )
         ),
         history_entry_limit=int(
             _get_value(
@@ -229,6 +274,17 @@ def build_application_settings(config: Any) -> ApplicationSettings:
         ),
         scheduler=SchedulerSettings(
             default_interval=int(_get_value(global_cfg, "interval", 10) or 10),
+            history_retention_days=max(
+                1,
+                int(
+                    _get_value(
+                        basic_cfg,
+                        "history_retention_days",
+                        _get_value(config, "history_retention_days", 30),
+                    )
+                    or 30
+                ),
+            ),
             history_entry_limit=basic.history_entry_limit,
         ),
         subscription_defaults=SubscriptionDefaults(
@@ -246,10 +302,21 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             display_entry_tags=bool(
                 _get_value(global_cfg, "display_entry_tags", False)
             ),
-            style=str(_get_value(global_cfg, "style", "RSStT") or "RSStT"),
+            style=str(_get_value(global_cfg, "style", "auto") or "auto"),
             display_media=bool(_get_value(global_cfg, "display_media", True)),
         ),
+        content_handlers=_build_content_handler_settings(content_handlers_cfg),
         sender_strategies=_build_sender_strategy_settings(sender_cfg),
+        ffmpeg=FFmpegSettings(
+            video_transcode=bool(_get_value(ffmpeg_cfg, "video_transcode", False)),
+            video_transcode_timeout=max(
+                1, int(_get_value(ffmpeg_cfg, "video_transcode_timeout", 120) or 120)
+            ),
+            gif_transcode=bool(_get_value(ffmpeg_cfg, "gif_transcode", False)),
+            gif_transcode_timeout=max(
+                1, int(_get_value(ffmpeg_cfg, "gif_transcode_timeout", 60) or 60)
+            ),
+        ),
         route_knowledge=RouteKnowledgeSettings(
             kb_name=str(
                 _get_value(route_knowledge_cfg, "kb_name", "RSSHub Routes")
@@ -301,3 +368,68 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             ),
         ),
     )
+
+
+_config: RsshubPluginConfig | None = None
+
+
+def get_config() -> RsshubPluginConfig | None:
+    return _config
+
+
+def get_config_manager() -> RsshubPluginConfig | None:
+    return _config
+
+
+def set_config(config: RsshubPluginConfig) -> None:
+    global _config
+    _config = config
+
+
+def get_application_settings(config: Any | None = None) -> ApplicationSettings:
+    return build_application_settings(config if config is not None else _config)
+
+
+def get_basic_settings(config: Any | None = None) -> BasicSettings:
+    return get_application_settings(config).basic
+
+
+def get_minimal_interval(config: Any | None = None) -> int:
+    return max(1, int(get_basic_settings(config).minimal_interval or 1))
+
+
+def get_failed_queue_capacity(config: Any | None = None) -> int:
+    return max(0, int(get_basic_settings(config).failed_queue_capacity or 0))
+
+
+def get_failed_queue_max_retries(config: Any | None = None) -> int:
+    return max(0, int(get_basic_settings(config).failed_queue_max_retries or 0))
+
+
+def get_deduplicate_multi_bot(config: Any | None = None) -> bool:
+    return bool(get_basic_settings(config).deduplicate_multi_bot)
+
+
+def validate_interval_value(
+    value: Any,
+    *,
+    allow_inherit: bool,
+    field_name: str = "interval",
+    config: Any | None = None,
+) -> int:
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} 需要数字值") from exc
+
+    if allow_inherit and normalized == INHERIT_VALUE:
+        return normalized
+
+    minimal_interval = get_minimal_interval(config)
+    if normalized < minimal_interval:
+        raise ValueError(
+            f"{field_name} 不能小于最小监控间隔 {minimal_interval} 分钟"
+        )
+    if normalized > MAX_INTERVAL_MINUTES:
+        raise ValueError(f"{field_name} 不能大于 {MAX_INTERVAL_MINUTES} 分钟")
+    return normalized

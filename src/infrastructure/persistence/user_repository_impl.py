@@ -45,8 +45,28 @@ class UserRepositoryImpl:
         """保存用户"""
         db = get_database()
         async with db.get_session() as session:
-            orm = self._to_orm(user)
-            session.add(orm)
+            orm = await session.get(UserORM, user.id)
+            if orm is None:
+                orm = self._to_orm(user)
+                session.add(orm)
+            else:
+                updated_orm = self._to_orm(user)
+                orm.state = updated_orm.state
+                orm.interval = updated_orm.interval
+                orm.notify = updated_orm.notify
+                orm.send_mode = updated_orm.send_mode
+                orm.handlers = updated_orm.handlers
+                orm.length_limit = updated_orm.length_limit
+                orm.display_author = updated_orm.display_author
+                orm.display_via = updated_orm.display_via
+                orm.display_title = updated_orm.display_title
+                orm.display_entry_tags = updated_orm.display_entry_tags
+                orm.style = updated_orm.style
+                orm.display_media = updated_orm.display_media
+                orm.default_target_session = updated_orm.default_target_session
+                orm.needs_binding_notice = updated_orm.needs_binding_notice
+                orm.created_at = updated_orm.created_at
+                orm.updated_at = updated_orm.updated_at
             await session.commit()
             await session.refresh(orm)
             return self._to_entity(orm)
@@ -118,7 +138,7 @@ class UserRepositoryImpl:
             interval=user.interval,
             notify=user.notify,
             send_mode=user.send_mode,
-            handlers=handlers_json(user.handlers),
+            handlers=handlers_json(user.get_handlers()),
             length_limit=user.length_limit,
             display_author=user.display_author,
             display_via=user.display_via,

@@ -1,1 +1,1 @@
-"""Shared runtime models used across layers."""
+"""Shared cross-layer primitives."""

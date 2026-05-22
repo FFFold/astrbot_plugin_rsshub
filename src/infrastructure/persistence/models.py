@@ -16,13 +16,8 @@ from typing import Any
 from sqlalchemy import JSON, Column
 from sqlmodel import Field
 
+from ...shared.constants import INHERIT_VALUE
 from .database import RSSHubBaseModel
-
-# ============================================================================
-# 基础常量
-# ============================================================================
-
-INHERIT_VALUE = -100
 
 EFFECTIVE_OPTION_KEYS = (
     "send_mode",
@@ -68,7 +63,10 @@ class UserORM(RSSHubBaseModel, table=True):
         default=INHERIT_VALUE, description="显示标题: -1=禁用, 0=自动, 1=强制"
     )
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(default=INHERIT_VALUE, description="样式: 0=RSStT, 1=flowerss")
+    style: int = Field(
+        default=INHERIT_VALUE,
+        description="推送排版策略: 0=自动, 1=RSSRT, 2=原始顺序",
+    )
     display_media: int = Field(
         default=INHERIT_VALUE, description="显示媒体: -1=禁用, 0=启用"
     )
@@ -152,7 +150,7 @@ class SubORM(RSSHubBaseModel, table=True):
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
     display_title: int = Field(default=INHERIT_VALUE, description="显示标题")
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(default=INHERIT_VALUE, description="样式")
+    style: int = Field(default=INHERIT_VALUE, description="推送排版策略")
     display_media: int = Field(default=INHERIT_VALUE, description="显示媒体")
     handlers_mode: str = Field(
         default="inherit",

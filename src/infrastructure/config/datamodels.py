@@ -1,28 +1,171 @@
-"""配置管理模块
-
-提供统一的、类型安全的插件配置访问。
-"""
+"""Typed config and runtime data models for the RSSHub plugin."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from pydantic import BaseModel, Field
 
+from ...shared.constants import (
+    PLATFORM_QQ_OFFICIAL,
+    PLATFORM_STRATEGY_TEMPLATE_KEYS,
+    SENDER_STRATEGY_ENABLED_PLATFORMS,
+)
+
 if TYPE_CHECKING:
     from astrbot.api import AstrBotConfig
 
-SENDER_STRATEGY_KEYS: tuple[str, ...] = (
-    "telegram",
-    "aiocqhttp",
-    "qq_official",
-    "weixin_oc",
-)
+_SENDER_STRATEGY_KEYS: tuple[str, ...] = SENDER_STRATEGY_ENABLED_PLATFORMS
 
-PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = {
-    "telegram": "telegram_strategy",
-    "aiocqhttp": "onebot_strategy",
-}
+_PLATFORM_STRATEGY_TEMPLATE_KEYS: dict[str, str] = PLATFORM_STRATEGY_TEMPLATE_KEYS
+
+
+@dataclass(frozen=True)
+class PlatformStrategySettings:
+    """Platform-specific sender strategy settings."""
+
+    enable_telegraph: bool = False
+    telegraph_token: str = ""
+    prefer_local_video: bool = False
+
+
+@dataclass(frozen=True)
+class BasicSettings:
+    """Global infrastructure-facing defaults used by application use cases."""
+
+    proxy: str = ""
+    timeout: int = 30
+    rsshub_base_url: str = "https://rsshub.app"
+    minimal_interval: int = 1
+    failed_queue_capacity: int = 50
+    failed_queue_max_retries: int = 3
+    deduplicate_multi_bot: bool = True
+    history_entry_limit: int = 0
+    download_media_before_send: bool = False
+    download_media_timeout: int = 30
+
+
+@dataclass(frozen=True)
+class FeedFetchSettings:
+    """HTTP/RSS fetch defaults."""
+
+    timeout: int = 30
+    proxy: str = ""
+    rsshub_base_url: str = "https://rsshub.app"
+
+
+@dataclass(frozen=True)
+class RSSSettings:
+    """RSS parser and dedup history settings."""
+
+    hash_history_min: int = 200
+    hash_history_multiplier: int = 2
+    hash_history_hard_limit: int = 5000
+    tracking_query_params: tuple[str, ...] = field(default_factory=tuple)
+    bootstrap_skip_history: bool = True
+
+
+@dataclass(frozen=True)
+class SchedulerSettings:
+    """Scheduler defaults."""
+
+    default_interval: int = 10
+    history_retention_days: int = 30
+    history_entry_limit: int = 0
+
+
+@dataclass(frozen=True)
+class SubscriptionDefaults:
+    """Default values applied to new subscriptions."""
+
+    interval: int = 10
+    notify: bool = True
+    send_mode: str = "自动"
+    length_limit: int = 0
+    display_author: str = "自动"
+    display_via: str = "自动"
+    display_title: str = "自动"
+    display_entry_tags: bool = False
+    style: str = "auto"
+    display_media: bool = True
+
+
+@dataclass(frozen=True)
+class ContentHandlerSettings:
+    """Global defaults for builtin content handlers."""
+
+    ai_provider_id: str = ""
+    ai_persona_id: str = ""
+
+
+@dataclass(frozen=True)
+class SenderStrategySettings:
+    """Per-platform sender strategy toggles."""
+
+    telegram: bool = True
+    aiocqhttp: bool = True
+    qq_official: bool = True
+    telegram_settings: PlatformStrategySettings = field(
+        default_factory=PlatformStrategySettings
+    )
+    aiocqhttp_settings: PlatformStrategySettings = field(
+        default_factory=PlatformStrategySettings
+    )
+
+
+@dataclass(frozen=True)
+class FFmpegSettings:
+    """Media transcoding settings used by senders."""
+
+    video_transcode: bool = False
+    video_transcode_timeout: int = 120
+    gif_transcode: bool = False
+    gif_transcode_timeout: int = 60
+
+
+@dataclass(frozen=True)
+class RouteKnowledgeSettings:
+    """RSSHub Routes knowledge-base sync settings."""
+
+    kb_name: str = "RSSHub Routes"
+    embedding_provider_id: str = ""
+    rerank_provider_id: str = ""
+    source_mode: str = "mirror"
+    source_base_url: str = (
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
+    )
+    fallback_base_url: str = (
+        "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
+    )
+    local_source_dir: str = ""
+    timeout: int = 30
+    batch_size: int = 32
+    tasks_limit: int = 3
+    max_retries: int = 3
+
+
+@dataclass(frozen=True)
+class ApplicationSettings:
+    """Settings consumed by the application layer."""
+
+    basic: BasicSettings = field(default_factory=BasicSettings)
+    fetch: FeedFetchSettings = field(default_factory=FeedFetchSettings)
+    rss: RSSSettings = field(default_factory=RSSSettings)
+    scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
+    subscription_defaults: SubscriptionDefaults = field(
+        default_factory=SubscriptionDefaults
+    )
+    content_handlers: ContentHandlerSettings = field(
+        default_factory=ContentHandlerSettings
+    )
+    sender_strategies: SenderStrategySettings = field(
+        default_factory=SenderStrategySettings
+    )
+    ffmpeg: FFmpegSettings = field(default_factory=FFmpegSettings)
+    route_knowledge: RouteKnowledgeSettings = field(
+        default_factory=RouteKnowledgeSettings
+    )
 
 
 class PlatformSenderStrategyConfig(BaseModel):
@@ -45,15 +188,17 @@ class PlatformSenderStrategyConfig(BaseModel):
         clean_data = {k: v for k, v in data.items() if k != "__template_key"}
         return cls.model_validate({**cls().model_dump(), **clean_data})
 
-    def to_template_list(self, template_key: str) -> list[dict[str, Any]]:
+    def to_template_item(
+        self, template_key: str, include_fields: set[str] | None = None
+    ) -> dict[str, Any] | None:
         data = self.model_dump()
-        if data == type(self)().model_dump():
-            return []
-        return [{"__template_key": template_key, **data}]
-
-    def to_template_item(self, template_key: str) -> dict[str, Any] | None:
-        data = self.model_dump()
-        if data == type(self)().model_dump():
+        default_data = type(self)().model_dump()
+        if include_fields is not None:
+            data = {key: value for key, value in data.items() if key in include_fields}
+            default_data = {
+                key: value for key, value in default_data.items() if key in include_fields
+            }
+        if data == default_data:
             return None
         return {"__template_key": template_key, **data}
 
@@ -104,14 +249,13 @@ class BasicConfig(BaseModel):
     failed_queue_max_retries: int = Field(default=3, description="失败队列最大重试次数")
     deduplicate_multi_bot: bool = Field(default=True, description="多BOT去重")
     bootstrap_skip_history: bool = Field(default=True, description="首轮跳过历史")
-    debug_payload: bool = Field(default=False, description="调试字段")
     history_entry_limit: int = Field(default=0, description="历史条目限制")
+    history_retention_days: int = Field(default=30, description="推送历史保留天数")
     download_media_before_send: bool = Field(default=False, description="先下载后发送")
     download_media_timeout: int = Field(default=30, description="媒体下载超时")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> BasicConfig:
-        """从字典创建配置"""
         if not data:
             return cls()
         return cls.model_validate({**cls().model_dump(), **(data or {})})
@@ -128,7 +272,7 @@ class GlobalConfig(BaseModel):
     display_via: str = Field(default="自动", description="显示来源")
     display_title: str = Field(default="自动", description="显示标题")
     display_entry_tags: bool = Field(default=False, description="显示标签")
-    style: str = Field(default="RSStT", description="样式")
+    style: str = Field(default="auto", description="推送排版策略")
     display_media: bool = Field(default=True, description="显示媒体")
 
     _SEND_MODE_MAP: ClassVar[dict[str, int]] = {"仅链接": -1, "自动": 0, "直接发送": 1}
@@ -144,7 +288,15 @@ class GlobalConfig(BaseModel):
         "自动": 0,
         "强制": 1,
     }
-    _STYLE_MAP: ClassVar[dict[str, int]] = {"RSStT": 0, "flowerss": 1}
+    _STYLE_MAP: ClassVar[dict[str, int]] = {
+        "auto": 0,
+        "classic": 0,
+        "RSStT": 0,
+        "rssrt": 1,
+        "RSSRT": 1,
+        "flowerss": 0,
+        "original": 2,
+    }
 
     _SEND_MODE_RMAP: ClassVar[dict[int, str]] = {-1: "仅链接", 0: "自动", 1: "直接发送"}
     _DISPLAY_AUTHOR_RMAP: ClassVar[dict[int, str]] = {
@@ -163,10 +315,9 @@ class GlobalConfig(BaseModel):
         0: "自动",
         1: "强制",
     }
-    _STYLE_RMAP: ClassVar[dict[int, str]] = {0: "RSStT", 1: "flowerss"}
+    _STYLE_RMAP: ClassVar[dict[int, str]] = {0: "auto", 1: "rssrt", 2: "original"}
 
     def to_db_values(self) -> dict[str, Any]:
-        """转换为数据库存储的整数值"""
         return {
             "interval": self.interval,
             "notify": 1 if self.notify else 0,
@@ -196,7 +347,6 @@ class GlobalConfig(BaseModel):
 
     @classmethod
     def from_db_values(cls, values: dict[str, Any]) -> GlobalConfig:
-        """从数据库整数值创建配置"""
         send_mode_value = cls.normalize_send_mode_value(values.get("send_mode", 0))
         return cls(
             interval=values.get("interval", 10),
@@ -211,13 +361,12 @@ class GlobalConfig(BaseModel):
                 values.get("display_title", 0), "自动"
             ),
             display_entry_tags=values.get("display_entry_tags", -1) != -1,
-            style=cls._STYLE_RMAP.get(values.get("style", 0), "RSStT"),
+            style=cls._STYLE_RMAP.get(values.get("style", 0), "auto"),
             display_media=values.get("display_media", 0) != -1,
         )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> GlobalConfig:
-        """从字典创建配置（用户友好的格式）"""
         if not data:
             return cls()
         return cls.model_validate({**cls().model_dump(), **(data or {})})
@@ -238,13 +387,25 @@ class FFmpegConfig(BaseModel):
         return cls.model_validate({**cls().model_dump(), **(data or {})})
 
 
+class ContentHandlersConfig(BaseModel):
+    """全局内容处理器配置"""
+
+    ai_provider_id: str = Field(default="", description="AI Provider ID")
+    ai_persona_id: str = Field(default="", description="AI Persona ID")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> ContentHandlersConfig:
+        if not data:
+            return cls()
+        return cls.model_validate({**cls().model_dump(), **(data or {})})
+
+
 class SenderStrategiesConfig(BaseModel):
     """发送策略配置"""
 
     telegram: bool = Field(default=True, description="Telegram策略")
     aiocqhttp: bool = Field(default=True, description="QQ策略")
     qq_official: bool = Field(default=True, description="QQ官方策略")
-    weixin_oc: bool = Field(default=True, description="微信策略")
     telegram_settings: PlatformSenderStrategyConfig = Field(
         default_factory=PlatformSenderStrategyConfig, alias="telegram_config"
     )
@@ -257,36 +418,37 @@ class SenderStrategiesConfig(BaseModel):
         if data is None:
             return cls()
         if isinstance(data, dict):
-            known_values = dict.fromkeys(SENDER_STRATEGY_KEYS, True)
+            known_values = dict.fromkeys(_SENDER_STRATEGY_KEYS, True)
             if "enabled_platforms" in data:
                 enabled = _enabled_from_sender_config(data) or set()
                 known_values.update(
-                    {key: key in enabled for key in SENDER_STRATEGY_KEYS}
+                    {key: key in enabled for key in _SENDER_STRATEGY_KEYS}
                 )
             else:
                 known_values.update(
                     {
                         key: bool(value)
                         for key, value in data.items()
-                        if key in SENDER_STRATEGY_KEYS and isinstance(value, bool)
+                        if key in _SENDER_STRATEGY_KEYS and isinstance(value, bool)
                     }
                 )
             platform_strategies = data.get("platform_strategies")
             telegram_source = _first_strategy_template(
                 platform_strategies,
-                PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
+                _PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
             )
             if telegram_source is None:
                 telegram_source = data.get("telegram") or data.get("telegram_config")
             aiocqhttp_source = _first_strategy_template(
                 platform_strategies,
-                PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
+                _PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
             )
             if aiocqhttp_source is None:
                 aiocqhttp_source = data.get("aiocqhttp") or data.get("aiocqhttp_config")
             return cls.model_validate(
                 {
                     **known_values,
+                    PLATFORM_QQ_OFFICIAL: known_values[PLATFORM_QQ_OFFICIAL],
                     "telegram_config": PlatformSenderStrategyConfig.from_dict(
                         telegram_source
                     ),
@@ -310,21 +472,23 @@ class SenderStrategiesConfig(BaseModel):
 
     @classmethod
     def from_enabled_platforms(cls, enabled: set[str]) -> SenderStrategiesConfig:
-        enabled = {item for item in enabled if item in SENDER_STRATEGY_KEYS}
-        return cls(**{key: key in enabled for key in SENDER_STRATEGY_KEYS})
+        enabled = {item for item in enabled if item in _SENDER_STRATEGY_KEYS}
+        return cls(**{key: key in enabled for key in _SENDER_STRATEGY_KEYS})
 
     def to_enabled_platforms(self) -> list[str]:
-        return [key for key in SENDER_STRATEGY_KEYS if getattr(self, key)]
+        return [key for key in _SENDER_STRATEGY_KEYS if getattr(self, key)]
 
     def to_config_dict(self) -> dict[str, Any]:
         platform_strategies = [
             item
             for item in (
                 self.telegram_settings.to_template_item(
-                    PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"]
+                    _PLATFORM_STRATEGY_TEMPLATE_KEYS["telegram"],
+                    include_fields={"enable_telegraph", "telegraph_token"},
                 ),
                 self.aiocqhttp_settings.to_template_item(
-                    PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"]
+                    _PLATFORM_STRATEGY_TEMPLATE_KEYS["aiocqhttp"],
+                    include_fields={"prefer_local_video"},
                 ),
             )
             if item is not None
@@ -348,7 +512,9 @@ def _enabled_from_sender_config(data: dict[str, Any]) -> set[str] | None:
             return {str(item).strip() for item in raw if str(item).strip()}
         return set()
 
-    bool_keys = {key for key in SENDER_STRATEGY_KEYS if isinstance(data.get(key), bool)}
+    bool_keys = {
+        key for key in _SENDER_STRATEGY_KEYS if isinstance(data.get(key), bool)
+    }
     if bool_keys:
         return {key for key in bool_keys if bool(data.get(key))}
     return None
@@ -398,6 +564,9 @@ class RsshubPluginConfig(BaseModel):
     basic_config: BasicConfig = Field(default_factory=BasicConfig)
     global_config: GlobalConfig = Field(default_factory=GlobalConfig)
     ffmpeg: FFmpegConfig = Field(default_factory=FFmpegConfig)
+    content_handlers: ContentHandlersConfig = Field(
+        default_factory=ContentHandlersConfig
+    )
     sender_strategies: SenderStrategiesConfig = Field(
         default_factory=SenderStrategiesConfig
     )
@@ -408,11 +577,9 @@ class RsshubPluginConfig(BaseModel):
     def from_astrbot_config(
         cls, astrbot_config: dict[str, Any] | None
     ) -> RsshubPluginConfig:
-        """从 AstrBot 配置字典创建配置对象"""
         if not astrbot_config:
             return cls()
 
-        # 处理旧格式配置迁移
         if (
             "download_image_before_send" in astrbot_config
             and "basic_config" in astrbot_config
@@ -431,6 +598,7 @@ class RsshubPluginConfig(BaseModel):
         basic_cfg = astrbot_config.get("basic_config", {})
         global_cfg = astrbot_config.get("global_config", {})
         ffmpeg_cfg = astrbot_config.get("ffmpeg", {})
+        content_handlers_cfg = astrbot_config.get("content_handlers", {})
         sender_strategies_cfg = astrbot_config.get("sender_strategies")
         route_knowledge_cfg = astrbot_config.get("route_knowledge", {})
 
@@ -438,21 +606,19 @@ class RsshubPluginConfig(BaseModel):
             basic_config=BasicConfig.from_dict(basic_cfg),
             global_config=GlobalConfig.from_dict(global_cfg),
             ffmpeg=FFmpegConfig.from_dict(ffmpeg_cfg),
+            content_handlers=ContentHandlersConfig.from_dict(content_handlers_cfg),
             sender_strategies=SenderStrategiesConfig.from_config(sender_strategies_cfg),
             route_knowledge=RouteKnowledgeConfig.from_dict(route_knowledge_cfg),
             db_file=astrbot_config.get("db_file", "rsshub.db"),
         )
 
     def save(self, astrbot_config: AstrBotConfig) -> None:
-        """保存配置到 AstrBotConfig"""
         config_dict = self.model_dump()
         config_dict["sender_strategies"] = self.sender_strategies.to_config_dict()
         for key, value in config_dict.items():
             if key != "db_file":
                 astrbot_config[key] = value
         astrbot_config.save_config()
-
-    # 向后兼容属性
 
     @property
     def proxy(self) -> str:
@@ -503,12 +669,12 @@ class RsshubPluginConfig(BaseModel):
         return self.basic_config.bootstrap_skip_history
 
     @property
-    def debug_payload(self) -> bool:
-        return self.basic_config.debug_payload
-
-    @property
     def history_entry_limit(self) -> int:
         return self.basic_config.history_entry_limit
+
+    @property
+    def history_retention_days(self) -> int:
+        return self.basic_config.history_retention_days
 
     @property
     def default_interval(self) -> int:
@@ -524,28 +690,4 @@ class RsshubPluginConfig(BaseModel):
 
     @property
     def download_image_before_send(self) -> bool:
-        """向后兼容旧名称"""
         return self.basic_config.download_media_before_send
-
-
-_config: RsshubPluginConfig | None = None
-
-
-def get_config() -> RsshubPluginConfig | None:
-    """获取插件配置（legacy 兼容入口）。
-
-    优先通过 `set_config()` 在启动阶段注入配置；只有过渡路径和少量
-    legacy 调用方才应直接读取这里的全局状态。
-    """
-    return _config
-
-
-def get_config_manager() -> RsshubPluginConfig | None:
-    """获取插件配置管理器（旧名称，保留兼容）。"""
-    return _config
-
-
-def set_config(config: RsshubPluginConfig) -> None:
-    """设置插件配置（启动阶段注入）。"""
-    global _config
-    _config = config

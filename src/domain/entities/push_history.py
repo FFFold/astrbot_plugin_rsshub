@@ -43,7 +43,7 @@ def normalize_fail_reason_for_status(
     max_length: int = MAX_FAIL_REASON_LENGTH,
 ) -> str | None:
     """Normalize stored/displayed fail reason according to push status."""
-    if status in {"failed", "stopped", "retrying"}:
+    if status in {"failed", "stopped", "retrying", "skipped"}:
         return normalize_display_fail_reason(reason, max_length=max_length)
     return None
 
@@ -166,7 +166,7 @@ class PushHistory(BaseModel):
         self.completed_at = datetime.now(timezone.utc)
         self.updated_at = datetime.now(timezone.utc)
         self.max_retries = 0
-        self.fail_reason = None
+        self.fail_reason = normalize_display_fail_reason(reason)
         return self
 
     def is_pending(self) -> bool:
