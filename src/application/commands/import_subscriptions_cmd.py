@@ -6,17 +6,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from ...domain.entities.feed import Feed
 from ...domain.entities.subscription import Subscription
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.value_objects.feed_url import FeedUrl
+from ...infrastructure.config import validate_interval_value
 from ..dto.result_dto import CommandResult
-
-if TYPE_CHECKING:
-    pass
 
 
 @dataclass
@@ -189,6 +186,12 @@ class ImportSubscriptionsCommand:
                     )
                 # 更新现有订阅的设置
                 for key, value in record.options.items():
+                    if key == "interval":
+                        value = validate_interval_value(
+                            value,
+                            allow_inherit=True,
+                            field_name="interval",
+                        )
                     if hasattr(existing, key):
                         setattr(existing, key, value)
                 existing = await self._subscription_repo.save(existing)
@@ -211,6 +214,12 @@ class ImportSubscriptionsCommand:
 
             # 应用导入的选项
             for key, value in record.options.items():
+                if key == "interval":
+                    value = validate_interval_value(
+                        value,
+                        allow_inherit=True,
+                        field_name="interval",
+                    )
                 if hasattr(subscription, key) and key not in ("title", "tags"):
                     setattr(subscription, key, value)
 

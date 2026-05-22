@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ...infrastructure.config import RouteKnowledgeSettings
 from ...infrastructure.utils import get_logger
-from ...shared.settings import RouteKnowledgeSettings
 from ..ports.route_knowledge import (
     RouteKnowledgeDocument,
     RouteKnowledgeFile,
@@ -231,9 +231,9 @@ class RouteKnowledgeSyncService:
                         self._task_status,
                         current_path=path,
                         processed=processed,
-                        message="删除已移除文档",
+                        message=f"删除文档: {path}",
                     )
-                    logger.info(
+                    logger.debug(
                         "Routes KB 同步进度: task_id=%s %d/%d 删除 %s",
                         effective_task_id,
                         processed + 1,
@@ -255,9 +255,9 @@ class RouteKnowledgeSyncService:
                         self._task_status,
                         current_path=file.path,
                         processed=processed,
-                        message="上传文档",
+                        message=f"下载文档: {file.path}",
                     )
-                    logger.info(
+                    logger.debug(
                         "Routes KB 同步进度: task_id=%s %d/%d 上传 %s",
                         effective_task_id,
                         processed + 1,
@@ -267,6 +267,12 @@ class RouteKnowledgeSyncService:
                     document = await self._source.fetch_document(file)
                     _validate_document_hash(file, document)
                     try:
+                        self._task_status = _replace_task(
+                            self._task_status,
+                            current_path=file.path,
+                            processed=processed,
+                            message=f"上传文档: {file.path}",
+                        )
                         if old_doc_id:
                             await self._repository.delete_document(old_doc_id)
                         await self._repository.upload_document(document)
@@ -281,8 +287,9 @@ class RouteKnowledgeSyncService:
                         )
                         self._task_status = _replace_task(
                             self._task_status,
+                            current_path=file.path,
                             skipped=skipped_count,
-                            message=f"跳过失败文档: {file.path}",
+                            message=f"跳过文档: {file.path}",
                         )
                     processed += 1
                     self._task_status = _replace_task(
@@ -398,52 +405,6 @@ def build_sync_plan(
         updated=tuple(sorted(updated, key=lambda item: item.path)),
         deleted=tuple(deleted),
         unchanged=tuple(sorted(unchanged, key=lambda item: item.path)),
-    )
-
-
-def should_inject_route_knowledge_prompt(text: str) -> bool:
-    """Return True when user text looks like an RSSHub route lookup request."""
-    normalized = (text or "").lower()
-    if not normalized.strip():
-        return False
-    route_markers = (
-        "rsshub",
-        "rss hub",
-        "路由",
-        "订阅源",
-        "订阅链接",
-        "rss 链接",
-        "rss链接",
-        "feed url",
-        "feed 地址",
-        "feed地址",
-    )
-    intent_markers = (
-        "怎么订阅",
-        "如何订阅",
-        "帮我订阅",
-        "订阅",
-        "构建",
-        "生成",
-        "查",
-        "找",
-        "搜索",
-        "route",
-        "feed",
-    )
-    return any(marker in normalized for marker in route_markers) and any(
-        marker in normalized for marker in intent_markers
-    )
-
-
-def build_route_knowledge_prompt(kb_name: str) -> str:
-    """Instruction injected only for RSSHub route lookup intent."""
-    return (
-        "RSSHub 路由查询提示：当用户想查找 RSSHub 路由或生成订阅链接时，"
-        f"先确认 AstrBot 知识库配置已启用 `{kb_name}`，"
-        "再使用 AstrBot 知识库工具 astr_kb_search 查询路由文档；"
-        "根据查到的 URI 和参数说明直接整理出订阅 URL；"
-        "用户明确要订阅时，再调用 rss_subscribe。不要臆造不存在的路由参数。"
     )
 
 

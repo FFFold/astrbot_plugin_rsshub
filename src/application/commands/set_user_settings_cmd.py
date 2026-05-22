@@ -7,15 +7,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...domain.constants import INHERIT_VALUE
 from ...domain.entities.handlers import parse_handlers_input
 from ...domain.repositories.user_repository import UserRepository
+from ...infrastructure.config import MAX_INTERVAL_MINUTES, validate_interval_value
+from ...shared.constants import INHERIT_VALUE
 from ..dto.result_dto import CommandResult
 
 # 设置选项的合法值范围
 VALID_SETTINGS = {
     "state": (-1, 1),
-    "interval": (1, 60),  # 分钟
+    "interval": (1, MAX_INTERVAL_MINUTES),  # 分钟
     "notify": (0, 1),
     "send_mode": (-1, 1),  # -1=仅链接, 0=自动, 1=直接发送
     "length_limit": (0, 10000),
@@ -114,6 +115,15 @@ class SetUserSettingsCommand:
 
                 if option_key in INHERITABLE_SETTINGS and parsed_value == INHERIT_VALUE:
                     pass
+                elif option_key == "interval":
+                    try:
+                        parsed_value = validate_interval_value(
+                            parsed_value,
+                            allow_inherit=True,
+                            field_name="interval",
+                        )
+                    except ValueError as exc:
+                        return CommandResult(success=False, message=str(exc))
                 elif option_key in VALID_SETTINGS:
                     min_val, max_val = VALID_SETTINGS[option_key]
                     if not min_val <= parsed_value <= max_val:
@@ -128,7 +138,10 @@ class SetUserSettingsCommand:
                         )
 
             old_value = getattr(user, option_key, None)
-            setattr(user, option_key, parsed_value)
+            if option_key == "handlers":
+                user.handler_specs = parsed_value
+            else:
+                setattr(user, option_key, parsed_value)
 
             def fmt(val):
                 if val is None:

@@ -12,7 +12,7 @@ from astrbot_plugin_rsshub.src.application.services.route_knowledge_service impo
     RouteKnowledgeSyncService,
     managed_doc_name,
 )
-from astrbot_plugin_rsshub.src.shared.settings import RouteKnowledgeSettings
+from astrbot_plugin_rsshub.src.infrastructure.config import RouteKnowledgeSettings
 from astrbot_plugin_rsshub.src.infrastructure.knowledge.route_source import (
     FallbackRouteKnowledgeSource,
     LocalRouteKnowledgeSource,

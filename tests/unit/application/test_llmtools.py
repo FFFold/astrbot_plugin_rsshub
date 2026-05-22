@@ -85,9 +85,13 @@ async def test_llm_tool_list_handlers_returns_registry_schema():
 
     data = json.loads(result)
     names = {item["name"] for item in data["items"]}
-    assert {"xml_parse", "ai_filter", "ai_transform"} <= names
+    assert names == {"ai_filter", "ai_transform"}
     ai_filter = next(item for item in data["items"] if item["name"] == "ai_filter")
     assert any(field["key"] == "input_scope" for field in ai_filter["schema"])
+    ai_transform = next(item for item in data["items"] if item["name"] == "ai_transform")
+    scope_field = next(field for field in ai_transform["schema"] if field["key"] == "scope")
+    assert scope_field["default"] == "plaintext"
+    assert scope_field["options"] == ["plaintext", "xml"]
 
 
 @pytest.mark.asyncio
@@ -111,6 +115,30 @@ async def test_llm_tool_rss_subscribe_supports_uri_with_default_base_url():
     deps["subscribe_cmd"].execute.assert_awaited_once()
     assert deps["subscribe_cmd"].execute.await_args.kwargs["url"] == (
         "https://rss.example.com/twitter/user/dynamic/123"
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_rss_subscribe_uri_keeps_original_keyword_text():
+    set_config(
+        RsshubPluginConfig(
+            basic_config=BasicConfig(rsshub_base_url="https://rss.example.com"),
+            global_config=GlobalConfig(),
+        )
+    )
+    deps = _build_deps()
+    deps["subscribe_cmd"].execute = AsyncMock(
+        return_value=SimpleNamespace(success=True, message="订阅成功")
+    )
+    ctx, plugin_ctx = _make_ctx()
+    tools = build_llm_tools(deps=deps, plugin_context=plugin_ctx)
+    tool = next(t for t in tools if t.name == "rss_subscribe")
+
+    await tool.handler(ctx, uri="/pixiv/search/碧蓝档案")
+
+    deps["subscribe_cmd"].execute.assert_awaited_once()
+    assert deps["subscribe_cmd"].execute.await_args.kwargs["url"] == (
+        "https://rss.example.com/pixiv/search/碧蓝档案"
     )
 
 
@@ -147,6 +175,26 @@ async def test_llm_tool_rss_subscribe_accepts_direct_event():
         user_id="u1",
         target_session="p:g:1",
         platform_name="aiocqhttp",
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_rss_get_session_defaults_uses_plugin_kv_store():
+    deps = _build_deps()
+    ctx, plugin_ctx = _make_ctx()
+    plugin_ctx.get_kv_data = AsyncMock(
+        return_value={"send_mode": 1, "display_media": 0}
+    )
+    tools = build_llm_tools(deps=deps, plugin_context=plugin_ctx)
+    tool = next(t for t in tools if t.name == "rss_get_session_defaults")
+
+    result = await tool.handler(ctx)
+
+    assert "会话默认配置" in result
+    assert "send_mode = 1" in result
+    assert "display_media = 0" in result
+    plugin_ctx.get_kv_data.assert_awaited_once_with(
+        "rsshub_session_defaults_p:g:1", {}
     )
 
 

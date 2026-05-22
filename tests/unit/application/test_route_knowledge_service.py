@@ -13,12 +13,10 @@ from astrbot_plugin_rsshub.src.application.ports.route_knowledge import (
 from astrbot_plugin_rsshub.src.application.services.route_knowledge_service import (
     RouteKnowledgeSyncAlreadyRunning,
     RouteKnowledgeSyncService,
-    build_route_knowledge_prompt,
     build_sync_plan,
     managed_doc_name,
-    should_inject_route_knowledge_prompt,
 )
-from astrbot_plugin_rsshub.src.shared.settings import RouteKnowledgeSettings
+from astrbot_plugin_rsshub.src.infrastructure.config import RouteKnowledgeSettings
 
 
 def _sha(text: str) -> str:
@@ -230,10 +228,3 @@ async def test_sync_lock_rejects_parallel_runs(tmp_path):
             await service.sync(task_id="task-2")
     finally:
         service._lock.release()
-
-
-def test_route_intent_prompt_injection_guard():
-    assert should_inject_route_knowledge_prompt("帮我查 RSSHub 的 bilibili 路由")
-    assert should_inject_route_knowledge_prompt("如何订阅 x 用户动态 rsshub")
-    assert not should_inject_route_knowledge_prompt("今天 RSS 新闻是什么")
-    assert "astr_kb_search" in build_route_knowledge_prompt("RSSHub Routes")

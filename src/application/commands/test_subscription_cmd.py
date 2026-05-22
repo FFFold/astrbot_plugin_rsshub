@@ -7,8 +7,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from types import SimpleNamespace
 from urllib.parse import urlparse
+
+try:
+    from astrbot.core.platform.astr_message_event import AstrMessageEvent
+except Exception:  # pragma: no cover - lightweight test fallback
+
+    class AstrMessageEvent:  # type: ignore[no-redef]
+        unified_msg_origin: str = ""
 
 from ...domain.entities.content_types import AudioContent, VideoContent
 from ...domain.repositories.feed_repository import FeedRepository
@@ -17,6 +23,7 @@ from ..dto.feed_dto import FeedDTO
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcher, FeedParser
+from ..services.content_handlers import EntryContentContext
 from ..services.feed_polling_service import FeedPollingService, FeedReadResult
 from ..services.html_parser import HTMLParser
 from ..services.notification_dispatcher import NotificationDispatcher, SendTarget
@@ -171,6 +178,7 @@ class TestSubscriptionCommand:
         platform_name: str,
         start: int = 1,
         end: int = 1,
+        event: AstrMessageEvent | object | None = None,
     ) -> CommandResult:
         """按订阅 ID 或 URL 测试并真实推送到当前会话。"""
         if start <= 0 or end <= 0 or end < start:
@@ -181,16 +189,22 @@ class TestSubscriptionCommand:
 
         feed_url = ""
         feed_title = ""
+        feed = None
+        subscription = None
         if target.isdigit():
-            sub_result = await self.execute(sub_id=int(target), user_id=user_id)
-            if not sub_result.success:
-                return sub_result
-            subscription = sub_result.data["subscription"]
+            subscription = await self._subscription_repo.get_by_id(int(target))
+            if not subscription:
+                return CommandResult(
+                    success=False,
+                    message=f"订阅不存在 (ID: {target})",
+                )
+            if subscription.user_id != user_id:
+                return CommandResult(success=False, message="无权操作此订阅")
             feed = await self._feed_repo.get_by_id(subscription.feed_id)
             if not feed:
                 return CommandResult(success=False, message="订阅对应的 Feed 不存在")
             feed_url = feed.link
-            feed_title = feed.title
+            feed_title = str(feed.title or "").strip()
         else:
             parsed = urlparse(target)
             if parsed.scheme not in {"http", "https"}:
@@ -216,36 +230,24 @@ class TestSubscriptionCommand:
         if self._notification_dispatcher is None:
             return CommandResult(success=False, message="推送服务未初始化")
 
-        fake_sub = SimpleNamespace(
-            id=0,
-            user_id=user_id,
-            platform_name=platform_name,
-            target_session=target_session,
-        )
-
         pushed = 0
+        entered_chain = 0
+        skipped = 0
         for entry in selected:
             title = entry.title or ""
-            summary = entry.summary or ""
-            parsed = await HTMLParser(summary, feed_link=feed_url).parse()
+            raw_content = entry.content or entry.summary or ""
+            parsed = await HTMLParser(raw_content, feed_link=feed_url).parse()
             plain_summary = parsed.html_tree.get_plain().strip()
             if any(isinstance(m, (AudioContent, VideoContent)) for m in parsed.media):
                 plain_summary = FeedPollingService._remove_media_placeholders(
                     plain_summary
                 )
-            content = (
-                f"{title}\n\n{plain_summary}"
-                if plain_summary and plain_summary != title
-                else title
-            )
             entry_link = getattr(entry, "link", "") or feed_url
             feed_meta = self._feed_meta(read_result.web_feed)
-            feed_title = str(feed_meta.get("title", "") or "").strip() or feed_url
+            effective_feed_title = (
+                feed_title or str(feed_meta.get("title", "") or "").strip() or feed_url
+            )
             author = str(getattr(entry, "author", "") or "").strip()
-            via_suffix = f"via {entry_link} | {feed_title}"
-            if author:
-                via_suffix += f" (author: {author})"
-            content = f"{content}\n\n{via_suffix}"
             media_urls = [m.url for m in parsed.media if getattr(m, "url", "")]
             media_urls.extend(
                 str(enclosure.url)
@@ -254,23 +256,94 @@ class TestSubscriptionCommand:
             )
             media_urls = list(dict.fromkeys(media_urls))
             media_items = FeedPollingService._media_items_from_parsed(parsed.media)
+            tags = tuple(getattr(entry, "tags", []) or ())
+            content = await FeedPollingService._format_dispatch_content_async(
+                title=title,
+                body=plain_summary,
+                link=entry_link,
+                feed_title=effective_feed_title,
+                feed_link=feed_url,
+                author=author,
+                tags=tags,
+            )
+
+            if subscription is not None and feed is not None:
+                stats = await self._notification_dispatcher.dispatch_to_feed_subscribers(
+                    feed_id=feed.id,
+                    content=content,
+                    entry_title=title,
+                    entry_link=entry_link,
+                    feed_title=effective_feed_title,
+                    feed_link=feed_url,
+                    media_urls=media_urls,
+                    media_items=media_items,
+                    entry_guid=str(getattr(entry, "guid", "") or entry_link or title),
+                    subscription_ids=[subscription.id],
+                    raw_entry=EntryContentContext(
+                        title=title,
+                        summary=str(entry.summary or raw_content or "").strip(),
+                        content=str(raw_content or "").strip(),
+                        link=entry_link,
+                        author=author,
+                        feed_title=effective_feed_title,
+                        feed_link=feed_url,
+                        raw_xml=str(getattr(entry, "raw_xml", "") or "").strip(),
+                        media_urls=tuple(media_urls),
+                        media_items=tuple(media_items),
+                        layout=tuple(parsed.layout),
+                    ),
+                    include_inactive_subscription_ids=True,
+                    bypass_success_dedup=True,
+                    event=event,
+                )
+                if stats.get("success", 0) > 0 or stats.get("pending", 0) > 0:
+                    entered_chain += 1
+                    if stats.get("success", 0) > 0:
+                        pushed += 1
+                    skipped += stats.get("skipped", 0)
+                    continue
+                if stats.get("skipped", 0) > 0:
+                    entered_chain += 1
+                    skipped += stats.get("skipped", 0)
+                    continue
+                continue
+
             send_result = await self._notification_dispatcher.send_to_session(
                 target=SendTarget(
-                    user_id=str(fake_sub.user_id or ""),
-                    platform_name=fake_sub.platform_name,
-                    target_session=fake_sub.target_session,
-                    sub_id=fake_sub.id,
+                    user_id=user_id,
+                    platform_name=platform_name,
+                    target_session=target_session,
+                    sub_id=0,
                 ),
                 content=content,
                 media_urls=media_urls,
                 media_items=media_items,
+                layout=list(parsed.layout),
                 job_description=f"sub_test target={target}",
-                channel_title=feed_title,
+                channel_title=effective_feed_title,
                 channel_link=feed_url,
             )
             if send_result.get("ok"):
                 pushed += 1
 
+        if subscription is not None:
+            if entered_chain == 0:
+                return CommandResult(
+                    success=False,
+                    message=(
+                        "测试推送未进入正式发送链路，可能因通知关闭、被 handler 过滤或条目已去重"
+                    ),
+                )
+            note = ""
+            if pushed == 0 and skipped > 0:
+                note = "（本次未实际发送，可能因通知关闭、被 handler 过滤或条目已去重）"
+            return CommandResult(
+                success=True,
+                message=(
+                    f"已触发测试推送: {entered_chain}/{len(selected)} 条进入正式链路"
+                    f"（成功 {pushed} 条，范围 {start}-{end}）{note}"
+                ),
+            )
         return CommandResult(
             success=pushed > 0,
             message=f"已触发测试推送: {pushed}/{len(selected)} 条成功（范围 {start}-{end}）",

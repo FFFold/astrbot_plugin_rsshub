@@ -5,6 +5,7 @@ from __future__ import annotations
 from astrbot.api.event import AstrMessageEvent
 
 from ...domain.entities.handlers import parse_handlers_input
+from ...infrastructure.config import validate_interval_value
 
 SESSION_DEFAULT_KV_PREFIX = "rsshub_session_defaults_"
 SESSION_DEFAULT_KEYS = {
@@ -167,8 +168,17 @@ async def handle_sub_set_session(
             return {"plain": str(exc)}
     elif option_key not in {"title", "tags"}:
         try:
-            parsed_value = int(value)
-        except ValueError:
+            if option_key == "interval":
+                parsed_value = validate_interval_value(
+                    value,
+                    allow_inherit=False,
+                    field_name="interval",
+                )
+            else:
+                parsed_value = int(value)
+        except ValueError as exc:
+            if option_key == "interval":
+                return {"plain": str(exc)}
             return {"plain": f"选项 {option_key} 需要数字值"}
 
     defaults[option_key] = parsed_value
@@ -197,6 +207,8 @@ async def handle_sub_get_session(
 
 
 async def _get_session_defaults(ctx, session_id: str) -> dict:
+    if not callable(getattr(ctx, "get_kv_data", None)):
+        raise TypeError("当前插件上下文不支持会话默认配置存储")
     key = f"{SESSION_DEFAULT_KV_PREFIX}{session_id}"
     raw = await ctx.get_kv_data(key, {})
     if not isinstance(raw, dict):
@@ -205,5 +217,7 @@ async def _get_session_defaults(ctx, session_id: str) -> dict:
 
 
 async def _set_session_defaults(ctx, session_id: str, defaults: dict):
+    if not callable(getattr(ctx, "put_kv_data", None)):
+        raise TypeError("当前插件上下文不支持会话默认配置存储")
     key = f"{SESSION_DEFAULT_KV_PREFIX}{session_id}"
     await ctx.put_kv_data(key, defaults)

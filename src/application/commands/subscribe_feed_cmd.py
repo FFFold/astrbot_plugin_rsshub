@@ -10,13 +10,41 @@ from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
 from ...domain.value_objects.feed_url import FeedUrl
+from ...infrastructure.config import FeedFetchSettings, validate_interval_value
 from ...infrastructure.utils import get_logger
-from ...shared.settings import FeedFetchSettings
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 from ..ports import FeedFetcherFactory
 
 logger = get_logger()
+
+
+def _format_fetch_error(error: object) -> str:
+    """格式化抓取错误，尽量保留 HTTP 状态与底层原因。"""
+    if error is None:
+        return "未知抓取错误"
+
+    error_name = str(getattr(error, "error_name", "") or "抓取错误")
+    status = str(getattr(error, "status", "") or "").strip()
+    base_error = getattr(error, "base_error", None)
+    detail_parts: list[str] = []
+
+    if status:
+        detail_parts.append(status)
+    if base_error is not None:
+        detail_parts.append(str(base_error))
+
+    if detail_parts:
+        detail = "; ".join(part for part in detail_parts if part)
+        return f"{error_name} ({detail})"
+    return error_name
+
+
+def _display_fetch_url(web_feed: object, fallback_url: str) -> str:
+    candidate = getattr(web_feed, "url", None)
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate
+    return fallback_url
 
 
 class SubscribeFeedCommand:
@@ -76,6 +104,16 @@ class SubscribeFeedCommand:
         except ValueError as e:
             return CommandResult(success=False, message=str(e))
 
+        normalized_url = feed_url.normalized()
+        logger.debug(
+            "执行订阅抓取: original_url=%s, normalized_url=%s, user_id=%s, target_session=%s, platform=%s",
+            url,
+            normalized_url,
+            user_id,
+            target_session,
+            platform_name,
+        )
+
         if self._fetcher_factory is None:
             return CommandResult(
                 success=False,
@@ -88,7 +126,7 @@ class SubscribeFeedCommand:
             proxy=self._fetch_settings.proxy,
         )
         try:
-            web_feed = await fetcher.fetch(feed_url.normalized())
+            web_feed = await fetcher.fetch(normalized_url)
         except Exception as e:
             logger.warning("订阅抓取失败: %s", e)
             return CommandResult(
@@ -99,23 +137,42 @@ class SubscribeFeedCommand:
             await fetcher.close()
 
         if web_feed.error:
+            display_url = _display_fetch_url(web_feed, normalized_url)
+            logger.debug(
+                "订阅抓取返回错误: normalized_url=%s, final_url=%s, error_name=%s, status=%s",
+                normalized_url,
+                display_url,
+                getattr(web_feed.error, "error_name", ""),
+                getattr(web_feed.error, "status", None),
+            )
             return CommandResult(
                 success=False,
-                message=f"订阅失败：{web_feed.error.error_name}",
+                message=(
+                    "订阅失败："
+                    f"{_format_fetch_error(web_feed.error)}"
+                    f" | url={display_url}"
+                ),
             )
 
         if web_feed.rss_d is None:
+            display_url = _display_fetch_url(web_feed, normalized_url)
+            logger.debug(
+                "订阅抓取响应无法解析 RSS: normalized_url=%s, final_url=%s, status=%s",
+                normalized_url,
+                display_url,
+                getattr(web_feed, "status", 0),
+            )
             return CommandResult(
                 success=False,
-                message="订阅失败：无法解析 RSS 内容",
+                message=f"订阅失败：无法解析 RSS 内容 | url={display_url}",
             )
 
         title = web_feed.rss_d.feed.get("title", url)
 
         # 查找或创建 Feed
-        feed = await self._feed_repo.get_by_link(feed_url.normalized())
+        feed = await self._feed_repo.get_by_link(normalized_url)
         if feed is None:
-            feed = Feed(link=feed_url.normalized(), title=title)
+            feed = Feed(link=normalized_url, title=title)
             feed = await self._feed_repo.save(feed)
         elif not feed.title and title:
             feed.title = title
@@ -165,13 +222,23 @@ class SubscribeFeedCommand:
                         pass
                 else:
                     try:
-                        update_payload[key] = int(raw_value)
+                        if key == "interval":
+                            update_payload[key] = validate_interval_value(
+                                raw_value,
+                                allow_inherit=False,
+                                field_name="interval",
+                            )
+                        else:
+                            update_payload[key] = int(raw_value)
                     except (ValueError, TypeError):
                         pass
             if update_payload:
-                await self._subscription_repo.update_options(
-                    subscription.id, user_id, **update_payload
-                )
+                try:
+                    await self._subscription_repo.update_options(
+                        subscription.id, user_id, **update_payload
+                    )
+                except ValueError as exc:
+                    return CommandResult(success=False, message=str(exc))
 
         return CommandResult(
             success=True,

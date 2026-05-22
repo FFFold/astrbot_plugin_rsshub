@@ -8,8 +8,8 @@ from astrbot.api.event import AstrMessageEvent
 from astrbot.api.message_components import File
 
 from ...infrastructure.utils import get_plugin_export_dir
+from ...shared.constants import ONEBOT_PLATFORMS
 
-_ONEBOT_PLATFORMS = {"aiocqhttp", "onebot", "onebot11", "onebotv11"}
 _INLINE_EXPORT_LIMIT = 5000
 
 
@@ -38,7 +38,7 @@ async def handle_export(event: AstrMessageEvent, scope: str, deps: dict) -> dict
         file_path.write_text(result.data.content, encoding="utf-8")
 
         platform = _get_platform_name(event)
-        if platform in _ONEBOT_PLATFORMS and not _has_callback_file_service():
+        if platform in ONEBOT_PLATFORMS and not _has_callback_file_service():
             return {
                 "plain": _build_inline_export_message(
                     result.message,

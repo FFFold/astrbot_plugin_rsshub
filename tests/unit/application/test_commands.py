@@ -16,9 +16,9 @@ class TestSubscribeFeedCommand:
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
         )
-        from astrbot_plugin_rsshub.src.shared.settings import FeedFetchSettings
         from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
         from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+        from astrbot_plugin_rsshub.src.infrastructure.config import FeedFetchSettings
 
         fetcher = AsyncMock()
         fetcher.fetch.return_value = MagicMock(
@@ -143,6 +143,46 @@ class TestSubscribeFeedCommand:
         fetcher_factory.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_subscribe_fetch_status_error_preserves_http_status(self):
+        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
+            SubscribeFeedCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.exceptions import WebError
+
+        fetcher = AsyncMock()
+        fetcher.fetch.return_value = MagicMock(
+            error=WebError(
+                error_name="status error",
+                url="https://rsshub.app/pixiv/search/%E7%A2%A7%E8%93%9D%E6%A1%A3%E6%A1%88",
+                status="404 Not Found",
+            ),
+            rss_d=None,
+        )
+        fetcher.close = AsyncMock()
+        fetcher_factory = MagicMock(return_value=fetcher)
+
+        feed_repo = MagicMock()
+        sub_repo = MagicMock()
+
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetcher_factory=fetcher_factory,
+        )
+
+        result = await cmd.execute(
+            url="https://rsshub.app/pixiv/search/%E7%A2%A7%E8%93%9D%E6%A1%A3%E6%A1%88",
+            user_id="user123",
+        )
+
+        assert result.success is False
+        assert result.message == (
+            "订阅失败：status error (404 Not Found) | "
+            "url=https://rsshub.app/pixiv/search/%E7%A2%A7%E8%93%9D%E6%A1%A3%E6%A1%88"
+        )
+        fetcher.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_subscribe_applies_session_default_handlers_mode(self):
         from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
             SubscribeFeedCommand,
@@ -190,6 +230,67 @@ class TestSubscribeFeedCommand:
             "user123",
             handlers_mode="disabled",
         )
+
+    @pytest.mark.asyncio
+    async def test_subscribe_ignores_invalid_session_default_interval_below_minimal(
+        self, monkeypatch
+    ):
+        from astrbot_plugin_rsshub.src.application.commands.subscribe_feed_cmd import (
+            SubscribeFeedCommand,
+        )
+        from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
+        from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
+        from astrbot_plugin_rsshub.src.infrastructure.config import (
+            FeedFetchSettings,
+            RsshubPluginConfig,
+            config_loader,
+        )
+
+        monkeypatch.setattr(
+            config_loader,
+            "_config",
+            RsshubPluginConfig.from_astrbot_config(
+                {"basic_config": {"minimal_interval": 5}}
+            ),
+        )
+
+        fetcher = AsyncMock()
+        fetcher.fetch.return_value = MagicMock(
+            error=None,
+            rss_d=MagicMock(feed={"title": "Test Feed"}),
+        )
+        fetcher.close = AsyncMock()
+        fetcher_factory = MagicMock(return_value=fetcher)
+
+        feed_repo = MagicMock()
+        feed_repo.get_by_link = AsyncMock(return_value=None)
+        feed_repo.save = AsyncMock(
+            return_value=Feed(
+                id=1, link="https://example.com/rss.xml", title="Test Feed"
+            )
+        )
+        sub_repo = MagicMock()
+        sub_repo.get_by_user_and_feed = AsyncMock(return_value=None)
+        sub_repo.save = AsyncMock(
+            return_value=Subscription(id=1, user_id="user123", feed_id=1)
+        )
+        sub_repo.update_options = AsyncMock()
+
+        cmd = SubscribeFeedCommand(
+            subscription_repo=sub_repo,
+            feed_repo=feed_repo,
+            fetch_settings=FeedFetchSettings(),
+            fetcher_factory=fetcher_factory,
+        )
+
+        result = await cmd.execute(
+            url="https://example.com/rss.xml",
+            user_id="user123",
+            session_defaults={"interval": 4},
+        )
+
+        assert result.success is True
+        sub_repo.update_options.assert_not_awaited()
 
 
 class TestUnsubscribeFeedCommand:

@@ -8,42 +8,50 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING, Any
+import shutil
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
 
 from quart import Response, jsonify, request
 
+from astrbot.api import AstrBotConfig
+from astrbot.api.star import Context
+
+from ..application.commands.batch_activate_cmd import BatchActivateCommand
+from ..application.commands.batch_deactivate_cmd import BatchDeactivateCommand
+from ..application.commands.batch_unsubscribe_cmd import BatchUnsubscribeCommand
+from ..application.commands.export_subscriptions_cmd import (
+    ExportSubscriptionsCommand,
+)
+from ..application.commands.get_user_settings_cmd import GetUserSettingsCommand
+from ..application.commands.import_subscriptions_cmd import (
+    ImportSubscriptionsCommand,
+)
+from ..application.commands.set_user_settings_cmd import SetUserSettingsCommand
+from ..application.commands.subscribe_feed_cmd import SubscribeFeedCommand
+from ..application.commands.test_subscription_cmd import TestSubscriptionCommand
+from ..application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
+from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
+from ..application.queries.get_feed_items_query import GetFeedItemsQuery
+from ..application.services.feed_polling_service import FeedPollingService
+from ..application.services.route_knowledge_service import (
+    RouteKnowledgeSyncService,
+)
 from ..domain.entities.handlers import list_handler_registry
-from ..infrastructure.config import RsshubPluginConfig, set_config
-from ..infrastructure.config.settings_adapter import build_application_settings
+from ..domain.repositories.feed_repository import FeedRepository
+from ..domain.repositories.push_history_repository import PushHistoryRepository
+from ..domain.repositories.subscription_repository import SubscriptionRepository
+from ..domain.repositories.user_repository import UserRepository
+from ..infrastructure.config import (
+    RsshubPluginConfig,
+    build_application_settings,
+    set_config,
+    validate_interval_value,
+)
+from ..infrastructure.utils import get_plugin_cache_dir, get_plugin_export_dir
 
-if TYPE_CHECKING:
-    from astrbot.api import AstrBotConfig
-    from astrbot.api.star import Context
-
-    from ..application.commands.batch_activate_cmd import BatchActivateCommand
-    from ..application.commands.batch_deactivate_cmd import BatchDeactivateCommand
-    from ..application.commands.batch_unsubscribe_cmd import BatchUnsubscribeCommand
-    from ..application.commands.export_subscriptions_cmd import (
-        ExportSubscriptionsCommand,
-    )
-    from ..application.commands.get_user_settings_cmd import GetUserSettingsCommand
-    from ..application.commands.import_subscriptions_cmd import (
-        ImportSubscriptionsCommand,
-    )
-    from ..application.commands.set_user_settings_cmd import SetUserSettingsCommand
-    from ..application.commands.subscribe_feed_cmd import SubscribeFeedCommand
-    from ..application.commands.test_subscription_cmd import TestSubscriptionCommand
-    from ..application.commands.unsubscribe_feed_cmd import UnsubscribeFeedCommand
-    from ..application.commands.update_subscription_cmd import UpdateSubscriptionCommand
-    from ..application.queries.get_feed_items_query import GetFeedItemsQuery
-    from ..application.services.feed_polling_service import FeedPollingService
-    from ..application.services.route_knowledge_service import (
-        RouteKnowledgeSyncService,
-    )
-    from ..domain.repositories.feed_repository import FeedRepository
-    from ..domain.repositories.push_history_repository import PushHistoryRepository
-    from ..domain.repositories.subscription_repository import SubscriptionRepository
-    from ..domain.repositories.user_repository import UserRepository
 PLUGIN_NAME = "astrbot_plugin_rsshub"
 USER_ID_REQUIRED_ERROR = "user_id 不能为空"
 
@@ -151,6 +159,48 @@ class WebApiHandler:
             ("POST", "/import", self.handle_import, "导入订阅"),
             ("GET", "/stats", self.handle_stats, "插件统计"),
             ("GET", "/push-history", self.handle_push_history, "推送历史"),
+            (
+                "GET",
+                "/data-management/overview",
+                self.handle_data_management_overview,
+                "数据管理概览",
+            ),
+            (
+                "POST",
+                "/data-management/cache/clear",
+                self.handle_clear_cache,
+                "清空缓存",
+            ),
+            (
+                "GET",
+                "/data-management/exports",
+                self.handle_list_exports,
+                "导出文件列表",
+            ),
+            (
+                "GET",
+                "/data-management/exports/download",
+                self.handle_download_export,
+                "下载导出文件",
+            ),
+            (
+                "GET",
+                "/data-management/exports/content",
+                self.handle_export_content,
+                "读取导出文件内容",
+            ),
+            (
+                "POST",
+                "/data-management/exports/delete",
+                self.handle_delete_export,
+                "删除导出文件",
+            ),
+            (
+                "POST",
+                "/data-management/exports/clear",
+                self.handle_clear_exports,
+                "清空导出文件",
+            ),
             ("GET", "/route-kb/status", self.handle_route_kb_status, "Routes KB 状态"),
             ("POST", "/route-kb/sync", self.handle_route_kb_sync, "同步 Routes KB"),
             ("GET", "/route-kb/task", self.handle_route_kb_task, "Routes KB 任务"),
@@ -263,11 +313,17 @@ class WebApiHandler:
 
     async def handle_list_subscriptions(self):
         """列出所有订阅（含 Feed 信息）"""
-        user_id = request.args.get("user_id")
-        if user_id:
-            subs = await self._sub_repo.get_by_user(user_id)
-        else:
-            subs = await self._sub_repo.get_all_active()
+        user_ids = _split_multi_values(request.args.get("user_id", ""))
+        feed_ids = _split_multi_int_values(request.args.get("feed_id", ""))
+        sub_ids = _split_multi_int_values(request.args.get("sub_id", ""))
+        keywords = _split_multi_values(request.args.get("keyword", ""))
+
+        subs = await self._sub_repo.list_for_dashboard(
+            user_ids=user_ids or None,
+            feed_ids=feed_ids or None,
+            sub_ids=sub_ids or None,
+            keywords=keywords or None,
+        )
         feed_ids = {s.feed_id for s in subs if s.feed_id}
         feeds: dict[int, Any] = {}
         for fid in feed_ids:
@@ -294,7 +350,7 @@ class WebApiHandler:
                     "notify": s.notify,
                     "send_mode": s.send_mode,
                     "handlers_mode": s.handlers_mode,
-                    "handlers": s.handlers,
+                    "handlers": s.get_handlers(),
                     "length_limit": s.length_limit,
                     "display_author": s.display_author,
                     "display_via": s.display_via,
@@ -328,9 +384,24 @@ class WebApiHandler:
 
     async def handle_user_details(self):
         """列出所有用户详情（从 UserRepository）"""
+        user_ids = _split_multi_values(request.args.get("user_id", ""))
+        keywords = _split_multi_values(request.args.get("keyword", ""))
         users = await self._user_repo.get_all(limit=1000)
         items = []
         for u in users:
+            if user_ids and u.id not in user_ids:
+                continue
+            if keywords:
+                haystacks = [
+                    str(u.id or ""),
+                    str(getattr(u, "default_target_session", "") or ""),
+                ]
+                if not any(
+                    keyword.lower() in haystack.lower()
+                    for keyword in keywords
+                    for haystack in haystacks
+                ):
+                    continue
             items.append(
                 {
                     "user_id": u.id,
@@ -338,7 +409,7 @@ class WebApiHandler:
                     "interval": u.interval,
                     "notify": u.notify,
                     "send_mode": u.send_mode,
-                    "handlers": u.handlers,
+                    "handlers": u.get_handlers(),
                     "length_limit": u.length_limit,
                     "display_author": u.display_author,
                     "display_via": u.display_via,
@@ -374,24 +445,45 @@ class WebApiHandler:
     async def handle_delete_user(self):
         """删除用户"""
         data = await request.get_json()
-        user_id = data.get("user_id", "") if data else ""
-        if not user_id:
-            return jsonify({"ok": False, "error": "user_id 不能为空"})
+        user_ids: list[str] = []
+        if data:
+            if isinstance(data.get("user_ids"), list):
+                user_ids = [
+                    str(item).strip() for item in data["user_ids"] if str(item).strip()
+                ]
+            elif data.get("user_id"):
+                user_ids = [str(data.get("user_id", "")).strip()]
 
-        # 先删除用户的所有订阅
-        await self._sub_repo.delete_all_by_user(user_id)
-        # 再删除用户
-        ok = await self._user_repo.delete(user_id)
-        if ok:
+        user_ids = list(dict.fromkeys(user_ids))
+        if not user_ids:
+            return jsonify({"ok": False, "error": "user_id 或 user_ids 不能为空"})
+
+        removed_count = 0
+        for user_id in user_ids:
+            await self._sub_repo.delete_all_by_user(user_id)
+            if await self._user_repo.delete(user_id):
+                removed_count += 1
+
+        if removed_count > 0:
             self._bump_counter()
             asyncio.create_task(self._broadcast({"event": "data_changed"}))
-            return jsonify({"ok": True, "message": f"用户 {user_id} 已删除"})
-        return jsonify({"ok": False, "error": "用户不存在或删除失败"})
+            return jsonify(
+                {
+                    "ok": True,
+                    "removed_count": removed_count,
+                    "message": f"已删除 {removed_count} 个用户"
+                    if len(user_ids) > 1
+                    else f"用户 {user_ids[0]} 已删除",
+                }
+            )
+        return jsonify({"ok": False, "error": "用户不存在或删除失败", "removed_count": 0})
 
     # ─── Feed 列表 ────────────────────────────────────────────
 
     async def handle_feeds(self):
         """列出所有 Feed 源及其订阅统计"""
+        feed_ids = _split_multi_int_values(request.args.get("feed_id", ""))
+        keywords = _split_multi_values(request.args.get("keyword", ""))
         feeds = await self._feed_repo.get_all()
         subs = await self._sub_repo.get_all_active()
         sub_counts: dict[int, int] = {}
@@ -401,6 +493,16 @@ class WebApiHandler:
 
         items = []
         for f in feeds:
+            if feed_ids and f.id not in feed_ids:
+                continue
+            if keywords:
+                haystacks = [str(f.id or ""), str(f.title or ""), str(f.link or "")]
+                if not any(
+                    keyword.lower() in haystack.lower()
+                    for keyword in keywords
+                    for haystack in haystacks
+                ):
+                    continue
             items.append(
                 {
                     "id": f.id,
@@ -550,26 +652,65 @@ class WebApiHandler:
     async def handle_refresh_feed(self):
         """手动刷新 Feed"""
         data = await request.get_json()
-        feed_id = (data or {}).get("feed_id", 0)
+        feed_ids: list[int] = []
+        if data:
+            if isinstance(data.get("feed_ids"), list):
+                feed_ids = [
+                    int(item) for item in data["feed_ids"] if str(item).strip()
+                ]
+            elif data.get("feed_id"):
+                feed_ids = [int(data.get("feed_id", 0))]
 
-        if not feed_id:
-            return jsonify({"ok": False, "error": "feed_id 不能为空"})
+        feed_ids = sorted({feed_id for feed_id in feed_ids if feed_id > 0})
+        if not feed_ids:
+            return jsonify({"ok": False, "error": "feed_id 或 feed_ids 不能为空"})
 
         try:
-            result = await self._polling_service.poll_feed(int(feed_id))
+            if len(feed_ids) == 1:
+                result = await self._polling_service.poll_feed(feed_ids[0])
+                self._bump_counter()
+                asyncio.create_task(self._broadcast({"event": "data_changed"}))
+                return jsonify(
+                    {
+                        "ok": result.success,
+                        "message": result.message,
+                        "status": result.status,
+                        "feed_id": result.feed_id,
+                        "total_entries": result.total_entries,
+                        "new_entries": result.new_entries,
+                        "dispatched": result.dispatched,
+                        "bootstrap_skipped": result.bootstrap_skipped,
+                        "error": result.error,
+                    }
+                )
+
+            results = []
+            success_count = 0
+            for feed_id in feed_ids:
+                result = await self._polling_service.poll_feed(feed_id)
+                results.append(
+                    {
+                        "ok": result.success,
+                        "message": result.message,
+                        "status": result.status,
+                        "feed_id": result.feed_id or feed_id,
+                        "total_entries": result.total_entries,
+                        "new_entries": result.new_entries,
+                        "dispatched": result.dispatched,
+                        "bootstrap_skipped": result.bootstrap_skipped,
+                        "error": result.error,
+                    }
+                )
+                if result.success:
+                    success_count += 1
             self._bump_counter()
             asyncio.create_task(self._broadcast({"event": "data_changed"}))
             return jsonify(
                 {
-                    "ok": result.success,
-                    "message": result.message,
-                    "status": result.status,
-                    "feed_id": result.feed_id,
-                    "total_entries": result.total_entries,
-                    "new_entries": result.new_entries,
-                    "dispatched": result.dispatched,
-                    "bootstrap_skipped": result.bootstrap_skipped,
-                    "error": result.error,
+                    "ok": success_count > 0,
+                    "message": f"已刷新 {success_count}/{len(feed_ids)} 个 Feed",
+                    "results": results,
+                    "success_count": success_count,
                 }
             )
         except Exception as e:
@@ -648,6 +789,14 @@ class WebApiHandler:
         try:
             config_dict = self._config.model_dump()
             if subscription_updates:
+                if "interval" in subscription_updates:
+                    subscription_updates = dict(subscription_updates)
+                    subscription_updates["interval"] = validate_interval_value(
+                        subscription_updates["interval"],
+                        allow_inherit=False,
+                        field_name="interval",
+                        config=self._config,
+                    )
                 config_dict["global_config"] = {
                     **config_dict.get("global_config", {}),
                     **subscription_updates,
@@ -682,13 +831,43 @@ class WebApiHandler:
             return self._user_id_required_response()
 
         sub_id = (data or {}).get("sub_id", 0)
+        target_session = str((data or {}).get("target_session", "") or "").strip()
+        platform_name = str((data or {}).get("platform_name", "") or "").strip()
 
         if not sub_id:
             return jsonify({"ok": False, "error": "sub_id 不能为空"})
 
-        result = await self._test_sub_cmd.execute(sub_id=int(sub_id), user_id=user_id)
-        if result.success and result.data:
-            return jsonify({"ok": True, "message": result.message, "data": result.data})
+        subscription = await self._sub_repo.get_by_id(int(sub_id))
+        if not subscription:
+            return jsonify({"ok": False, "error": f"订阅不存在 (ID: {sub_id})"})
+        if subscription.user_id != user_id:
+            return jsonify({"ok": False, "error": "无权操作此订阅"})
+
+        if not target_session:
+            target_session = str(subscription.target_session or "").strip()
+        if not platform_name:
+            platform_name = str(subscription.platform_name or "").strip()
+        if not target_session:
+            user = await self._user_repo.get_by_id(user_id)
+            target_session = str(
+                getattr(user, "default_target_session", "") or ""
+            )
+        if not target_session:
+            return jsonify({"ok": False, "error": "订阅和用户都未配置推送目标会话"})
+        if not platform_name:
+            return jsonify({"ok": False, "error": "订阅未配置平台，无法测试推送"})
+
+        result = await self._test_sub_cmd.execute_target(
+            target=str(sub_id),
+            user_id=user_id,
+            target_session=target_session,
+            platform_name=platform_name,
+        )
+        if result.success:
+            payload = {"ok": True, "message": result.message}
+            if result.data:
+                payload["data"] = _dump_dataclass_like(result.data)
+            return jsonify(payload)
         return jsonify({"ok": False, "error": result.message})
 
     async def handle_test_url(self):
@@ -701,7 +880,13 @@ class WebApiHandler:
 
         result = await self._test_sub_cmd.execute_by_url(url=url)
         if result.success and result.data:
-            return jsonify({"ok": True, "message": result.message, "data": result.data})
+            return jsonify(
+                {
+                    "ok": True,
+                    "message": result.message,
+                    "data": _dump_dataclass_like(result.data),
+                }
+            )
         return jsonify({"ok": False, "error": result.message})
 
     # ─── 批量操作 ─────────────────────────────────────────────
@@ -845,6 +1030,162 @@ class WebApiHandler:
             }
         )
 
+    async def handle_data_management_overview(self):
+        """获取插件 cache / exports 目录统计。"""
+        try:
+            cache_dir = _ensure_directory(get_plugin_cache_dir())
+            export_dir = _ensure_directory(get_plugin_export_dir())
+            cache_summary = _build_directory_summary(cache_dir, breakdown_mode="top_level")
+            export_summary = _build_directory_summary(
+                export_dir, breakdown_mode="extension"
+            )
+            return jsonify(
+                {
+                    "ok": True,
+                    "cache": cache_summary,
+                    "exports": export_summary,
+                    "totals": {
+                        "cache_bytes": cache_summary["total_size"],
+                        "exports_bytes": export_summary["total_size"],
+                        "combined_bytes": cache_summary["total_size"]
+                        + export_summary["total_size"],
+                        "total_size": cache_summary["total_size"]
+                        + export_summary["total_size"],
+                        "file_count": cache_summary["file_count"]
+                        + export_summary["file_count"],
+                    },
+                }
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+    async def handle_clear_cache(self):
+        """清空插件缓存目录。"""
+        try:
+            cache_dir = _ensure_directory(get_plugin_cache_dir())
+            removed_count = _clear_directory_contents(cache_dir)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify(
+            {
+                "ok": True,
+                "removed_count": removed_count,
+                "message": f"已清理缓存文件 {removed_count} 个",
+            }
+        )
+
+    async def handle_list_exports(self):
+        """列出可下载的导出 TOML 文件。"""
+        try:
+            export_dir = _ensure_directory(get_plugin_export_dir())
+            files = _list_export_files(export_dir)
+            breakdown = _build_breakdown(export_dir, mode="extension")
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        items = []
+        total_size = 0
+        for export_file in files:
+            stat = export_file.stat()
+            total_size += stat.st_size
+            items.append(
+                {
+                    "name": export_file.relative_to(export_dir).as_posix(),
+                    "size": stat.st_size,
+                    "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
+
+        return jsonify(
+            {
+                "ok": True,
+                "items": items,
+                "breakdown": breakdown,
+                "total_size": total_size,
+                "file_count": len(items),
+            }
+        )
+
+    async def handle_download_export(self):
+        """下载单个导出 TOML 文件。"""
+        try:
+            export_file = _resolve_export_file(
+                _ensure_directory(get_plugin_export_dir()),
+                request.args.get("name", ""),
+            )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        filename = export_file.name
+        content_disposition = (
+            f'attachment; filename="{filename}"; '
+            f"filename*=UTF-8''{quote(filename)}"
+        )
+        return Response(
+            export_file.read_bytes(),
+            content_type="application/toml; charset=utf-8",
+            headers={"Content-Disposition": content_disposition},
+        )
+
+    async def handle_export_content(self):
+        """读取单个导出 TOML 文件文本内容。"""
+        try:
+            export_file = _resolve_export_file(
+                _ensure_directory(get_plugin_export_dir()),
+                request.args.get("name", ""),
+            )
+            content = export_file.read_text(encoding="utf-8")
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        return jsonify(
+            {
+                "ok": True,
+                "name": export_file.relative_to(
+                    _ensure_directory(get_plugin_export_dir())
+                ).as_posix(),
+                "content": content,
+                "size": export_file.stat().st_size,
+            }
+        )
+
+    async def handle_delete_export(self):
+        """删除单个导出 TOML 文件。"""
+        data = await request.get_json()
+        try:
+            export_file = _resolve_export_file(
+                _ensure_directory(get_plugin_export_dir()),
+                (data or {}).get("name", ""),
+            )
+            export_file.unlink()
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify({"ok": True, "message": f"已删除导出文件 {export_file.name}"})
+
+    async def handle_clear_exports(self):
+        """清空导出目录。"""
+        try:
+            export_dir = _ensure_directory(get_plugin_export_dir())
+            removed_count = _clear_directory_contents(export_dir)
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+        self._bump_counter()
+        asyncio.create_task(self._broadcast({"event": "data_changed"}))
+        return jsonify(
+            {
+                "ok": True,
+                "removed_count": removed_count,
+                "message": f"已清理导出文件 {removed_count} 个",
+            }
+        )
+
     # ─── 推送历史 ─────────────────────────────────────────────
 
     async def handle_push_history(self):
@@ -852,6 +1193,7 @@ class WebApiHandler:
         status = request.args.get("status")
         user_id = request.args.get("user_id")
         target_session = request.args.get("target_session")
+        keywords = _split_multi_values(request.args.get("keyword", ""))
         page = request.args.get("page", 1, type=int)
         page_size = request.args.get("page_size", 20, type=int)
         offset = (page - 1) * page_size
@@ -863,24 +1205,32 @@ class WebApiHandler:
                 offset=offset,
                 target_session=target_session,
                 status=status,
+                keywords=keywords or None,
             )
             total = await self._push_history_repo.count_by_user(
                 user_id=user_id,
                 target_session=target_session,
                 status=status,
+                keywords=keywords or None,
             )
         else:
             items = await self._push_history_repo.get_all(
-                limit=page_size, offset=offset, status=status
+                limit=page_size,
+                offset=offset,
+                status=status,
+                keywords=keywords or None,
             )
-            stats = await self._push_history_repo.get_stats()
-            total = stats.get("total", 0)
+            total = await self._push_history_repo.count_all(
+                status=status,
+                keywords=keywords or None,
+            )
 
         data = []
         for h in items:
             data.append(
                 {
                     "id": h.id,
+                    "sub_id": h.sub_id,
                     "user_id": h.user_id,
                     "feed_id": h.feed_id,
                     "source_type": h.source_type,
@@ -921,11 +1271,41 @@ class WebApiHandler:
     async def handle_delete_push_history(self):
         """删除推送历史"""
         data = await request.get_json()
-        history_id = data.get("history_id", 0) if data else 0
-        if not history_id:
-            return jsonify({"ok": False, "error": "history_id 不能为空"})
-        ok = await self._push_history_repo.delete(int(history_id))
-        return jsonify({"ok": ok, "message": "已删除" if ok else "记录不存在"})
+        history_ids = []
+        if data:
+            if isinstance(data.get("history_ids"), list):
+                history_ids = [int(item) for item in data["history_ids"] if str(item).strip()]
+            elif data.get("history_id"):
+                history_ids = [int(data["history_id"])]
+
+        history_ids = sorted({history_id for history_id in history_ids if history_id > 0})
+        if not history_ids:
+            return jsonify({"ok": False, "error": "history_id 或 history_ids 不能为空"})
+
+        if len(history_ids) == 1:
+            ok = await self._push_history_repo.delete(history_ids[0])
+            if ok:
+                self._bump_counter()
+            return jsonify(
+                {
+                    "ok": ok,
+                    "removed_count": 1 if ok else 0,
+                    "message": "已删除" if ok else "记录不存在",
+                }
+            )
+
+        removed_count = await self._push_history_repo.delete_many(history_ids)
+        if removed_count > 0:
+            self._bump_counter()
+        return jsonify(
+            {
+                "ok": removed_count > 0,
+                "removed_count": removed_count,
+                "message": f"已删除 {removed_count} 条记录"
+                if removed_count > 0
+                else "没有匹配的记录被删除",
+            }
+        )
 
     async def handle_cleanup_push_history(self):
         """清理旧推送历史"""
@@ -938,8 +1318,21 @@ class WebApiHandler:
 
 def _dump_dataclass_like(value: Any) -> dict[str, Any]:
     def _convert(item: Any) -> Any:
+        if item is None or isinstance(item, (str, int, float, bool)):
+            return item
+        if isinstance(item, datetime):
+            return item.isoformat()
+        if isinstance(item, list):
+            return [_convert(part) for part in item]
+        if isinstance(item, dict):
+            return {key: _convert(part) for key, part in item.items()}
         if isinstance(item, tuple):
             return [_convert(part) for part in item]
+        if hasattr(item, "model_dump"):
+            return {
+                key: _convert(part)
+                for key, part in item.model_dump().items()
+            }
         if hasattr(item, "__dict__"):
             return {
                 key: _convert(part)
@@ -949,3 +1342,106 @@ def _dump_dataclass_like(value: Any) -> dict[str, Any]:
         return item
 
     return _convert(value)
+
+
+def _split_multi_values(raw: str) -> list[str]:
+    text = str(raw or "").replace("，", ",")
+    values = []
+    for chunk in text.replace("\n", ",").split(","):
+        value = chunk.strip()
+        if value:
+            values.append(value)
+    return values
+
+
+def _split_multi_int_values(raw: str) -> list[int]:
+    values = []
+    for value in _split_multi_values(raw):
+        try:
+            values.append(int(value))
+        except ValueError:
+            continue
+    return values
+
+
+def _ensure_directory(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _build_directory_summary(
+    path: Path, *, breakdown_mode: str
+) -> dict[str, Any]:
+    files = list(_iter_files(path))
+    total_size = sum(file.stat().st_size for file in files)
+    return {
+        "path": str(path),
+        "total_size": total_size,
+        "file_count": len(files),
+        "breakdown": _build_breakdown(path, mode=breakdown_mode),
+    }
+
+
+def _build_breakdown(path: Path, *, mode: str) -> list[dict[str, Any]]:
+    buckets: dict[str, dict[str, int]] = {}
+    for file in _iter_files(path):
+        rel = file.relative_to(path)
+        if mode == "extension":
+            bucket_name = file.suffix.lower() or "(no_ext)"
+        else:
+            bucket_name = rel.parts[0] if len(rel.parts) > 1 else "root"
+        bucket = buckets.setdefault(bucket_name, {"size": 0, "file_count": 0})
+        bucket["size"] += file.stat().st_size
+        bucket["file_count"] += 1
+
+    return [
+        {"name": name, "size": item["size"], "file_count": item["file_count"]}
+        for name, item in sorted(
+            buckets.items(),
+            key=lambda entry: (-entry[1]["size"], entry[0]),
+        )
+    ]
+
+
+def _iter_files(path: Path):
+    for file in sorted(path.rglob("*")):
+        if file.is_file():
+            yield file
+
+
+def _list_export_files(export_dir: Path) -> list[Path]:
+    return [
+        file
+        for file in sorted(export_dir.rglob("*.toml"))
+        if file.is_file()
+    ]
+
+
+def _resolve_export_file(export_dir: Path, name: str) -> Path:
+    candidate_name = str(name or "").strip()
+    if not candidate_name:
+        raise ValueError("name 不能为空")
+
+    candidate = (export_dir / candidate_name).resolve()
+    try:
+        candidate.relative_to(export_dir.resolve())
+    except ValueError as exc:
+        raise ValueError("非法的导出文件名") from exc
+
+    if candidate.suffix.lower() != ".toml":
+        raise ValueError("仅支持下载 TOML 导出文件")
+    if not candidate.is_file():
+        raise FileNotFoundError("导出文件不存在")
+    return candidate
+
+
+def _clear_directory_contents(path: Path) -> int:
+    removed_count = 0
+    for entry in sorted(path.iterdir(), key=lambda item: item.name):
+        if entry.is_dir():
+            removed_count += sum(1 for _ in _iter_files(entry))
+            shutil.rmtree(entry)
+        elif entry.is_file():
+            entry.unlink()
+            removed_count += 1
+    return removed_count

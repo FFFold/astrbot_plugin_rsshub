@@ -7,8 +7,8 @@ from pathlib import Path
 from astrbot.api.event import AstrMessageEvent
 
 from ...infrastructure.utils import get_plugin_export_dir
+from ...shared.constants import ONEBOT_PLATFORMS
 
-_ONEBOT_PLATFORMS = {"aiocqhttp", "onebot", "onebot11", "onebotv11"}
 _INLINE_EXPORT_LIMIT = 5000
 
 
@@ -94,7 +94,7 @@ async def handle_unsub_all(event: AstrMessageEvent, scope: str, deps: dict) -> d
         file_path = temp_dir / filename
         file_path.write_text(export_result.data.content, encoding="utf-8")
         platform = _get_platform_name(event)
-        if platform in _ONEBOT_PLATFORMS and not _has_callback_file_service():
+        if platform in ONEBOT_PLATFORMS and not _has_callback_file_service():
             result["plain"] = _build_inline_export_message(
                 f"已取消{scope_desc}订阅前已生成备份，共导出 {export_result.data.count} 条",
                 export_result.data.content,

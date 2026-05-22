@@ -13,7 +13,7 @@ from ...application.ports.route_knowledge import (
     RouteKnowledgeManifest,
     RouteKnowledgeSource,
 )
-from ...shared.settings import RouteKnowledgeSettings
+from ...infrastructure.config import RouteKnowledgeSettings
 from ..fetcher.http import HttpFetcher
 
 GITHUB_RAW_BASE_URL = (
