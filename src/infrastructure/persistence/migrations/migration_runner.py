@@ -349,7 +349,9 @@ async def ensure_profile_schema(conn) -> list[str]:
         result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
         return {str(row[1]) for row in result.fetchall()}
 
-    async def _fill_nulls(table: str, columns: set[str], defaults: dict[str, Any]) -> list[str]:
+    async def _fill_nulls(
+        table: str, columns: set[str], defaults: dict[str, Any]
+    ) -> list[str]:
         fixed: list[str] = []
         for column, default in defaults.items():
             if column not in columns:
