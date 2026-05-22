@@ -355,5 +355,3 @@ async def cleanup_legacy_translation_tables(conn) -> list[str]:
         dropped.append(table)
         logger.info("数据库 schema 自愈: 删除旧翻译缓存表 %s", table)
     return dropped
-
-

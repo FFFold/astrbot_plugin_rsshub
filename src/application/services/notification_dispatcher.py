@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - lightweight test fallback
     class AstrMessageEvent:  # type: ignore[no-redef]
         unified_msg_origin: str = ""
 
+
 from ...domain.entities.content_types import LayoutFragment
 from ...domain.entities.push_history import PushHistory
 from ...domain.repositories.push_history_repository import PushHistoryRepository
@@ -622,7 +623,8 @@ class NotificationDispatcher:
                             entry=raw_entry,
                             session_id=str(sub.target_session or "").strip() or None,
                             event=event,
-                            target_session=str(sub.target_session or "").strip() or None,
+                            target_session=str(sub.target_session or "").strip()
+                            or None,
                             platform_name=str(sub.platform_name or "").strip() or None,
                             user_id=str(sub.user_id or "").strip() or None,
                         )
@@ -756,7 +758,9 @@ class NotificationDispatcher:
                 list[PreparedSubscriptionDispatch],
             ] = {}
             for prepared in prepared_dispatches:
-                grouped.setdefault(self._payload_signature(prepared), []).append(prepared)
+                grouped.setdefault(self._payload_signature(prepared), []).append(
+                    prepared
+                )
 
             suppressed_sub_ids: set[int] = set()
             for items in grouped.values():
@@ -856,7 +860,9 @@ class NotificationDispatcher:
                     history.max_retries = 0
                     stats["success"] += 1
                 else:
-                    history.max_retries = await self._resolve_initial_failure_max_retries()
+                    history.max_retries = (
+                        await self._resolve_initial_failure_max_retries()
+                    )
                     # 首次失败不增加重试计数
                     history.record_first_failure(result.get("error"))
                     history.content = append_media_links_to_text(

@@ -74,10 +74,11 @@ class SubscriptionRepositoryImpl:
         """Dashboard 订阅列表筛选查询。"""
         db = get_database()
         async with db.get_session() as session:
-            stmt = select(SubORM).join(FeedORM, FeedORM.id == SubORM.feed_id, isouter=True)
+            stmt = select(SubORM).join(
+                FeedORM, FeedORM.id == SubORM.feed_id, isouter=True
+            )
             has_filters = any(
-                values
-                for values in (user_ids, feed_ids, sub_ids, keywords)
+                values for values in (user_ids, feed_ids, sub_ids, keywords)
             )
 
             if not has_filters:

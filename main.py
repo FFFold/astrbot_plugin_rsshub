@@ -28,6 +28,7 @@ logger = get_logger()
 
 _HELP_IMAGE_PATH = Path(__file__).resolve().parent / "assets" / "help" / "rsshelp.png"
 
+
 class RSSHubPlugin(Star):
     """RSS订阅推送插件"""
 
@@ -223,9 +224,7 @@ class RSSHubPlugin(Star):
         用法:
         - /sub_session set <key> <value>
         """
-        result = await _h.handle_sub_set_session(
-            event, key, value, self._deps, self
-        )
+        result = await _h.handle_sub_set_session(event, key, value, self._deps, self)
         if result.get("plain"):
             yield event.plain_result(result["plain"])
 

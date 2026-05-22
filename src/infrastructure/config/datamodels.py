@@ -196,7 +196,9 @@ class PlatformSenderStrategyConfig(BaseModel):
         if include_fields is not None:
             data = {key: value for key, value in data.items() if key in include_fields}
             default_data = {
-                key: value for key, value in default_data.items() if key in include_fields
+                key: value
+                for key, value in default_data.items()
+                if key in include_fields
             }
         if data == default_data:
             return None

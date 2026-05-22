@@ -50,12 +50,14 @@ except Exception:  # pragma: no cover - lightweight test fallback
     class AstrMessageEvent:  # type: ignore[no-redef]
         unified_msg_origin: str = ""
 
+
 try:
     from astrbot.core.provider.provider import Provider
 except Exception:  # pragma: no cover - lightweight test fallback
 
     class Provider:  # type: ignore[no-redef]
         pass
+
 
 from ...domain.entities.content_types import LayoutFragment
 from ...domain.entities.handlers import (
@@ -310,7 +312,10 @@ class ContentHandlerRuntime:
                             "status": HandlerTraceStatus.OK.value,
                             "allow": allowed,
                             "reason": reason,
-                            "scope": str(spec.config.get("input_scope") or AiFilterInputScope.TEXT.value),
+                            "scope": str(
+                                spec.config.get("input_scope")
+                                or AiFilterInputScope.TEXT.value
+                            ),
                         }
                     )
                     if not allowed:
@@ -328,7 +333,9 @@ class ContentHandlerRuntime:
                         event=event,
                         target_session=target_session,
                         platform_name=platform_name,
-                        user_id=user_id or getattr(user, "id", "") or subscription.user_id,
+                        user_id=user_id
+                        or getattr(user, "id", "")
+                        or subscription.user_id,
                     )
                     result = transform_result["entry"]
                     trace.append(
@@ -362,7 +369,7 @@ class ContentHandlerRuntime:
                         "status": HandlerTraceStatus.ERROR.value,
                         "reason": str(exc),
                     }
-        )
+                )
         return HandlerProcessResult(entry=result, trace=tuple(trace))
 
     async def _run_ai_transform(
@@ -381,7 +388,9 @@ class ContentHandlerRuntime:
             return {
                 "entry": entry,
                 "trace": {
-                    "scope": str((config or {}).get("scope") or AiTransformScope.PLAINTEXT.value),
+                    "scope": str(
+                        (config or {}).get("scope") or AiTransformScope.PLAINTEXT.value
+                    ),
                     "steps_used": 0,
                     "fallback": True,
                     "fallback_reason": "missing prompt or context",
@@ -394,7 +403,9 @@ class ContentHandlerRuntime:
             return {
                 "entry": entry,
                 "trace": {
-                    "scope": str((config or {}).get("scope") or AiTransformScope.PLAINTEXT.value),
+                    "scope": str(
+                        (config or {}).get("scope") or AiTransformScope.PLAINTEXT.value
+                    ),
                     "steps_used": 0,
                     "fallback": True,
                     "fallback_reason": "provider unavailable",
@@ -468,7 +479,9 @@ class ContentHandlerRuntime:
             stream=False,
         )
         payload = str(getattr(response, "completion_text", "") or "").strip()
-        parsed = self._parse_transform_json(payload, required_fields={"title", "summary", "content"})
+        parsed = self._parse_transform_json(
+            payload, required_fields={"title", "summary", "content"}
+        )
         title = str(parsed.get("title") or entry.title).strip()
         summary = str(parsed.get("summary") or entry.summary).strip()
         content = str(parsed.get("content") or entry.content).strip()
@@ -538,7 +551,9 @@ class ContentHandlerRuntime:
         if not transformed_xml:
             raise ValueError("ai_transform(xml) 输出缺少 raw_xml")
 
-        reparsed_entry = await self._reparse_transformed_xml(entry=entry, raw_xml=transformed_xml)
+        reparsed_entry = await self._reparse_transformed_xml(
+            entry=entry, raw_xml=transformed_xml
+        )
         steps_used = max(
             len(getattr(response, "tools_call_name", []) or []) + 1,
             1,
@@ -655,7 +670,9 @@ class ContentHandlerRuntime:
         allowed_fields = {"title", "summary", "content", "raw_xml"}
         invalid_keys = [key for key in parsed.keys() if key not in allowed_fields]
         if invalid_keys:
-            raise ValueError(f"ai_transform 输出包含非法字段: {', '.join(invalid_keys)}")
+            raise ValueError(
+                f"ai_transform 输出包含非法字段: {', '.join(invalid_keys)}"
+            )
         if required_fields and not any(
             str(parsed.get(field) or "").strip() for field in required_fields
         ):
@@ -676,7 +693,9 @@ class ContentHandlerRuntime:
 
         normalized_xml = _validate_xml_input(raw_xml)
         root, body_xml = _parse_xml_root(normalized_xml)
-        parsed = await HTMLParser(body_xml, feed_link=entry.feed_link or entry.link or "").parse()
+        parsed = await HTMLParser(
+            body_xml, feed_link=entry.feed_link or entry.link or ""
+        ).parse()
         from .feed_polling_service import FeedPollingService
 
         plain_body = FeedPollingService._remove_media_placeholders(
@@ -696,11 +715,13 @@ class ContentHandlerRuntime:
         deduped_media_urls = tuple(dict.fromkeys(media_urls))
         return replace(
             entry,
-            title=str(root.findtext("title") or entry.title or "").strip() or entry.title,
+            title=str(root.findtext("title") or entry.title or "").strip()
+            or entry.title,
             summary=plain_body or entry.summary,
             content=content or entry.content,
             link=str(root.findtext("link") or entry.link or "").strip() or entry.link,
-            author=str(root.findtext("author") or entry.author or "").strip() or entry.author,
+            author=str(root.findtext("author") or entry.author or "").strip()
+            or entry.author,
             raw_xml=normalized_xml,
             media_urls=deduped_media_urls,
             media_items=tuple(media_items),

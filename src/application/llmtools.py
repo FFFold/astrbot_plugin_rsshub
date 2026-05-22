@@ -69,7 +69,9 @@ def _normalize_subscribe_target(*, url: str = "", uri: str = "") -> str:
     raw_uri = str(uri or "").strip()
     if raw_uri:
         resolved = _resolve_rsshub_uri(raw_uri)
-        logger.debug("LLM 订阅工具解析 RSSHub 路由: uri=%s -> url=%s", raw_uri, resolved)
+        logger.debug(
+            "LLM 订阅工具解析 RSSHub 路由: uri=%s -> url=%s", raw_uri, resolved
+        )
         targets.append(resolved)
     return " ".join(targets)
 
