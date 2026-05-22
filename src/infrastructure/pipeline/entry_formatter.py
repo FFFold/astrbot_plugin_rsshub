@@ -128,8 +128,12 @@ class EntryTextFormatter:
             source = ""
 
         parts: list[str] = []
-        if link or source:
-            parts.append(f"via {link} | {source}" if source else f"via {link}")
+        if link and source:
+            parts.append(f"via {link} | {source}")
+        elif link:
+            parts.append(f"via {link}")
+        elif source:
+            parts.append(source)
 
         if options.display_author != -1 and author:
             if parts:

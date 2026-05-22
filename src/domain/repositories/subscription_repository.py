@@ -64,6 +64,28 @@ class SubscriptionRepository(Protocol):
         """
         ...
 
+    async def list_for_dashboard(
+        self,
+        *,
+        user_ids: list[str] | None = None,
+        feed_ids: list[int] | None = None,
+        sub_ids: list[int] | None = None,
+        keywords: list[str] | None = None,
+    ) -> list[Subscription]:
+        """
+        Dashboard 订阅列表筛选查询。
+
+        Args:
+            user_ids: 精确匹配用户 ID，任一命中即可
+            feed_ids: 精确匹配 Feed ID，任一命中即可
+            sub_ids: 精确匹配订阅 ID，任一命中即可
+            keywords: 标题/Feed/标签/用户 ID 模糊匹配关键词，任一命中即可
+
+        Returns:
+            订阅列表
+        """
+        ...
+
     async def get_active_by_feed_id(self, feed_id: int) -> list[Subscription]:
         """
         获取指定Feed的所有启用订阅

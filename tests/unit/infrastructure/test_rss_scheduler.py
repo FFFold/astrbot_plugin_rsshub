@@ -285,3 +285,18 @@ async def test_scheduler_skips_cleanup_when_database_not_initialized():
     await scheduler._cleanup_old_records()
 
     dispatcher.cleanup_old_records.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_cleanup_uses_configured_retention_days():
+    dispatcher = AsyncMock()
+    dispatcher.cleanup_old_records.return_value = 3
+    scheduler = RSSScheduler(
+        feed_polling_service=AsyncMock(),
+        notification_dispatcher=dispatcher,
+        history_retention_days=7,
+    )
+
+    await scheduler._cleanup_old_records()
+
+    dispatcher.cleanup_old_records.assert_awaited_once_with(days=7)

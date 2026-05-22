@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
+from ...domain.entities.content_types import LayoutFragment
 from ...infrastructure.utils import get_logger
 from .feed_polling_service import FeedPollingService
 from .html_parser import HTMLParser
@@ -39,6 +40,7 @@ class ParsedAgentXmlEntry:
     entry_guid: str
     media_urls: list[str]
     media_items: list[tuple[str, str]]
+    layout: list[LayoutFragment]
 
 
 def _validate_xml_input(xml: str) -> str:
@@ -175,6 +177,7 @@ class AgentXmlPushService:
             entry_guid=final_guid,
             media_urls=media_urls,
             media_items=normalized_media_items,
+            layout=list(parsed.layout),
         )
         if dry_run:
             return {
@@ -207,6 +210,7 @@ class AgentXmlPushService:
             feed_link=preview.feed_link,
             media_urls=preview.media_urls,
             media_items=preview.media_items,
+            layout=preview.layout,
             entry_guid=preview.entry_guid,
         )
         result["dry_run"] = False

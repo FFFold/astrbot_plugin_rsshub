@@ -53,7 +53,11 @@ class PushHistoryRepository(Protocol):
         ...
 
     async def get_all(
-        self, limit: int = 100, offset: int = 0, status: str | None = None
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> list[PushHistory]:
         """获取所有推送历史
 
@@ -61,6 +65,7 @@ class PushHistoryRepository(Protocol):
             limit: 限制数量
             offset: 偏移量
             status: 状态过滤（可选）
+            keywords: 关键词过滤（可选）
 
         Returns:
             推送历史列表
@@ -74,6 +79,7 @@ class PushHistoryRepository(Protocol):
         offset: int = 0,
         target_session: str | None = None,
         status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> list[PushHistory]:
         """获取用户的推送历史
 
@@ -83,6 +89,7 @@ class PushHistoryRepository(Protocol):
             offset: 偏移量
             target_session: 目标会话过滤（可选）
             status: 状态过滤（可选）
+            keywords: 关键词过滤（可选）
 
         Returns:
             推送历史列表
@@ -94,8 +101,26 @@ class PushHistoryRepository(Protocol):
         user_id: str,
         target_session: str | None = None,
         status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> int:
         """统计用户推送历史条数，可按目标会话和状态过滤。"""
+        ...
+
+    async def count_all(
+        self,
+        status: str | None = None,
+        keywords: list[str] | None = None,
+    ) -> int:
+        """统计全部推送历史条数，可按状态和关键词过滤。"""
+        ...
+
+    async def count_retryable_failures(self) -> int:
+        """统计仍可重试的失败记录数。
+
+        固定语义：
+        - status in ("failed", "retrying")
+        - retry_count < max_retries
+        """
         ...
 
     async def get_pending_for_retry(self, limit: int = 100) -> list[PushHistory]:
@@ -139,6 +164,17 @@ class PushHistoryRepository(Protocol):
 
         Returns:
             是否删除成功
+        """
+        ...
+
+    async def delete_many(self, history_ids: list[int]) -> int:
+        """批量删除推送历史。
+
+        Args:
+            history_ids: 要删除的推送历史 ID 列表
+
+        Returns:
+            实际删除的记录数量
         """
         ...
 

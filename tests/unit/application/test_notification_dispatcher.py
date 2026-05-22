@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,6 +24,7 @@ from astrbot_plugin_rsshub.src.application.services.session_push_queue import (
 from astrbot_plugin_rsshub.src.domain.entities.push_history import PushHistory
 from astrbot_plugin_rsshub.src.domain.entities.subscription import Subscription
 from astrbot_plugin_rsshub.src.domain.entities.user import User
+from astrbot_plugin_rsshub.src.infrastructure.config import ContentHandlerSettings
 
 
 class FakeSender:
@@ -57,6 +59,9 @@ class FakeProvider:
         self.prompts.append(kwargs)
         return FakeProviderResponse(self.completion_text)
 
+    def meta(self):
+        return SimpleNamespace(id="fake-provider")
+
 
 class FakeProviderContext:
     def __init__(self, provider: FakeProvider) -> None:
@@ -65,21 +70,55 @@ class FakeProviderContext:
     def get_using_provider(self, session_id=None):
         return self.provider
 
+    async def tool_loop_agent(self, **kwargs):
+        prompt = kwargs.get("prompt", "")
+        self.provider.prompts.append(
+            {
+                "prompt": prompt,
+                "system_prompt": kwargs.get("system_prompt", ""),
+                "tools": [
+                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
+                ],
+            }
+        )
+        return FakeProviderResponse(self.provider.completion_text)
+
+
+class FakeProviderSelectorContext:
+    def __init__(
+        self, *, default_provider: FakeProvider, selected_provider: FakeProvider
+    ):
+        self.default_provider = default_provider
+        self.selected_provider = selected_provider
+        self.requested_provider_ids = []
+        self.persona_manager = self
+
+    def get_using_provider(self, session_id=None):
+        return self.default_provider
+
+    def get_provider_by_id(self, provider_id):
+        self.requested_provider_ids.append(provider_id)
+        return self.selected_provider
+
+    def get_persona_v3_by_id(self, persona_id):
+        return {"name": persona_id, "prompt": "persona system prompt"}
+
+    async def tool_loop_agent(self, **kwargs):
+        self.selected_provider.prompts.append(
+            {
+                "prompt": kwargs.get("prompt", ""),
+                "system_prompt": kwargs.get("system_prompt", ""),
+                "tools": [
+                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
+                ],
+            }
+        )
+        return FakeProviderResponse(self.selected_provider.completion_text)
+
 
 def test_content_handler_runtime_resolves_handlers_mode_semantics():
     runtime = ContentHandlerRuntime()
-    user = User(
-        id="user-1",
-        handlers=[
-            {
-                "id": "builtin.xml_parse.default",
-                "type": "builtin",
-                "name": "xml_parse",
-                "status": 1,
-                "config": {},
-            }
-        ],
-    )
+    user = User(id="user-1")
     inherit_sub = Subscription(
         id=1,
         user_id="user-1",
@@ -130,7 +169,7 @@ def test_content_handler_runtime_resolves_handlers_mode_semantics():
     override = runtime.resolve_handlers(subscription=override_sub, user=user)
     disabled = runtime.resolve_handlers(subscription=disabled_sub, user=user)
 
-    assert [spec.name for spec in inherit] == ["xml_parse"]
+    assert inherit == []
     assert [spec.name for spec in override] == ["ai_transform"]
     assert disabled == []
 
@@ -178,6 +217,146 @@ async def test_ai_filter_invalid_json_allows_with_trace():
 
 
 @pytest.mark.asyncio
+async def test_ai_handlers_use_global_provider_and_persona_system_prompt():
+    default_provider = FakeProvider('{"allow": false, "reason": "wrong provider"}')
+    selected_provider = FakeProvider('{"allow": true, "reason": "ok"}')
+    context = FakeProviderSelectorContext(
+        default_provider=default_provider,
+        selected_provider=selected_provider,
+    )
+    runtime = ContentHandlerRuntime(
+        context,
+        settings=ContentHandlerSettings(
+            ai_provider_id="provider-1",
+            ai_persona_id="persona-1",
+        ),
+    )
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_filter.default",
+                "type": "builtin",
+                "name": "ai_filter",
+                "status": 1,
+                "config": {"prompt": "allow useful entries"},
+            }
+        ],
+    )
+
+    result = await runtime.process_entry_with_trace(
+        subscription=sub,
+        user=None,
+        entry=EntryContentContext(
+            title="title",
+            summary="summary",
+            content="content",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item>raw</item>",
+        ),
+        session_id="session-1",
+    )
+
+    assert result.allow is True
+    assert context.requested_provider_ids == ["provider-1"]
+    assert default_provider.prompts == []
+    assert selected_provider.prompts[0]["system_prompt"] == "persona system prompt"
+
+
+@pytest.mark.asyncio
+async def test_ai_transform_plaintext_uses_agent_and_updates_text_fields():
+    provider = FakeProvider('{"title":"新标题","summary":"新摘要","content":"新正文"}')
+    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_transform.default",
+                "type": "builtin",
+                "name": "ai_transform",
+                "status": 1,
+                "config": {"prompt": "压缩成简短摘要", "scope": "plaintext"},
+            }
+        ],
+    )
+
+    result = await runtime.process_entry_with_trace(
+        subscription=sub,
+        user=None,
+        entry=EntryContentContext(
+            title="原标题",
+            summary="原摘要",
+            content="原正文",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item><title>原标题</title></item>",
+        ),
+    )
+
+    assert result.entry.title == "新标题"
+    assert result.entry.summary == "新摘要"
+    assert result.entry.content == "新正文"
+    assert result.trace[0]["scope"] == "plaintext"
+    assert result.trace[0]["fallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_ai_transform_xml_reparses_raw_xml_and_updates_entry():
+    provider = FakeProvider(
+        '{"raw_xml":"<item><title>新标题</title><link>https://example.com/new</link><description><![CDATA[<p>新的正文</p><img src=\\"https://example.com/image.jpg\\"></p>]]></description><author>new-author</author></item>"}'
+    )
+    runtime = ContentHandlerRuntime(FakeProviderContext(provider))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        handlers_mode="override",
+        handlers=[
+            {
+                "id": "builtin.ai_transform.default",
+                "type": "builtin",
+                "name": "ai_transform",
+                "status": 1,
+                "config": {"prompt": "清理广告并重写 XML", "scope": "xml"},
+            }
+        ],
+    )
+
+    result = await runtime.process_entry_with_trace(
+        subscription=sub,
+        user=None,
+        entry=EntryContentContext(
+            title="原标题",
+            summary="原摘要",
+            content="原正文",
+            link="https://example.com/entry",
+            author="author",
+            feed_title="Feed",
+            feed_link="https://example.com/feed.xml",
+            raw_xml="<item><title>原标题</title></item>",
+        ),
+    )
+
+    assert result.entry.title == "新标题"
+    assert result.entry.link == "https://example.com/new"
+    assert "新的正文" in result.entry.content
+    assert "https://example.com/image.jpg" in result.entry.media_urls
+    assert result.entry.raw_xml.startswith("<item>")
+    assert result.trace[0]["scope"] == "xml"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_sends_via_injected_sender_provider():
     sender = FakeSender()
     sub = Subscription(
@@ -208,7 +387,7 @@ async def test_dispatch_sends_via_injected_sender_provider():
         entry_guid="guid-1",
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     assert len(sender.requests) == 1
     request, context = sender.requests[0]
     assert request.session_id == "telegram:Group:1"
@@ -248,7 +427,7 @@ async def test_dispatch_guard_skips_already_successful_entry_guid():
         entry_guid="guid-1",
     )
 
-    assert stats == {"success": 0, "failed": 0, "pending": 0}
+    assert stats == {"success": 0, "failed": 0, "pending": 0, "skipped": 1}
     assert sender.requests == []
     history_repo.save.assert_not_awaited()
 
@@ -294,7 +473,7 @@ async def test_dispatch_can_limit_to_selected_subscription_ids():
         subscription_ids=[2],
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     assert len(sender.requests) == 1
     assert sender.requests[0][0].session_id == "telegram:Group:2"
 
@@ -331,6 +510,11 @@ async def test_dispatch_uses_session_queue_for_same_session():
         push_history_repo=history_repo,
         sender_provider=FakeSenderProvider(sender),
         push_job_queue=queue,
+        basic_settings=SimpleNamespace(
+            failed_queue_capacity=50,
+            failed_queue_max_retries=3,
+            deduplicate_multi_bot=False,
+        ),
     )
 
     stats = await dispatcher.dispatch_to_feed_subscribers(
@@ -341,7 +525,7 @@ async def test_dispatch_uses_session_queue_for_same_session():
         entry_guid="guid-1",
     )
 
-    assert stats == {"success": 2, "failed": 0, "pending": 0}
+    assert stats == {"success": 2, "failed": 0, "pending": 0, "skipped": 0}
     assert len(sender.requests) == 2
     assert queue.get_current_job("telegram:Group:1") is None
 
@@ -538,7 +722,7 @@ async def test_dispatch_persists_media_urls_and_appends_links_on_failure():
         media_urls=[media_url],
     )
 
-    assert stats == {"success": 0, "failed": 0, "pending": 1}
+    assert stats == {"success": 0, "failed": 0, "pending": 1, "skipped": 0}
     assert history_repo.save.await_count == 2
     first_saved = history_repo.save.await_args_list[0].args[0]
     second_saved = history_repo.save.await_args_list[1].args[0]
@@ -588,7 +772,7 @@ async def test_dispatch_feed_entry_persists_raw_xml_in_history():
         ),
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
     assert first_saved.raw_xml == "<item><title>title</title></item>"
 
@@ -649,7 +833,7 @@ async def test_dispatch_with_raw_entry_keeps_cleaned_content_when_not_processed(
         ],
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
     assert first_saved.content == clean_content
     assert first_saved.raw_xml == "<item><description>raw</description></item>"
@@ -705,7 +889,7 @@ async def test_dispatch_formats_raw_entry_with_effective_options_from_subscripti
         media_items=[("image", "https://example.com/a.jpg")],
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
     assert first_saved.content == "a..."
     assert first_saved.media_urls is None
@@ -754,13 +938,13 @@ async def test_dispatch_inherits_effective_options_from_user():
         ),
     )
 
-    assert stats == {"success": 0, "failed": 0, "pending": 0}
+    assert stats == {"success": 0, "failed": 0, "pending": 0, "skipped": 1}
     assert sender.requests == []
     history_repo.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_dispatch_uses_handler_output_when_raw_entry_is_processed():
+async def test_dispatch_strips_removed_xml_parse_handler_and_keeps_clean_content():
     sender = FakeSender()
     sub = Subscription(
         id=1,
@@ -809,10 +993,11 @@ async def test_dispatch_uses_handler_output_when_raw_entry_is_processed():
         ),
     )
 
-    assert stats == {"success": 1, "failed": 0, "pending": 0}
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 0}
     first_saved = history_repo.save.await_args_list[0].args[0]
     assert "Before\nAfter" in first_saved.content
-    assert first_saved.content != "clean caller content"
+    assert "<br" not in first_saved.content
+    assert "clean caller content" not in first_saved.content
     request, _context = sender.requests[0]
     assert request.message == first_saved.content
 
@@ -868,14 +1053,199 @@ async def test_dispatch_ai_filter_false_writes_skipped_history_without_send():
         ),
     )
 
-    assert stats == {"success": 0, "failed": 0, "pending": 0}
+    assert stats == {"success": 0, "failed": 0, "pending": 0, "skipped": 1}
     assert sender.requests == []
     history_repo.save.assert_awaited_once()
     saved = history_repo.save.await_args.args[0]
     assert saved.status == "skipped"
     assert saved.max_retries == 0
+    assert saved.fail_reason == "广告"
     assert saved.handler_trace[0]["allow"] is False
     assert saved.handler_trace[0]["reason"] == "广告"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_failure_uses_configured_retry_limit_and_capacity():
+    sender = FakeSender(SendResult(ok=False, detail="forward failed"))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.count_retryable_failures = AsyncMock(return_value=1)
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        basic_settings=SimpleNamespace(
+            failed_queue_capacity=2,
+            failed_queue_max_retries=7,
+            deduplicate_multi_bot=True,
+        ),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+    )
+
+    assert stats == {"success": 0, "failed": 0, "pending": 1, "skipped": 0}
+    first_saved = history_repo.save.await_args_list[0].args[0]
+    second_saved = history_repo.save.await_args_list[1].args[0]
+    assert first_saved.max_retries == 7
+    assert second_saved.max_retries == 7
+
+
+@pytest.mark.asyncio
+async def test_dispatch_failure_disables_retry_when_capacity_full():
+    sender = FakeSender(SendResult(ok=False, detail="forward failed"))
+    sub = Subscription(
+        id=1,
+        user_id="user-1",
+        feed_id=10,
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+    )
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = [sub]
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.count_retryable_failures = AsyncMock(return_value=2)
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        basic_settings=SimpleNamespace(
+            failed_queue_capacity=2,
+            failed_queue_max_retries=7,
+            deduplicate_multi_bot=True,
+        ),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+    )
+
+    assert stats == {"success": 0, "failed": 1, "pending": 0, "skipped": 0}
+    second_saved = history_repo.save.await_args_list[1].args[0]
+    assert second_saved.max_retries == 0
+
+
+@pytest.mark.asyncio
+async def test_dispatch_same_session_equivalent_payload_deduplicates_to_smallest_sub_id():
+    sender = FakeSender()
+    subs = [
+        Subscription(
+            id=2,
+            user_id="user-2",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+        Subscription(
+            id=1,
+            user_id="user-1",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+        ),
+    ]
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = subs
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        basic_settings=SimpleNamespace(
+            failed_queue_capacity=50,
+            failed_queue_max_retries=3,
+            deduplicate_multi_bot=True,
+        ),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="same-content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+        media_urls=["https://example.com/a.jpg"],
+    )
+
+    assert stats == {"success": 1, "failed": 0, "pending": 0, "skipped": 1}
+    assert len(sender.requests) == 1
+    saved_histories = [call.args[0] for call in history_repo.save.await_args_list]
+    skipped = [item for item in saved_histories if item.status == "skipped"]
+    assert len(skipped) == 1
+    assert skipped[0].sub_id == 2
+    assert skipped[0].fail_reason == "multi-bot dedup: reused sub_id=1"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_same_session_different_payload_does_not_deduplicate():
+    sender = FakeSender()
+    subs = [
+        Subscription(
+            id=1,
+            user_id="user-1",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+            send_mode=0,
+        ),
+        Subscription(
+            id=2,
+            user_id="user-2",
+            feed_id=10,
+            platform_name="telegram",
+            target_session="telegram:Group:1",
+            send_mode=-1,
+        ),
+    ]
+    sub_repo = AsyncMock()
+    sub_repo.get_active_by_feed_id.return_value = subs
+    history_repo = AsyncMock()
+    history_repo.exists_success_by_scope_and_guid.return_value = False
+    history_repo.save.side_effect = lambda history: history
+
+    dispatcher = NotificationDispatcher(
+        subscription_repo=sub_repo,
+        push_history_repo=history_repo,
+        sender_provider=FakeSenderProvider(sender),
+        basic_settings=SimpleNamespace(
+            failed_queue_capacity=50,
+            failed_queue_max_retries=3,
+            deduplicate_multi_bot=True,
+        ),
+    )
+
+    stats = await dispatcher.dispatch_to_feed_subscribers(
+        feed_id=10,
+        content="same-content",
+        entry_title="title",
+        entry_link="https://example.com/entry",
+    )
+
+    assert stats == {"success": 2, "failed": 0, "pending": 0, "skipped": 0}
+    assert len(sender.requests) == 2
 
 
 @pytest.mark.asyncio

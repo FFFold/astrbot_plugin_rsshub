@@ -7,25 +7,19 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-HANDLER_STATUS_INHERIT = -100
-HANDLER_STATUS_DISABLED = 0
-HANDLER_STATUS_ENABLED = 1
-SUPPORTED_HANDLER_TYPES = {"builtin", "external"}
-BUILTIN_HANDLER_DEFAULT_STATUS = {
-    "xml_parse": True,
-    "ai_filter": True,
-    "ai_transform": True,
-}
-SUPPORTED_HANDLER_FIELD_TYPES = {
-    "string",
-    "text",
-    "bool",
-    "int",
-    "float",
-    "select",
-    "list[string]",
-    "json",
-}
+from ...shared.constants import (
+    AiFilterInputScope,
+    AiTransformScope,
+    HandlerFieldType,
+    HandlerStatus,
+    HandlerType,
+)
+
+HANDLER_STATUS_INHERIT = int(HandlerStatus.INHERIT)
+HANDLER_STATUS_DISABLED = int(HandlerStatus.DISABLED)
+HANDLER_STATUS_ENABLED = int(HandlerStatus.ENABLED)
+SUPPORTED_HANDLER_TYPES = {item.value for item in HandlerType}
+SUPPORTED_HANDLER_FIELD_TYPES = {item.value for item in HandlerFieldType}
 
 
 class HandlerConfigField(BaseModel):
@@ -47,9 +41,9 @@ class HandlerConfigField(BaseModel):
     def normalized(self) -> HandlerConfigField:
         field_type = str(self.type or "").strip().lower()
         if field_type not in SUPPORTED_HANDLER_FIELD_TYPES:
-            field_type = "json"
+            field_type = HandlerFieldType.JSON.value
         options = None
-        if field_type == "select":
+        if field_type == HandlerFieldType.SELECT.value:
             options = [
                 str(item).strip() for item in (self.options or []) if str(item).strip()
             ]
@@ -91,7 +85,10 @@ class HandlerMetadata(BaseModel):
     def normalized(self) -> HandlerMetadata:
         return HandlerMetadata(
             name=str(self.name or "").strip(),
-            type=str(self.type or "builtin").strip().lower() or "builtin",
+            type=(
+                str(self.type or HandlerType.BUILTIN.value).strip().lower()
+                or HandlerType.BUILTIN.value
+            ),
             title=str(self.title or "").strip(),
             description=str(self.description or "").strip(),
             default_enabled=bool(self.default_enabled),
@@ -102,13 +99,6 @@ class HandlerMetadata(BaseModel):
 
 
 BUILTIN_HANDLER_REGISTRY: dict[str, HandlerMetadata] = {
-    "xml_parse": HandlerMetadata(
-        name="xml_parse",
-        title="XML/HTML 清洗",
-        description="解析 RSS 条目中的 HTML/XML 片段，提取纯文本并保留既有媒体解析结果。",
-        default_enabled=True,
-        config_schema=[],
-    ),
     "ai_filter": HandlerMetadata(
         name="ai_filter",
         title="AI 过滤",
@@ -128,8 +118,8 @@ BUILTIN_HANDLER_REGISTRY: dict[str, HandlerMetadata] = {
                 type="select",
                 label="输入范围",
                 description="text 使用清洗文本，raw_xml 使用原始 XML，both 同时使用。",
-                default="text",
-                options=["text", "raw_xml", "both"],
+                default=AiFilterInputScope.TEXT.value,
+                options=[item.value for item in AiFilterInputScope],
             ),
             HandlerConfigField(
                 key="reason_max_length",
@@ -143,7 +133,7 @@ BUILTIN_HANDLER_REGISTRY: dict[str, HandlerMetadata] = {
     "ai_transform": HandlerMetadata(
         name="ai_transform",
         title="AI 改写",
-        description="使用 AstrBot 当前 Provider 按提示改写标题、摘要或正文，只保存提示词不保存 API key。",
+        description="使用 AstrBot Agent 按提示改写文本，或在 xml scope 下改写完整 RSS item/entry XML。",
         default_enabled=True,
         config_schema=[
             HandlerConfigField(
@@ -153,7 +143,16 @@ BUILTIN_HANDLER_REGISTRY: dict[str, HandlerMetadata] = {
                 description="例如总结为三条要点、清理广告、改写成中文摘要。",
                 required=True,
                 default="",
-            )
+            ),
+            HandlerConfigField(
+                key="scope",
+                type="select",
+                label="改写范围",
+                description="plaintext 改写 title/summary/content；xml 改写完整 raw_xml 并重新解析。",
+                required=True,
+                default=AiTransformScope.PLAINTEXT.value,
+                options=[item.value for item in AiTransformScope],
+            ),
         ],
     ),
 }
@@ -163,7 +162,7 @@ class HandlerSpec(BaseModel):
     """Declarative content handler item."""
 
     id: str = Field(..., min_length=1, max_length=255, description="Handler 唯一标识")
-    type: str = Field(default="builtin", description="Handler 类型")
+    type: str = Field(default=HandlerType.BUILTIN.value, description="Handler 类型")
     name: str = Field(..., min_length=1, max_length=64, description="Handler 名称")
     status: int = Field(
         default=HANDLER_STATUS_INHERIT,
@@ -173,9 +172,9 @@ class HandlerSpec(BaseModel):
 
     def normalized(self) -> HandlerSpec:
         """Return a normalized copy."""
-        handler_type = str(self.type or "").strip().lower() or "builtin"
+        handler_type = str(self.type or "").strip().lower() or HandlerType.BUILTIN.value
         if handler_type not in SUPPORTED_HANDLER_TYPES:
-            handler_type = "external"
+            handler_type = HandlerType.EXTERNAL.value
 
         status = self.status
         if status not in {
@@ -247,6 +246,10 @@ def normalize_handler_config(name: str, value: Any) -> dict[str, Any]:
         if raw_value is None and not field.required:
             continue
         normalized[field.key] = _coerce_handler_config_value(field, raw_value)
+    if str(name or "").strip() == "ai_transform":
+        normalized.setdefault("scope", AiTransformScope.PLAINTEXT.value)
+    if str(name or "").strip() == "ai_filter":
+        normalized.setdefault("input_scope", AiFilterInputScope.TEXT.value)
     return normalized
 
 
@@ -255,12 +258,12 @@ def _coerce_handler_config_value(
     value: Any,
 ) -> Any:
     field_type = field.type
-    if field_type in {"string", "text"}:
+    if field_type in {HandlerFieldType.STRING.value, HandlerFieldType.TEXT.value}:
         normalized = str(value or "").strip()
         if field.required and not normalized:
             raise ValueError(f"{field.key} 不能为空")
         return normalized
-    if field_type == "bool":
+    if field_type == HandlerFieldType.BOOL.value:
         if isinstance(value, bool):
             return value
         if isinstance(value, (int, float)):
@@ -271,23 +274,23 @@ def _coerce_handler_config_value(
         if text in {"0", "false", "no", "off", "禁用", "否", ""}:
             return False
         raise ValueError(f"{field.key} 必须是布尔值")
-    if field_type == "int":
+    if field_type == HandlerFieldType.INT.value:
         try:
             return int(value)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{field.key} 必须是整数") from exc
-    if field_type == "float":
+    if field_type == HandlerFieldType.FLOAT.value:
         try:
             return float(value)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"{field.key} 必须是数字") from exc
-    if field_type == "select":
+    if field_type == HandlerFieldType.SELECT.value:
         normalized = str(value or field.default or "").strip()
         options = field.options or []
         if options and normalized not in options:
             raise ValueError(f"{field.key} 必须是以下之一: {', '.join(options)}")
         return normalized
-    if field_type == "list[string]":
+    if field_type == HandlerFieldType.LIST_STRING.value:
         if isinstance(value, str):
             try:
                 parsed = json.loads(value)
@@ -334,6 +337,8 @@ def normalize_handlers(value: Any) -> list[HandlerSpec]:
             continue
         if not spec.id or not spec.name or spec.id in seen_ids:
             continue
+        if spec.type == HandlerType.BUILTIN.value and spec.name == "xml_parse":
+            continue
         seen_ids.add(spec.id)
         normalized.append(spec)
     return normalized
@@ -360,6 +365,8 @@ def validate_handlers(value: Any) -> list[HandlerSpec]:
         spec = HandlerSpec.model_validate(item).normalized()
         if not spec.id or not spec.name:
             raise ValueError(f"handlers[{index}] 缺少 id/name")
+        if spec.type == HandlerType.BUILTIN.value and spec.name == "xml_parse":
+            continue
         if spec.id in seen_ids:
             raise ValueError(f"重复 handler id: {spec.id}")
         seen_ids.add(spec.id)
@@ -399,9 +406,7 @@ def parse_handlers_input(value: Any) -> list[dict[str, Any]]:
 def handler_default_enabled(name: str) -> bool:
     """Return the default enabled state for a builtin handler."""
     metadata = BUILTIN_HANDLER_REGISTRY.get(str(name or "").strip())
-    if metadata is not None:
-        return metadata.default_enabled
-    return BUILTIN_HANDLER_DEFAULT_STATUS.get(str(name or "").strip(), False)
+    return bool(metadata.default_enabled) if metadata is not None else False
 
 
 def is_handler_enabled(spec: HandlerSpec | dict[str, Any]) -> bool:
@@ -426,9 +431,12 @@ def build_ai_transform_handler(prompt: str) -> list[dict[str, Any]]:
     return [
         {
             "id": "builtin.ai_transform.default",
-            "type": "builtin",
+            "type": HandlerType.BUILTIN.value,
             "name": "ai_transform",
             "status": HANDLER_STATUS_ENABLED,
-            "config": {"prompt": normalized_prompt},
+            "config": {
+                "prompt": normalized_prompt,
+                "scope": AiTransformScope.PLAINTEXT.value,
+            },
         }
     ]

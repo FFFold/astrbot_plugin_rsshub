@@ -46,7 +46,6 @@ async def upgrade(conn) -> None:
                 interval INTEGER NOT NULL DEFAULT -100,
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
-                handlers_mode TEXT NOT NULL DEFAULT 'inherit',
                 handlers TEXT NOT NULL DEFAULT '[]',
                 length_limit INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
@@ -100,6 +99,7 @@ async def upgrade(conn) -> None:
                 next_check_time DATETIME,
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
+                handlers_mode TEXT NOT NULL DEFAULT 'inherit',
                 handlers TEXT NOT NULL DEFAULT '[]',
                 length_limit INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
@@ -211,31 +211,5 @@ async def upgrade(conn) -> None:
             """
         )
         logger.info("迁移 V1: 创建 rsshub_migration_record 表")
-
-    # 兼容性处理：将旧版迁移记录转换为新版整数版本
-    result = await conn.exec_driver_sql(
-        "SELECT version FROM rsshub_migration_record WHERE version LIKE 'v%'"
-    )
-    old_versions = [row[0] for row in result.fetchall()]
-    if old_versions:
-        logger.info("检测到旧版迁移记录: %s，转换为新版版本号", old_versions)
-        # 旧版 v1.0.0 -> 新 V1, v1.1.0 -> V2, v1.1.1 -> V3, v2.0.0 -> V4
-        mapping = {
-            "v1.0.0": "1",
-            "v1.1.0": "2",
-            "v1.1.1": "3",
-            "v2.0.0": "4",
-        }
-        for old_v in old_versions:
-            new_v = mapping.get(old_v)
-            if new_v:
-                await conn.exec_driver_sql(
-                    """
-                    INSERT OR REPLACE INTO rsshub_migration_record (version, applied_at, description)
-                    VALUES (?, datetime('now'), ?)
-                    """,
-                    (new_v, f"兼容旧版迁移: {old_v}"),
-                )
-                logger.info("已将 %s 映射为新版版本号 %s", old_v, new_v)
 
     logger.info("迁移 V1 完成: 初始化数据库表")

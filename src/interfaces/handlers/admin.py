@@ -33,5 +33,6 @@ async def handle_test_sub(event: AstrMessageEvent, sub_id: int, deps: dict) -> d
         platform_name=event.get_platform_name(),
         start=start,
         end=end,
+        event=event,
     )
     return {"plain": result.message}

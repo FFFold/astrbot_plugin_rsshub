@@ -4,7 +4,6 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-
 from astrbot_plugin_rsshub.src.application.services.agent_xml_push_service import (
     AgentXmlPushService,
     AgentXmlValidationError,
@@ -112,6 +111,31 @@ async def test_agent_xml_push_service_dispatches_with_explicit_guid():
     assert call["source_key"] == "agent:test"
     assert call["raw_xml"] == "<entry><p>World</p></entry>"
     assert call["target"].target_session == "telegram:Group:1"
+
+
+@pytest.mark.asyncio
+async def test_agent_xml_push_service_omits_broken_via_suffix_when_tail_fields_missing():
+    dispatcher = AsyncMock()
+    service = AgentXmlPushService(notification_dispatcher=dispatcher)
+
+    result = await service.push_entry(
+        user_id="user-1",
+        platform_name="telegram",
+        target_session="telegram:Group:1",
+        source_key="agent:test",
+        title="Hello",
+        xml="<entry><p>Hello</p></entry>",
+        link="",
+        author="",
+        feed_title="",
+        dry_run=True,
+    )
+
+    assert result["ok"] is True
+    preview = result["preview"]
+    assert preview["content"] == "Hello"
+    assert "via" not in preview["content"]
+    assert "|" not in preview["content"]
 
 
 @pytest.mark.asyncio

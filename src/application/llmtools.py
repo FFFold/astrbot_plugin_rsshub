@@ -26,8 +26,11 @@ if TYPE_CHECKING:
 
 from ..domain.entities.handlers import list_handler_registry
 from ..infrastructure.config import get_config
+from ..infrastructure.utils import get_logger
 from ..interfaces import handlers as h
 from .services.agent_xml_push_service import AgentXmlValidationError
+
+logger = get_logger()
 
 
 class LLMToolDeps(TypedDict):
@@ -65,7 +68,11 @@ def _normalize_subscribe_target(*, url: str = "", uri: str = "") -> str:
     targets = [part.strip() for part in str(url or "").split() if part.strip()]
     raw_uri = str(uri or "").strip()
     if raw_uri:
-        targets.append(_resolve_rsshub_uri(raw_uri))
+        resolved = _resolve_rsshub_uri(raw_uri)
+        logger.debug(
+            "LLM 订阅工具解析 RSSHub 路由: uri=%s -> url=%s", raw_uri, resolved
+        )
+        targets.append(resolved)
     return " ".join(targets)
 
 
@@ -266,7 +273,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
                     "scope": "subscription",
                     "sub_id": sub.id,
                     "handlers_mode": sub.handlers_mode,
-                    "handlers": sub.handlers,
+                    "handlers": sub.get_handlers(),
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -568,7 +575,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         ),
         _tool(
             name="rss_list_push_history",
-            description="查看当前会话推送历史，返回 JSON 列表；handler_trace 会摘要展示 XML 清洗、AI 过滤、AI 改写执行结果。",
+            description="查看当前会话推送历史，返回 JSON 列表；handler_trace 会摘要展示 AI 过滤、AI 改写执行结果。基础 HTML/XML 清洗属于内建推送链。",
             parameters={
                 "type": "object",
                 "properties": {
@@ -584,14 +591,14 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         ),
         _tool(
             name="rss_list_handlers",
-            description="列出可用内容 handlers 及 schema。用于配置 XML/HTML 清洗(xml_parse)、AI 过滤(ai_filter)、AI 改写(ai_transform)。",
+            description="列出可用内容 handlers 及 schema。基础 HTML/XML 清洗属于内建推送链；当前只配置 AI 过滤(ai_filter) 与 AI 改写(ai_transform)。",
             parameters={"type": "object", "properties": {}},
             handler=rss_list_handlers,
             plugin_context=plugin_context,
         ),
         _tool(
             name="rss_get_handlers",
-            description="读取当前用户或某个订阅的 handlers 配置；先用它查看现状，再决定是否设置过滤、改写或 XML 清洗。",
+            description="读取当前用户或某个订阅的 handlers 配置；先用它查看现状，再决定是否设置 AI 过滤或 AI 改写。",
             parameters={
                 "type": "object",
                 "properties": {
@@ -611,14 +618,14 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         ),
         _tool(
             name="rss_set_subscription_handlers",
-            description="设置订阅级 handlers。handlers_json 必须是数组 JSON；可配置 xml_parse 清洗 HTML/XML、ai_filter 按 AstrBot 当前 Provider 过滤、ai_transform 改写摘要。外部 handler 可保存但运行时会跳过。",
+            description="设置订阅级 handlers。handlers_json 必须是数组 JSON；基础 HTML/XML 清洗属于内建推送链，可配置 ai_filter 按 AstrBot 当前 Provider 过滤、ai_transform(scope=plaintext|xml) 通过 Agent 改写文本或整段 XML。外部 handler 可保存但运行时会跳过。",
             parameters={
                 "type": "object",
                 "properties": {
                     "sub_id": {"type": "string", "description": "订阅 ID"},
                     "handlers_json": {
                         "type": "string",
-                        "description": "handlers JSON 数组，例如包含 name=ai_filter 且 config.prompt/input_scope",
+                        "description": "handlers JSON 数组，例如 ai_filter 使用 config.prompt/input_scope，ai_transform 使用 config.prompt/scope",
                     },
                     "mode": {
                         "type": "string",
@@ -632,7 +639,7 @@ def build_llm_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionTool]:
         ),
         _tool(
             name="rss_set_user_handlers",
-            description="设置用户默认 handlers。适合给用户所有继承订阅添加 XML 清洗、AI 过滤或 AI 改写；只保存 prompt 等配置，不保存 API key。",
+            description="设置用户默认 handlers。适合给用户所有继承订阅添加 AI 过滤或 AI 改写；ai_transform 支持 scope=plaintext|xml，只保存 prompt 等配置，不保存 API key。",
             parameters={
                 "type": "object",
                 "properties": {

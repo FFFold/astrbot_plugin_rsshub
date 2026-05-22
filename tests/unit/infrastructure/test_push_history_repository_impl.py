@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from astrbot_plugin_rsshub.src.domain.entities.push_history import (
     MAX_FAIL_REASON_LENGTH,
+)
+from astrbot_plugin_rsshub.src.infrastructure.persistence import (
+    push_history_repository_impl,
+)
+from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
+    RSSHubBaseModel,
 )
 from astrbot_plugin_rsshub.src.infrastructure.persistence.models import PushHistoryORM
 from astrbot_plugin_rsshub.src.infrastructure.persistence.push_history_repository_impl import (
     PushHistoryRepositoryImpl,
 )
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 def test_to_entity_truncates_overlong_legacy_fail_reason_without_crashing():
@@ -138,3 +148,168 @@ def test_to_entity_preserves_agent_source_fields():
     assert entity.sub_id is None
     assert entity.feed_id is None
     assert entity.raw_xml == "<entry><p>Hello</p></entry>"
+
+
+@pytest.mark.asyncio
+async def test_delete_many_ignores_invalid_ids_and_returns_rowcount(monkeypatch):
+    repo = PushHistoryRepositoryImpl()
+    session = AsyncMock()
+    execute_result = MagicMock()
+    execute_result.rowcount = 2
+    session.execute = AsyncMock(return_value=execute_result)
+
+    session_manager = AsyncMock()
+    session_manager.__aenter__.return_value = session
+    session_manager.__aexit__.return_value = False
+
+    db = MagicMock()
+    db.get_session.return_value = session_manager
+    monkeypatch.setattr(push_history_repository_impl, "get_database", lambda: db)
+
+    removed = await repo.delete_many([3, 0, -1, 5, 3])
+
+    assert removed == 2
+    session.execute.assert_awaited_once()
+    session.commit.assert_awaited_once()
+
+
+class _TestDatabase:
+    def __init__(self, session_maker):
+        self._session_maker = session_maker
+
+    def get_session(self):
+        return self._session_maker()
+
+
+async def _build_test_database(
+    db_path: Path, rows: list[PushHistoryORM] | None = None
+) -> _TestDatabase:
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(RSSHubBaseModel.metadata.create_all)
+
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_maker() as session:
+        if rows:
+            session.add_all(rows)
+        await session.commit()
+
+    return _TestDatabase(session_maker)
+
+
+def _build_history_row(
+    *,
+    user_id: str,
+    status: str,
+    retry_count: int,
+    max_retries: int,
+) -> PushHistoryORM:
+    now = datetime.now(timezone.utc)
+    return PushHistoryORM(
+        user_id=user_id,
+        content=status,
+        entry_title=status,
+        entry_link=f"https://example.com/{user_id}",
+        feed_title="feed",
+        feed_link="https://example.com/feed",
+        status=status,
+        retry_count=retry_count,
+        max_retries=max_retries,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_count_retryable_failures_counts_failed_and_retrying_only(
+    monkeypatch, tmp_path
+):
+    repo = PushHistoryRepositoryImpl()
+    db = await _build_test_database(
+        tmp_path / "push_history_retryable.db",
+        [
+            _build_history_row(
+                user_id="user-failed",
+                status="failed",
+                retry_count=0,
+                max_retries=3,
+            ),
+            _build_history_row(
+                user_id="user-retrying",
+                status="retrying",
+                retry_count=1,
+                max_retries=3,
+            ),
+            _build_history_row(
+                user_id="user-zero",
+                status="failed",
+                retry_count=0,
+                max_retries=0,
+            ),
+            _build_history_row(
+                user_id="user-exhausted",
+                status="retrying",
+                retry_count=3,
+                max_retries=3,
+            ),
+            _build_history_row(
+                user_id="user-success",
+                status="success",
+                retry_count=0,
+                max_retries=3,
+            ),
+        ],
+    )
+    monkeypatch.setattr(push_history_repository_impl, "get_database", lambda: db)
+
+    count = await repo.count_retryable_failures()
+
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_count_retryable_failures_excludes_zero_max_retries_and_exhausted_records(
+    monkeypatch, tmp_path
+):
+    repo = PushHistoryRepositoryImpl()
+    db = await _build_test_database(
+        tmp_path / "push_history_retryable_excluded.db",
+        [
+            _build_history_row(
+                user_id="user-zero",
+                status="failed",
+                retry_count=0,
+                max_retries=0,
+            ),
+            _build_history_row(
+                user_id="user-exhausted",
+                status="retrying",
+                retry_count=2,
+                max_retries=2,
+            ),
+        ],
+    )
+    monkeypatch.setattr(push_history_repository_impl, "get_database", lambda: db)
+
+    count = await repo.count_retryable_failures()
+
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_count_retryable_alias_matches_primary_method(monkeypatch, tmp_path):
+    repo = PushHistoryRepositoryImpl()
+    db = await _build_test_database(
+        tmp_path / "push_history_retryable_alias.db",
+        [
+            _build_history_row(
+                user_id="user-failed",
+                status="failed",
+                retry_count=0,
+                max_retries=1,
+            ),
+        ],
+    )
+    monkeypatch.setattr(push_history_repository_impl, "get_database", lambda: db)
+
+    assert await repo.count_retryable() == 1

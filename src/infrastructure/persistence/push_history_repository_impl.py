@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func
+from sqlalchemy import String, cast, delete, func, or_
 from sqlmodel import asc, desc, select
 
 from ...domain.entities.push_history import (
@@ -22,6 +22,49 @@ from .database import get_database
 from .models import PushHistoryORM
 
 logger = get_logger()
+
+
+def _apply_history_keyword_filters(stmt, keywords: list[str] | None):
+    if not keywords:
+        return stmt
+
+    clauses = []
+    for keyword in keywords:
+        term = str(keyword or "").strip()
+        if not term:
+            continue
+        like = f"%{term}%"
+        term_clauses = [
+            PushHistoryORM.user_id.ilike(like),
+            PushHistoryORM.source_type.ilike(like),
+            PushHistoryORM.source_key.ilike(like),
+            PushHistoryORM.content.ilike(like),
+            PushHistoryORM.entry_title.ilike(like),
+            PushHistoryORM.entry_link.ilike(like),
+            PushHistoryORM.entry_guid.ilike(like),
+            PushHistoryORM.feed_title.ilike(like),
+            PushHistoryORM.feed_link.ilike(like),
+            PushHistoryORM.platform_name.ilike(like),
+            PushHistoryORM.target_session.ilike(like),
+            PushHistoryORM.fail_reason.ilike(like),
+        ]
+        if term.isdigit():
+            value = int(term)
+            term_clauses.extend(
+                [
+                    PushHistoryORM.id == value,
+                    PushHistoryORM.sub_id == value,
+                    PushHistoryORM.feed_id == value,
+                    cast(PushHistoryORM.id, String).ilike(like),
+                    cast(PushHistoryORM.sub_id, String).ilike(like),
+                    cast(PushHistoryORM.feed_id, String).ilike(like),
+                ]
+            )
+        clauses.append(or_(*term_clauses))
+
+    if not clauses:
+        return stmt
+    return stmt.where(or_(*clauses))
 
 
 class PushHistoryRepositoryImpl:
@@ -92,6 +135,25 @@ class PushHistoryRepositoryImpl:
             result = await session.execute(stmt)
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
+
+    async def count_retryable_failures(self) -> int:
+        """统计当前可自动重试的失败记录数。"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = (
+                select(func.count())
+                .select_from(PushHistoryORM)
+                .where(
+                    PushHistoryORM.status.in_(("failed", "retrying")),
+                    PushHistoryORM.retry_count < PushHistoryORM.max_retries,
+                )
+            )
+            result = await session.execute(stmt)
+            return int(result.scalar_one() or 0)
+
+    async def count_retryable(self) -> int:
+        """Backward-compatible alias."""
+        return await self.count_retryable_failures()
 
     async def get_and_mark_retrying(self, limit: int = 100) -> list[PushHistory]:
         """原子获取并标记待重试记录，防止多 worker 重复拉取。
@@ -172,7 +234,11 @@ class PushHistoryRepositoryImpl:
             return result.rowcount or 0
 
     async def get_all(
-        self, limit: int = 100, offset: int = 0, status: str | None = None
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> list[PushHistory]:
         """获取所有推送历史"""
         db = get_database()
@@ -180,6 +246,7 @@ class PushHistoryRepositoryImpl:
             stmt = select(PushHistoryORM).order_by(desc(PushHistoryORM.created_at))
             if status:
                 stmt = stmt.where(PushHistoryORM.status == status)
+            stmt = _apply_history_keyword_filters(stmt, keywords)
             stmt = stmt.offset(offset).limit(limit)
             result = await session.execute(stmt)
             orms = result.scalars().all()
@@ -192,6 +259,7 @@ class PushHistoryRepositoryImpl:
         offset: int = 0,
         target_session: str | None = None,
         status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> list[PushHistory]:
         """获取用户的推送历史"""
         db = get_database()
@@ -201,6 +269,7 @@ class PushHistoryRepositoryImpl:
                 stmt = stmt.where(PushHistoryORM.target_session == target_session)
             if status:
                 stmt = stmt.where(PushHistoryORM.status == status)
+            stmt = _apply_history_keyword_filters(stmt, keywords)
             stmt = (
                 stmt.order_by(desc(PushHistoryORM.created_at))
                 .offset(offset)
@@ -215,6 +284,7 @@ class PushHistoryRepositoryImpl:
         user_id: str,
         target_session: str | None = None,
         status: str | None = None,
+        keywords: list[str] | None = None,
     ) -> int:
         """统计用户推送历史数量，可按目标会话和状态过滤。"""
         db = get_database()
@@ -228,6 +298,22 @@ class PushHistoryRepositoryImpl:
                 stmt = stmt.where(PushHistoryORM.target_session == target_session)
             if status:
                 stmt = stmt.where(PushHistoryORM.status == status)
+            stmt = _apply_history_keyword_filters(stmt, keywords)
+            result = await session.execute(stmt)
+            return int(result.scalar_one() or 0)
+
+    async def count_all(
+        self,
+        status: str | None = None,
+        keywords: list[str] | None = None,
+    ) -> int:
+        """统计全部推送历史数量，可按状态和关键词过滤。"""
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = select(func.count()).select_from(PushHistoryORM)
+            if status:
+                stmt = stmt.where(PushHistoryORM.status == status)
+            stmt = _apply_history_keyword_filters(stmt, keywords)
             result = await session.execute(stmt)
             return int(result.scalar_one() or 0)
 
@@ -241,6 +327,21 @@ class PushHistoryRepositoryImpl:
             await session.delete(orm)
             await session.commit()
             return True
+
+    async def delete_many(self, history_ids: list[int]) -> int:
+        """批量删除推送历史。"""
+        ids = sorted(
+            {int(history_id) for history_id in history_ids if int(history_id) > 0}
+        )
+        if not ids:
+            return 0
+
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = delete(PushHistoryORM).where(PushHistoryORM.id.in_(ids))
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def get_stats(self) -> dict[str, int]:
         """获取推送统计信息"""

@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..constants import INHERIT_VALUE, USER_STATE_BANNED, USER_STATE_USER
+from ...shared.constants import INHERIT_VALUE, USER_STATE_BANNED, USER_STATE_USER
 from .handlers import dump_handlers, normalize_handlers
 
 
@@ -53,7 +53,10 @@ class User(BaseModel):
         default=INHERIT_VALUE, description="显示标题: -1=禁用, 0=自动, 1=强制"
     )
     display_entry_tags: int = Field(default=INHERIT_VALUE, description="显示标签")
-    style: int = Field(default=INHERIT_VALUE, description="样式: 0=RSStT, 1=flowerss")
+    style: int = Field(
+        default=INHERIT_VALUE,
+        description="推送排版策略: 0=自动, 1=RSSRT, 2=原始顺序",
+    )
     display_media: int = Field(
         default=INHERIT_VALUE, description="显示媒体: -1=禁用, 0=启用"
     )
@@ -79,13 +82,23 @@ class User(BaseModel):
             return payload
         return value
 
-    @property
-    def handlers(self) -> list[dict[str, Any]]:
+    def get_handlers(self) -> list[dict[str, Any]]:
         return dump_handlers(self.handler_specs)
 
-    @handlers.setter
-    def handlers(self, value: Any) -> None:
+    def set_handlers(self, value: Any) -> "User":
         self.handler_specs = dump_handlers(normalize_handlers(value))
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    def clear_handlers(self) -> "User":
+        self.handler_specs = []
+        self.updated_at = datetime.now(timezone.utc)
+        return self
+
+    @property
+    def handlers(self) -> list[dict[str, Any]]:
+        """Backward-compatible read-only alias."""
+        return self.get_handlers()
 
     def is_active(self) -> bool:
         """检查用户是否处于启用状态（非封禁）"""
@@ -146,4 +159,4 @@ class User(BaseModel):
 
     def get_effective_handlers(self) -> list[dict[str, Any]]:
         """获取规范化后的 handlers。"""
-        return dump_handlers(self.handler_specs)
+        return self.get_handlers()

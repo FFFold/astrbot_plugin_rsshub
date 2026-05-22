@@ -6,6 +6,51 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any
 
+from pydantic import Field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
+
+try:
+    from astrbot.core.agent.run_context import ContextWrapper
+    from astrbot.core.agent.tool import FunctionTool, ToolExecResult, ToolSet
+    from astrbot.core.astr_agent_context import AstrAgentContext
+    from astrbot.core.message.message_event_result import MessageEventResult
+    from astrbot.core.platform.astr_message_event import AstrMessageEvent
+except Exception:  # pragma: no cover - lightweight test fallback
+
+    class ContextWrapper:  # type: ignore[no-redef]
+        pass
+
+    ToolExecResult = str  # type: ignore[assignment]
+
+    @dataclass
+    class FunctionTool:  # type: ignore[no-redef]
+        name: str
+        description: str
+        parameters: dict
+
+        @classmethod
+        def __class_getitem__(cls, _item):
+            return cls
+
+    class ToolSet:  # type: ignore[no-redef]
+        def __init__(self, tools: list[Any] | None = None) -> None:
+            self.tools = tools or []
+
+    class AstrAgentContext:  # type: ignore[no-redef]
+        pass
+
+    class MessageEventResult:  # type: ignore[no-redef]
+        def __init__(self) -> None:
+            self.chain: list[Any] = []
+
+        def message(self, text: str) -> MessageEventResult:
+            self.chain = [text]
+            return self
+
+    class AstrMessageEvent:  # type: ignore[no-redef]
+        unified_msg_origin: str = ""
+
+
 try:
     from astrbot.core.provider.provider import Provider
 except Exception:  # pragma: no cover - lightweight test fallback
@@ -14,6 +59,7 @@ except Exception:  # pragma: no cover - lightweight test fallback
         pass
 
 
+from ...domain.entities.content_types import LayoutFragment
 from ...domain.entities.handlers import (
     HandlerSpec,
     is_handler_enabled,
@@ -26,10 +72,108 @@ from ...domain.entities.subscription import (
     Subscription,
 )
 from ...domain.entities.user import User
+from ...infrastructure.config import ContentHandlerSettings
 from ...infrastructure.utils import get_logger
+from ...shared.constants import (
+    AiFilterInputScope,
+    AiTransformScope,
+    HandlerTraceStatus,
+    HandlerType,
+)
 from .html_parser import HTMLParser
 
 logger = get_logger()
+
+
+class _SyntheticHandlerEvent:
+    """Minimal event adapter for tool_loop_agent in non-chat paths."""
+
+    def __init__(
+        self,
+        *,
+        unified_msg_origin: str,
+        platform_name: str,
+        sender_id: str,
+    ) -> None:
+        self.unified_msg_origin = str(unified_msg_origin or "").strip()
+        self.role = "member"
+        self._platform_name = str(platform_name or "").strip()
+        self._sender_id = str(sender_id or "").strip()
+        self._result: MessageEventResult | None = None
+        self._extras: dict[str, Any] = {}
+
+    def get_result(self) -> MessageEventResult | None:
+        return self._result
+
+    def set_result(self, result: MessageEventResult | str) -> None:
+        if isinstance(result, str):
+            self._result = MessageEventResult().message(result)
+            return
+        self._result = result
+
+    def get_extra(self, key: str | None = None, default=None) -> Any:
+        if key is None:
+            return self._extras
+        return self._extras.get(key, default)
+
+    def set_extra(self, key: str, value: Any) -> None:
+        self._extras[key] = value
+
+    def get_sender_id(self) -> str:
+        return self._sender_id
+
+    def get_platform_name(self) -> str:
+        return self._platform_name
+
+    async def send(self, _message) -> None:
+        return None
+
+
+@pydantic_dataclass
+class XmlValidationTool(FunctionTool[AstrAgentContext]):
+    name: str = "rss_validate_xml_fragment"
+    description: str = (
+        "Validate one RSS/Atom item or entry XML fragment. "
+        "Returns ok=false with precise parse/safety errors."
+    )
+    parameters: dict = Field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "raw_xml": {
+                    "type": "string",
+                    "description": "Single item/entry XML fragment to validate.",
+                }
+            },
+            "required": ["raw_xml"],
+        }
+    )
+
+    async def call(
+        self,
+        _context: ContextWrapper[AstrAgentContext],
+        **kwargs,
+    ) -> ToolExecResult:
+        raw_xml = str(kwargs.get("raw_xml") or "").strip()
+        from .agent_xml_push_service import _parse_xml_root, _validate_xml_input
+
+        try:
+            _validate_xml_input(raw_xml)
+            _parse_xml_root(raw_xml)
+        except Exception as exc:
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": str(exc),
+                    "rules": [
+                        "只返回单个 item 或 entry 级 XML 片段",
+                        "不要包含 DOCTYPE 或 ENTITY",
+                        "不要输出 Markdown、解释文本或代码块包裹",
+                    ],
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps({"ok": True}, ensure_ascii=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +190,7 @@ class EntryContentContext:
     raw_xml: str = ""
     media_urls: tuple[str, ...] = ()
     media_items: tuple[tuple[str, str], ...] = ()
+    layout: tuple[LayoutFragment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,8 +206,13 @@ class HandlerProcessResult:
 class ContentHandlerRuntime:
     """Resolve and execute builtin entry handlers."""
 
-    def __init__(self, context: Any | None = None):
+    def __init__(
+        self,
+        context: Any | None = None,
+        settings: ContentHandlerSettings | None = None,
+    ):
         self._context = context
+        self._settings = settings or ContentHandlerSettings()
 
     def resolve_handlers(
         self,
@@ -74,9 +224,9 @@ class ContentHandlerRuntime:
         if mode == HANDLERS_MODE_DISABLED:
             active = []
         elif mode == HANDLERS_MODE_OVERRIDE:
-            active = subscription.handlers
+            active = subscription.get_handlers()
         else:
-            active = user.handlers if user else []
+            active = user.get_handlers() if user else []
             if (
                 mode
                 not in {
@@ -84,9 +234,9 @@ class ContentHandlerRuntime:
                     HANDLERS_MODE_OVERRIDE,
                     HANDLERS_MODE_DISABLED,
                 }
-                and subscription.handlers
+                and subscription.get_handlers()
             ):
-                active = subscription.handlers
+                active = subscription.get_handlers()
         return normalize_handlers(active)
 
     async def process_entry(
@@ -96,12 +246,20 @@ class ContentHandlerRuntime:
         user: User | None,
         entry: EntryContentContext,
         session_id: str | None = None,
+        event: AstrMessageEvent | Any | None = None,
+        target_session: str | None = None,
+        platform_name: str | None = None,
+        user_id: str | None = None,
     ) -> EntryContentContext:
         result = await self.process_entry_with_trace(
             subscription=subscription,
             user=user,
             entry=entry,
             session_id=session_id,
+            event=event,
+            target_session=target_session,
+            platform_name=platform_name,
+            user_id=user_id,
         )
         return result.entry
 
@@ -112,6 +270,10 @@ class ContentHandlerRuntime:
         user: User | None,
         entry: EntryContentContext,
         session_id: str | None = None,
+        event: AstrMessageEvent | Any | None = None,
+        target_session: str | None = None,
+        platform_name: str | None = None,
+        user_id: str | None = None,
     ) -> HandlerProcessResult:
         result = entry
         trace: list[dict[str, Any]] = []
@@ -121,32 +283,23 @@ class ContentHandlerRuntime:
                     {
                         "id": spec.id,
                         "name": spec.name,
-                        "status": "disabled",
+                        "status": HandlerTraceStatus.DISABLED.value,
                     }
                 )
                 continue
-            if spec.type != "builtin":
+            if spec.type != HandlerType.BUILTIN.value:
                 logger.debug("跳过 external handler: %s", spec.id)
                 trace.append(
                     {
                         "id": spec.id,
                         "name": spec.name,
-                        "status": "skipped",
+                        "status": HandlerTraceStatus.SKIPPED.value,
                         "reason": "external handler",
                     }
                 )
                 continue
             try:
-                if spec.name == "xml_parse":
-                    result = await self._run_xml_parse(result)
-                    trace.append(
-                        {
-                            "id": spec.id,
-                            "name": spec.name,
-                            "status": "ok",
-                        }
-                    )
-                elif spec.name == "ai_filter":
+                if spec.name == "ai_filter":
                     allowed, reason = await self._run_ai_filter(
                         result,
                         spec.config,
@@ -156,9 +309,13 @@ class ContentHandlerRuntime:
                         {
                             "id": spec.id,
                             "name": spec.name,
-                            "status": "ok",
+                            "status": HandlerTraceStatus.OK.value,
                             "allow": allowed,
                             "reason": reason,
+                            "scope": str(
+                                spec.config.get("input_scope")
+                                or AiFilterInputScope.TEXT.value
+                            ),
                         }
                     )
                     if not allowed:
@@ -169,16 +326,24 @@ class ContentHandlerRuntime:
                             trace=tuple(trace),
                         )
                 elif spec.name == "ai_transform":
-                    result = await self._run_ai_transform(
+                    transform_result = await self._run_ai_transform(
                         result,
                         spec.config,
                         session_id=session_id,
+                        event=event,
+                        target_session=target_session,
+                        platform_name=platform_name,
+                        user_id=user_id
+                        or getattr(user, "id", "")
+                        or subscription.user_id,
                     )
+                    result = transform_result["entry"]
                     trace.append(
                         {
                             "id": spec.id,
                             "name": spec.name,
-                            "status": "ok",
+                            "status": HandlerTraceStatus.OK.value,
+                            **transform_result["trace"],
                         }
                     )
                 else:
@@ -187,7 +352,7 @@ class ContentHandlerRuntime:
                         {
                             "id": spec.id,
                             "name": spec.name,
-                            "status": "skipped",
+                            "status": HandlerTraceStatus.SKIPPED.value,
                             "reason": "unknown builtin handler",
                         }
                     )
@@ -201,30 +366,11 @@ class ContentHandlerRuntime:
                     {
                         "id": spec.id,
                         "name": spec.name,
-                        "status": "error",
+                        "status": HandlerTraceStatus.ERROR.value,
                         "reason": str(exc),
                     }
                 )
         return HandlerProcessResult(entry=result, trace=tuple(trace))
-
-    async def _run_xml_parse(self, entry: EntryContentContext) -> EntryContentContext:
-        html_source = entry.content or entry.summary
-        if not html_source:
-            return entry
-        parsed = await HTMLParser(
-            html_source,
-            feed_link=entry.link or entry.feed_link,
-        ).parse()
-        plain = parsed.html_tree.get_plain().strip()
-        if not plain:
-            return entry
-        summary = (
-            plain
-            if not entry.summary or entry.summary == entry.content
-            else entry.summary
-        )
-        content = plain
-        return replace(entry, summary=summary, content=content)
 
     async def _run_ai_transform(
         self,
@@ -232,16 +378,77 @@ class ContentHandlerRuntime:
         config: dict[str, Any],
         *,
         session_id: str | None = None,
-    ) -> EntryContentContext:
+        event: AstrMessageEvent | Any | None = None,
+        target_session: str | None = None,
+        platform_name: str | None = None,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         prompt = str((config or {}).get("prompt") or "").strip()
         if not prompt or self._context is None:
-            return entry
+            return {
+                "entry": entry,
+                "trace": {
+                    "scope": str(
+                        (config or {}).get("scope") or AiTransformScope.PLAINTEXT.value
+                    ),
+                    "steps_used": 0,
+                    "fallback": True,
+                    "fallback_reason": "missing prompt or context",
+                },
+            }
 
         provider = self._resolve_provider(session_id=session_id)
         if provider is None:
             logger.warning("ai_transform 跳过：当前没有可用的对话模型 provider")
-            return entry
+            return {
+                "entry": entry,
+                "trace": {
+                    "scope": str(
+                        (config or {}).get("scope") or AiTransformScope.PLAINTEXT.value
+                    ),
+                    "steps_used": 0,
+                    "fallback": True,
+                    "fallback_reason": "provider unavailable",
+                },
+            }
 
+        transform_scope = self._normalize_transform_scope((config or {}).get("scope"))
+        agent_event = self._resolve_agent_event(
+            event=event,
+            session_id=session_id,
+            target_session=target_session,
+            platform_name=platform_name,
+            user_id=user_id,
+        )
+        provider_id = self._resolve_chat_provider_id(
+            provider=provider,
+            session_id=session_id,
+        )
+        if not provider_id:
+            raise ValueError("ai_transform 无法解析当前对话 provider_id")
+
+        if transform_scope == AiTransformScope.XML.value:
+            return await self._run_ai_transform_xml(
+                entry=entry,
+                prompt=prompt,
+                provider_id=provider_id,
+                event=agent_event,
+            )
+        return await self._run_ai_transform_plaintext(
+            entry=entry,
+            prompt=prompt,
+            provider_id=provider_id,
+            event=agent_event,
+        )
+
+    async def _run_ai_transform_plaintext(
+        self,
+        *,
+        entry: EntryContentContext,
+        prompt: str,
+        provider_id: str,
+        event: AstrMessageEvent | Any,
+    ) -> dict[str, Any]:
         source_payload = {
             "title": entry.title,
             "summary": entry.summary,
@@ -253,39 +460,112 @@ class ContentHandlerRuntime:
             "media_urls": list(entry.media_urls),
         }
         request_prompt = (
-            "你是 RSS 内容处理器。根据用户要求改写条目，并只返回 JSON。"
-            "如果某字段不需要修改，可以原样返回。"
-            '\n返回格式: {"title":"...","summary":"...","content":"..."}'
+            "你是 RSS 内容改写 agent。请根据用户要求改写 RSS 条目的文本字段。"
+            "只返回 JSON 对象，不要输出解释、Markdown 或代码块。"
+            '\n只允许返回这些字段中的任意子集：{"title":"...","summary":"...","content":"..."}'
+            "\n缺省字段表示不改动；空字符串也视为不改动。"
             f"\n用户要求:\n{prompt}"
             f"\n\n条目数据:\n{json.dumps(source_payload, ensure_ascii=False)}"
         )
-        response = await provider.text_chat(
+        response = await self._context.tool_loop_agent(
+            event=event,
+            chat_provider_id=provider_id,
             prompt=request_prompt,
-            session_id=session_id or "rsshub-handlers",
+            tools=ToolSet(),
             contexts=[],
-            persist=False,
+            system_prompt=self._resolve_system_prompt(),
+            max_steps=1,
+            tool_call_timeout=60,
+            stream=False,
         )
         payload = str(getattr(response, "completion_text", "") or "").strip()
-        if not payload:
-            return entry
-
-        try:
-            parsed = json.loads(payload)
-        except Exception as exc:
-            raise ValueError(f"ai_transform 输出不是合法 JSON: {exc}") from exc
-
-        if not isinstance(parsed, dict):
-            raise ValueError("ai_transform 输出必须是 JSON 对象")
-
+        parsed = self._parse_transform_json(
+            payload, required_fields={"title", "summary", "content"}
+        )
         title = str(parsed.get("title") or entry.title).strip()
         summary = str(parsed.get("summary") or entry.summary).strip()
         content = str(parsed.get("content") or entry.content).strip()
-        return replace(
-            entry,
-            title=title or entry.title,
-            summary=summary or entry.summary,
-            content=content or entry.content,
+        return {
+            "entry": replace(
+                entry,
+                title=title or entry.title,
+                summary=summary or entry.summary,
+                content=content or entry.content,
+            ),
+            "trace": {
+                "scope": AiTransformScope.PLAINTEXT.value,
+                "steps_used": 1,
+                "fallback": False,
+            },
+        }
+
+    async def _run_ai_transform_xml(
+        self,
+        *,
+        entry: EntryContentContext,
+        prompt: str,
+        provider_id: str,
+        event: AstrMessageEvent | Any,
+    ) -> dict[str, Any]:
+        source_payload = {
+            "raw_xml": entry.raw_xml,
+            "title": entry.title,
+            "link": entry.link,
+            "author": entry.author,
+            "feed_title": entry.feed_title,
+            "feed_link": entry.feed_link,
+        }
+        system_prompt = "\n\n".join(
+            part
+            for part in [
+                self._resolve_system_prompt(),
+                (
+                    "你是 RSS XML 改写 agent。你必须遵守 RSS/Atom item 或 entry 片段规范。"
+                    "只返回 JSON 对象，且必须包含 raw_xml 字段。"
+                    "raw_xml 只能是单个 item/entry 级 XML 片段，不允许 DOCTYPE/ENTITY，"
+                    "不要输出解释文本、Markdown 或代码块包裹。"
+                ),
+            ]
+            if part
         )
+        request_prompt = (
+            "请按用户要求改写下面的 RSS item/entry XML。必要时先调用 XML 校验工具自检并修正。"
+            '\n最终只返回 JSON，例如 {"raw_xml":"<item>...</item>"}。'
+            f"\n用户要求:\n{prompt}"
+            f"\n\n条目数据:\n{json.dumps(source_payload, ensure_ascii=False)}"
+        )
+        response = await self._context.tool_loop_agent(
+            event=event,
+            chat_provider_id=provider_id,
+            prompt=request_prompt,
+            tools=ToolSet([XmlValidationTool()]),
+            contexts=[],
+            system_prompt=system_prompt,
+            max_steps=6,
+            tool_call_timeout=60,
+            stream=False,
+        )
+        payload = str(getattr(response, "completion_text", "") or "").strip()
+        parsed = self._parse_transform_json(payload, required_fields={"raw_xml"})
+        transformed_xml = str(parsed.get("raw_xml") or "").strip()
+        if not transformed_xml:
+            raise ValueError("ai_transform(xml) 输出缺少 raw_xml")
+
+        reparsed_entry = await self._reparse_transformed_xml(
+            entry=entry, raw_xml=transformed_xml
+        )
+        steps_used = max(
+            len(getattr(response, "tools_call_name", []) or []) + 1,
+            1,
+        )
+        return {
+            "entry": reparsed_entry,
+            "trace": {
+                "scope": AiTransformScope.XML.value,
+                "steps_used": steps_used,
+                "fallback": False,
+            },
+        }
 
     async def _run_ai_filter(
         self,
@@ -303,9 +583,7 @@ class ContentHandlerRuntime:
             logger.warning("ai_filter 放行：当前没有可用的对话模型 provider")
             return True, "provider unavailable"
 
-        input_scope = str((config or {}).get("input_scope") or "text").strip()
-        if input_scope not in {"text", "raw_xml", "both"}:
-            input_scope = "text"
+        input_scope = self._normalize_filter_scope((config or {}).get("input_scope"))
         source_payload = {
             "title": entry.title,
             "summary": entry.summary,
@@ -315,9 +593,12 @@ class ContentHandlerRuntime:
             "feed_title": entry.feed_title,
             "feed_link": entry.feed_link,
         }
-        if input_scope in {"raw_xml", "both"}:
+        if input_scope in {
+            AiFilterInputScope.RAW_XML.value,
+            AiFilterInputScope.BOTH.value,
+        }:
             source_payload["raw_xml"] = entry.raw_xml
-        if input_scope == "raw_xml":
+        if input_scope == AiFilterInputScope.RAW_XML.value:
             source_payload = {
                 "title": entry.title,
                 "link": entry.link,
@@ -337,6 +618,7 @@ class ContentHandlerRuntime:
             session_id=session_id or "rsshub-handlers",
             contexts=[],
             persist=False,
+            system_prompt=self._resolve_system_prompt(),
         )
         payload = str(getattr(response, "completion_text", "") or "").strip()
         if not payload:
@@ -359,9 +641,169 @@ class ContentHandlerRuntime:
             reason = reason[:reason_max_length].rstrip()
         return bool(parsed["allow"]), reason
 
+    def _normalize_filter_scope(self, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if normalized not in {item.value for item in AiFilterInputScope}:
+            return AiFilterInputScope.TEXT.value
+        return normalized
+
+    def _normalize_transform_scope(self, value: Any) -> str:
+        normalized = str(value or "").strip()
+        if normalized not in {item.value for item in AiTransformScope}:
+            return AiTransformScope.PLAINTEXT.value
+        return normalized
+
+    def _parse_transform_json(
+        self,
+        payload: str,
+        *,
+        required_fields: set[str],
+    ) -> dict[str, Any]:
+        if not payload:
+            raise ValueError("ai_transform 输出为空")
+        try:
+            parsed = json.loads(payload)
+        except Exception as exc:
+            raise ValueError(f"ai_transform 输出不是合法 JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("ai_transform 输出必须是 JSON 对象")
+        allowed_fields = {"title", "summary", "content", "raw_xml"}
+        invalid_keys = [key for key in parsed.keys() if key not in allowed_fields]
+        if invalid_keys:
+            raise ValueError(
+                f"ai_transform 输出包含非法字段: {', '.join(invalid_keys)}"
+            )
+        if required_fields and not any(
+            str(parsed.get(field) or "").strip() for field in required_fields
+        ):
+            raise ValueError("ai_transform 输出缺少有效结果")
+        return parsed
+
+    async def _reparse_transformed_xml(
+        self,
+        *,
+        entry: EntryContentContext,
+        raw_xml: str,
+    ) -> EntryContentContext:
+        from .agent_xml_push_service import (
+            _collect_xml_media,
+            _parse_xml_root,
+            _validate_xml_input,
+        )
+
+        normalized_xml = _validate_xml_input(raw_xml)
+        root, body_xml = _parse_xml_root(normalized_xml)
+        parsed = await HTMLParser(
+            body_xml, feed_link=entry.feed_link or entry.link or ""
+        ).parse()
+        from .feed_polling_service import FeedPollingService
+
+        plain_body = FeedPollingService._remove_media_placeholders(
+            parsed.html_tree.get_plain().strip()
+        )
+        content = await FeedPollingService._format_dispatch_content_async(
+            title=str(root.findtext("title") or entry.title or "").strip(),
+            body=plain_body,
+            link=str(root.findtext("link") or entry.link or "").strip(),
+            feed_title=entry.feed_title,
+            feed_link=entry.feed_link,
+            author=str(root.findtext("author") or entry.author or "").strip(),
+        )
+        media_items = FeedPollingService._media_items_from_parsed(parsed.media)
+        media_urls = [url for _media_type, url in media_items]
+        media_urls.extend(_collect_xml_media(root))
+        deduped_media_urls = tuple(dict.fromkeys(media_urls))
+        return replace(
+            entry,
+            title=str(root.findtext("title") or entry.title or "").strip()
+            or entry.title,
+            summary=plain_body or entry.summary,
+            content=content or entry.content,
+            link=str(root.findtext("link") or entry.link or "").strip() or entry.link,
+            author=str(root.findtext("author") or entry.author or "").strip()
+            or entry.author,
+            raw_xml=normalized_xml,
+            media_urls=deduped_media_urls,
+            media_items=tuple(media_items),
+            layout=tuple(parsed.layout),
+        )
+
+    def _resolve_agent_event(
+        self,
+        *,
+        event: AstrMessageEvent | Any | None,
+        session_id: str | None,
+        target_session: str | None,
+        platform_name: str | None,
+        user_id: str | None,
+    ) -> AstrMessageEvent | Any:
+        if event is not None:
+            return event
+        resolved_target = (
+            str(target_session or "").strip()
+            or str(session_id or "").strip()
+            or "rsshub:FriendMessage:rsshub-handlers"
+        )
+        resolved_platform = (
+            str(platform_name or "").strip()
+            or self._platform_name_from_session(resolved_target)
+            or "rsshub"
+        )
+        return _SyntheticHandlerEvent(
+            unified_msg_origin=resolved_target,
+            platform_name=resolved_platform,
+            sender_id=str(user_id or "rsshub-handler"),
+        )
+
+    def _platform_name_from_session(self, target_session: str) -> str:
+        parts = str(target_session or "").split(":", 2)
+        return parts[0].strip() if parts else ""
+
+    def _resolve_chat_provider_id(
+        self,
+        *,
+        provider: Provider,
+        session_id: str | None,
+    ) -> str:
+        provider_id = self._settings.ai_provider_id.strip()
+        if provider_id:
+            return provider_id
+        meta = getattr(provider, "meta", None)
+        if callable(meta):
+            try:
+                return str(meta().id or "").strip()
+            except Exception:
+                return ""
+        return ""
+
     def _resolve_provider(self, *, session_id: str | None = None) -> Provider | None:
-        getter = getattr(self._context, "get_using_provider", None)
-        if getter is None:
-            return None
-        provider = getter(session_id) if session_id else getter()
+        provider = None
+        provider_id = self._settings.ai_provider_id.strip()
+        if provider_id:
+            getter_by_id = getattr(self._context, "get_provider_by_id", None)
+            if getter_by_id is not None:
+                provider = getter_by_id(provider_id)
+        if provider is None:
+            getter = getattr(self._context, "get_using_provider", None)
+            if getter is None:
+                return None
+            provider = getter(session_id) if session_id else getter()
         return provider if callable(getattr(provider, "text_chat", None)) else None
+
+    def _resolve_system_prompt(self) -> str:
+        persona_id = self._settings.ai_persona_id.strip()
+        if not persona_id:
+            return ""
+        persona_manager = getattr(self._context, "persona_manager", None)
+        getter = getattr(persona_manager, "get_persona_v3_by_id", None)
+        if getter is None:
+            logger.warning("内容处理器人格未生效：persona_manager 不可用")
+            return ""
+        persona = getter(persona_id)
+        if not persona:
+            logger.warning("内容处理器人格未生效：找不到 persona_id=%s", persona_id)
+            return ""
+        prompt = getattr(persona, "system_prompt", None)
+        if prompt is None and isinstance(persona, dict):
+            prompt = persona.get("prompt") or persona.get("system_prompt")
+        return str(prompt or "").strip()

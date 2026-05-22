@@ -5,31 +5,32 @@
 
 from __future__ import annotations
 
-from ....shared.settings import SenderStrategySettings
+from ....infrastructure.config import SenderStrategySettings
+from ....shared.constants import (
+    ONEBOT_PLATFORMS,
+    PLATFORM_ONEBOT,
+    PLATFORM_QQ_OFFICIAL,
+    PLATFORM_TELEGRAM,
+    QQ_OFFICIAL_PLATFORMS,
+    TELEGRAM_PLATFORMS,
+    WEIXIN_PLATFORMS,
+)
 from ...config import get_config_manager
 from ...utils import get_logger
 from .base_sender import DefaultMessageSender
 from .onebot_sender import OneBotMessageSender
 from .qq_official_sender import QQOfficialMessageSender
 from .telegram_sender import TelegramMessageSender
+from .weixin_oc_sender import WeixinOCMessageSender
 
 logger = get_logger()
 
 # 发送器映射表
 _SENDER_MAP: dict[str, type[DefaultMessageSender]] = {
-    "telegram": TelegramMessageSender,
-    "tg": TelegramMessageSender,
-    "aiocqhttp": OneBotMessageSender,
-    "onebot": OneBotMessageSender,
-    "onebot11": OneBotMessageSender,
-    "onebotv11": OneBotMessageSender,
-    "qq_official": QQOfficialMessageSender,
-    "qqofficial": QQOfficialMessageSender,
-    "qq": QQOfficialMessageSender,
-    # 微信官方 Bot 直接使用默认发送器，官方适配器已处理所有逻辑
-    "wechat": DefaultMessageSender,
-    "weixin": DefaultMessageSender,
-    "weixin_oc": DefaultMessageSender,
+    **dict.fromkeys(TELEGRAM_PLATFORMS, TelegramMessageSender),
+    **dict.fromkeys(ONEBOT_PLATFORMS, OneBotMessageSender),
+    **dict.fromkeys(QQ_OFFICIAL_PLATFORMS, QQOfficialMessageSender),
+    **dict.fromkeys(WEIXIN_PLATFORMS, WeixinOCMessageSender),
 }
 
 
@@ -39,10 +40,9 @@ def _get_legacy_sender_strategies() -> SenderStrategySettings | None:
         if config and hasattr(config, "sender_strategies"):
             strategies = config.sender_strategies
             return SenderStrategySettings(
-                telegram=bool(getattr(strategies, "telegram", True)),
-                aiocqhttp=bool(getattr(strategies, "aiocqhttp", True)),
-                qq_official=bool(getattr(strategies, "qq_official", True)),
-                weixin_oc=bool(getattr(strategies, "weixin_oc", True)),
+                telegram=bool(getattr(strategies, PLATFORM_TELEGRAM, True)),
+                aiocqhttp=bool(getattr(strategies, PLATFORM_ONEBOT, True)),
+                qq_official=bool(getattr(strategies, PLATFORM_QQ_OFFICIAL, True)),
             )
     except Exception:
         return None
@@ -55,14 +55,12 @@ def _sender_disabled_by_strategy(
 ) -> bool:
     if strategies is None:
         return False
-    if normalized in {"telegram", "tg"}:
+    if normalized in TELEGRAM_PLATFORMS:
         return not strategies.telegram
-    if normalized in {"aiocqhttp", "onebot", "onebot11", "onebotv11"}:
+    if normalized in ONEBOT_PLATFORMS:
         return not strategies.aiocqhttp
-    if normalized in {"qq_official", "qqofficial", "qq"}:
+    if normalized in QQ_OFFICIAL_PLATFORMS:
         return not strategies.qq_official
-    if normalized in {"wechat", "weixin", "weixin_oc"}:
-        return not strategies.weixin_oc
     return False
 
 

@@ -44,15 +44,22 @@ from .src.application.services.route_knowledge_service import (
 from .src.application.services.session_push_queue import SessionPushQueue
 from .src.domain.repositories.feed_repository import FeedRepository
 from .src.domain.repositories.subscription_repository import SubscriptionRepository
-from .src.infrastructure.config import RsshubPluginConfig, set_config
-from .src.infrastructure.config.settings_adapter import build_application_settings
+from .src.infrastructure.config import (
+    ApplicationSettings,
+    RsshubPluginConfig,
+    build_application_settings,
+    set_config,
+)
 from .src.infrastructure.fetcher.rss import RSSFeedFetcher
 from .src.infrastructure.fetcher.rss.parser import RSSParser
 from .src.infrastructure.knowledge import (
     AstrBotRouteKnowledgeRepository,
     build_route_knowledge_source,
 )
-from .src.infrastructure.messaging import InfrastructureMessageSenderProvider
+from .src.infrastructure.messaging import (
+    DefaultMessageSender,
+    InfrastructureMessageSenderProvider,
+)
 from .src.infrastructure.persistence import (
     get_database,
     get_feed_repository,
@@ -67,7 +74,6 @@ from .src.infrastructure.utils import (
     get_plugin_data_dir,
 )
 from .src.interfaces import WebApiHandler
-from .src.shared.settings import ApplicationSettings
 
 logger = get_logger()
 
@@ -136,6 +142,7 @@ async def create_plugin_runtime(
     queue: SessionPushQueue | None = None
     try:
         plugin_config, app_settings = _init_config(config)
+        _configure_message_senders(app_settings)
         await _init_database(plugin_config)
 
         queue = push_job_queue or SessionPushQueue()
@@ -192,6 +199,21 @@ def _init_config(
     return plugin_config, app_settings
 
 
+def _configure_message_senders(app_settings: ApplicationSettings) -> None:
+    """Apply runtime config consumed by concrete message senders."""
+    DefaultMessageSender.configure_runtime(
+        timeout_seconds=app_settings.basic.download_media_timeout,
+        proxy=app_settings.basic.proxy,
+    )
+    DefaultMessageSender.configure_behavior(
+        download_media_before_send=app_settings.basic.download_media_before_send,
+        video_transcode=app_settings.ffmpeg.video_transcode,
+        video_transcode_timeout=app_settings.ffmpeg.video_transcode_timeout,
+        gif_transcode=app_settings.ffmpeg.gif_transcode,
+        gif_transcode_timeout=app_settings.ffmpeg.gif_transcode_timeout,
+    )
+
+
 async def _init_database(config: RsshubPluginConfig) -> None:
     data_dir = get_plugin_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -220,8 +242,12 @@ def _build_dependencies(
         push_history_repo=push_history_repo,
         sender_provider=sender_provider,
         push_job_queue=push_job_queue,
-        content_handler_runtime=ContentHandlerRuntime(context=context),
+        content_handler_runtime=ContentHandlerRuntime(
+            context=context,
+            settings=app_settings.content_handlers,
+        ),
         subscription_defaults=app_settings.subscription_defaults,
+        basic_settings=app_settings.basic,
     )
     polling_service = FeedPollingService(
         feed_repo=feed_repo,

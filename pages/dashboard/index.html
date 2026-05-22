@@ -11,628 +11,547 @@
   <link rel="stylesheet" href="./css/notifications.css" />
   <link rel="stylesheet" href="./css/responsive.css" />
   <link rel="stylesheet" href="./css/dark-theme.css" />
-  <style>
-    .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
-    .stat-card { min-width: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 18px; text-align: center; }
-    .stat-card-value { font-size: 28px; font-weight: 700; color: #3c96ca; }
-    .stat-card-label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-    .action-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
-    .action-bar .search-input { flex: 1; min-width: 200px; padding: 10px 16px; border: 1px solid #d5e0ec; border-radius: 8px; font-size: 14px; background: white; color: #1b1c1d; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
-    .action-bar .search-input:focus { outline: none; border-color: #3c96ca; box-shadow: 0 0 0 3px rgba(60,150,202,0.12); }
-    .action-bar .search-input::placeholder { color: #94a3b8; }
-    .dashboard-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
-    .dashboard-content { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable both-edges; padding: 0 0 24px; overscroll-behavior: contain; }
-    .dashboard-content > .table-section,
-    .dashboard-content > .settings-shell { flex: 0 0 auto; min-height: 0; }
-    .table-section { width: 100%; background: white; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; min-height: 0; overflow: visible; margin-top: 8px; }
-    .table-scroll-area { flex: 0 0 auto; min-height: 0; overflow-x: auto; overflow-y: visible; scrollbar-gutter: stable; }
-    .sub-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
-    .sub-table thead { background: #f8fafc; }
-    .sub-table th { padding: 10px 12px; font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; text-align: left; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-    .sub-table td { padding: 10px 12px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-    .sub-table tbody tr { cursor: pointer; transition: background 0.15s; }
-    .sub-table tbody tr:hover { background: #f8fafc; }
-    .sub-table tbody tr.selected { background: #eef2ff; }
-    .sub-table tbody tr:last-child td { border-bottom: none; }
-    .col-chk { width: 40px; text-align: center; }
-    .col-status { width: 82px; }
-    .col-feed { width: auto; }
-    .col-user { width: 180px; }
-    .col-interval { width: 88px; }
-    .col-session { width: 220px; }
-    .col-actions { width: 128px; text-align: center; }
-    .subs-table .col-feed { width: 36%; }
-    .subs-table .col-user { width: 180px; }
-    .subs-table .col-session { width: 220px; }
-    .subs-table .col-actions { width: 128px; }
-    .users-table { min-width: 920px; }
-    .users-table .col-user { width: 260px; }
-    .users-table .col-session { width: auto; }
-    .users-table .col-actions { width: 210px; }
-    .feeds-table { min-width: 820px; }
-    .feeds-table .col-feed { width: auto; }
-    .feeds-table .col-actions { width: 104px; }
-    .history-table { min-width: 1120px; }
-    .history-table .col-feed { width: 32%; }
-    .history-table .col-user { width: 180px; }
-    .history-table .col-session { width: 240px; }
-    .history-table .col-error { width: 260px; }
-    .history-table .col-actions { width: 96px; }
-    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; }
-    .status-dot.active { background: #16a34a; }
-    .status-dot.inactive { background: #ef4444; }
-    .sub-table td.col-status { white-space: nowrap; }
-    .sub-table th.col-actions,
-    .sub-table td.col-actions { text-align: center; }
-    .sub-table td.col-actions { vertical-align: middle; }
-    .action-cell { display: inline-flex; align-items: center; justify-content: center; align-content: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%; margin: 0 auto; text-align: center; }
-    .action-cell .btn-action { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
-    .status-dot + .status-text { margin-left: 6px; }
-    .status-text { font-size: 13px; }
-    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 500; background: #e2e8f0; color: #475569; }
-    .status-badge.pending { background: #fef3c7; color: #92400e; }
-    .status-badge.success { background: #d1fae5; color: #065f46; }
-    .status-badge.failed { background: #fee2e2; color: #991b1b; }
-    .status-badge.stopped { background: #f1f5f9; color: #475569; }
-    .feed-title { font-weight: 600; color: #1b1c1d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .feed-url { font-size: 12px; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
-    .cell-mono { font-family: "SF Mono", Monaco, "Cascadia Code", monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cell-wrap { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
-    .btn-action { padding: 4px 8px !important; height: auto !important; font-size: 12px !important; text-transform: none !important; letter-spacing: 0 !important; min-width: auto !important; color: #3c96ca !important; white-space: nowrap; }
-    .btn-action:hover { background: rgba(60,150,202,0.08) !important; }
-    .btn-action.danger { color: #ef4444 !important; }
-    .panel-section { margin-bottom: 20px; }
-    .panel-section h4 { font-size: 14px; color: #64748b; margin-bottom: 12px; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .route-kb-title { display: flex; align-items: center; min-width: 0; }
-    .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f1f5f9; }
-    .setting-row:last-child { border-bottom: none; }
-    .setting-label { flex: 0 0 auto; font-size: 14px; color: #374151; }
-    .setting-value { flex: 1 1 auto; min-width: 0; font-size: 14px; color: #64748b; text-align: right; overflow-wrap: anywhere; }
-    .table-section > .section-header { padding: 18px 20px 0; margin-bottom: 12px; }
-    .table-section > .empty-state { margin: 0 20px 20px; }
-    .select-input { max-width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid #d5e0ec; border-radius: 8px; font-size: 13px; background: white; color: #1b1c1d; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; appearance: none; }
-    .select-input:focus { outline: none; border-color: #3c96ca; box-shadow: 0 0 0 3px rgba(60,150,202,0.12); }
-    .select-input::placeholder { color: #94a3b8; }
-    .batch-toolbar { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 12px 24px; display: flex; gap: 12px; align-items: center; justify-content: center; z-index: 50; transform: translateY(100%); transition: transform 0.3s ease; }
-    .batch-toolbar.visible { transform: translateY(0); }
-    .batch-toolbar .count { font-size: 14px; color: #64748b; margin-right: 16px; }
-    .detail-row { display: flex; margin-bottom: 8px; }
-    .detail-label { flex: 0 0 auto; min-width: 80px; font-size: 13px; color: #94a3b8; }
-    .detail-value { flex: 1; min-width: 0; font-size: 13px; color: #374151; word-break: break-all; }
-    .entry-item { padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 8px; background: #f8fafc; }
-    .entry-item:last-child { margin-bottom: 0; }
-    .entry-title { font-weight: 600; font-size: 14px; color: #1b1c1d; margin-bottom: 4px; }
-    .entry-meta { font-size: 12px; color: #94a3b8; }
-    .entry-summary { font-size: 13px; color: #64748b; margin-top: 6px; }
-    .tab-nav { position: relative; z-index: 2; display: flex; gap: 8px; margin-bottom: 4px; padding: 0 2px 12px; border-bottom: 1px solid #e2e8f0; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; flex-shrink: 0; background: inherit; }
-    .tab-btn { flex: 0 0 auto; padding: 10px 16px; font-size: 14px; font-weight: 500; color: #64748b; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: color 0.15s, border-color 0.15s; white-space: nowrap; }
-    .tab-btn.active { color: #3c96ca; border-bottom-color: #3c96ca; }
-    .tab-btn:hover { color: #3c96ca; }
-    .narrow-page { width: min(100%, 920px); margin: 0 auto; }
-    .settings-shell { display: flex; flex-direction: column; min-height: 0; margin-top: 8px; }
-    .settings-scroll-area { flex: 0 0 auto; min-height: 0; overflow: visible; padding-right: 0; }
-    .settings-form { width: 100%; max-width: 880px; margin: 0 auto; }
-    .settings-form .panel-section { background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-    .settings-form .form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px; flex-wrap: wrap; position: static; padding: 0; background: transparent; }
-    .section-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-    .pagination-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fbfdff; min-height: 58px; }
-    .pagination-top { margin: 0 20px 12px; }
-    .pagination-summary { font-size: 13px; color: #94a3b8; }
-    .pagination-actions { display: flex; gap: 8px; align-items: center; }
-    .page-indicator { min-width: 56px; text-align: center; font-size: 13px; color: #64748b; line-height: 32px; white-space: nowrap; }
-    textarea.select-input { resize: vertical; line-height: 1.5; }
-    .input-wrapper input[type="text"],
-    .input-wrapper input[type="number"] { width: 100%; min-height: 40px; padding: 9px 12px; border: 1px solid #d5e0ec; border-radius: 8px; font-size: 13px; background: white; color: #1b1c1d; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
-    .input-wrapper input[type="text"]:focus,
-    .input-wrapper input[type="number"]:focus { outline: none; border-color: #3c96ca; box-shadow: 0 0 0 3px rgba(60,150,202,0.12); }
-    .input-wrapper input::placeholder { color: #94a3b8; }
-    .input-wrapper input[type="number"] { -moz-appearance: textfield; }
-    .input-wrapper input[type="number"]::-webkit-outer-spin-button,
-    .input-wrapper input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    .settings-form .input-wrapper::before,
-    .settings-form .input-wrapper::after,
-    .edit-panel .input-wrapper::before,
-    .edit-panel .input-wrapper::after { display: none; }
-    .btn:disabled { cursor: not-allowed; opacity: 0.55; transform: none; box-shadow: none; }
-    .error-block { display: block; width: 100%; padding: 10px 12px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #b91c1c; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
-    @media (max-width: 1024px) {
-      .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 768px) {
-      .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-      .stat-card { padding: 14px 10px; }
-      .stat-card-value { font-size: 24px; }
-      .action-bar { gap: 8px; }
-      .action-bar .search-input { flex-basis: 100%; min-width: 0; border-radius: 8px; }
-      .action-bar .btn:not(.btn-icon) { flex: 1 1 calc(50% - 8px); padding: 0 12px; }
-      .dashboard-shell { min-height: auto; height: auto; gap: 12px; }
-      .dashboard-content { min-height: auto; display: block; overflow: visible; padding-bottom: 0; scrollbar-gutter: auto; }
-      .table-section { overflow: visible; border-radius: 8px; border: none; background: transparent; margin-top: 0; }
-      .table-scroll-area { overflow: visible; }
-      .sub-table { min-width: 0; }
-      .sub-table, .sub-table thead, .sub-table tbody, .sub-table tr, .sub-table th, .sub-table td { display: block; }
-      .sub-table thead { display: none; }
-      .sub-table td { padding: 10px 14px; border: none; position: relative; }
-      .sub-table td:before { content: attr(data-label); font-weight: 600; color: #64748b; display: block; margin-bottom: 4px; width: auto; font-size: 12px; }
-      .sub-table tr { background: white; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; padding: 8px 0; overflow: hidden; }
-      .sub-table td.col-status { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
-      .sub-table td.col-actions { display: block; width: 100%; margin-top: 4px; padding-top: 12px; border-top: 1px solid #f1f5f9; }
-      .sub-table td.col-status:before { flex: 0 0 100%; }
-      .sub-table td.col-actions:before { display: block; margin-bottom: 8px; }
-      .sub-table td.col-actions .action-cell { display: flex; justify-content: center; gap: 8px; width: 100%; margin: 0 auto; text-align: center; }
-      .sub-table td.col-actions .btn-action { min-height: 32px; padding: 4px 10px !important; }
-      .col-actions { width: auto; text-align: center; }
-      .batch-toolbar { align-items: stretch; justify-content: flex-start; flex-wrap: wrap; padding: 12px 16px; }
-      .batch-toolbar .count { flex: 0 0 100%; margin-right: 0; }
-      .batch-toolbar .btn { flex: 1 1 auto; }
-      .section-header { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-      .section-header-actions { justify-content: flex-start; width: 100%; }
-      .tab-nav { margin-bottom: 0; padding: 0 0 10px; }
-      .pagination-bar { align-items: stretch; flex-direction: column; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; background: white; min-height: 0; }
-      .pagination-top { margin: 0 0 12px; }
-      .pagination-actions { width: 100%; justify-content: space-between; }
-      .pagination-actions .btn { flex: 1 1 0; }
-      .page-indicator { flex: 0 0 auto; min-width: 64px; }
-      .setting-row { align-items: stretch; flex-direction: column; gap: 8px; }
-      .setting-label { white-space: normal; }
-      .setting-value { text-align: left; }
-      .setting-row .input-wrapper,
-      .setting-row .select-input,
-      .setting-row textarea.select-input { width: 100% !important; max-width: none !important; }
-      .narrow-page,
-      .settings-form { max-width: none; width: 100%; }
-      .settings-scroll-area { overflow: visible; padding-right: 0; }
-      .settings-form .form-actions { position: static; padding-top: 0; background: transparent; }
-    }
-    [data-theme="dark"] .stat-card { background: var(--card-bg); border-color: var(--border-color); }
-    [data-theme="dark"] .stat-card-value { color: var(--primary-color); }
-    [data-theme="dark"] .batch-toolbar { background: var(--bg-primary); border-color: var(--border-color); }
-    [data-theme="dark"] .action-bar .search-input,
-    [data-theme="dark"] .select-input,
-    [data-theme="dark"] .input-wrapper input[type="text"],
-    [data-theme="dark"] .input-wrapper input[type="number"] { background: var(--input-bg); border-color: var(--border-color); color: var(--text-primary); }
-    [data-theme="dark"] .action-bar .search-input:focus,
-    [data-theme="dark"] .select-input:focus,
-    [data-theme="dark"] .input-wrapper input[type="text"]:focus,
-    [data-theme="dark"] .input-wrapper input[type="number"]:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(60,150,202,0.18); }
-    [data-theme="dark"] .setting-label { color: var(--text-primary); }
-    [data-theme="dark"] .setting-value { color: var(--text-secondary); }
-    [data-theme="dark"] .entry-item { background: var(--bg-secondary); border-color: var(--border-color); }
-    [data-theme="dark"] .entry-title { color: var(--text-primary); }
-    [data-theme="dark"] .entry-summary { color: var(--text-secondary); }
-    [data-theme="dark"] .detail-value { color: var(--text-primary); }
-    [data-theme="dark"] .table-section { background: var(--card-bg); border-color: var(--border-color); }
-    [data-theme="dark"] .sub-table thead { background: var(--bg-secondary); }
-    [data-theme="dark"] .sub-table th { color: var(--text-secondary); border-color: var(--border-color); }
-    [data-theme="dark"] .sub-table td { color: var(--text-primary); border-color: var(--border-color); }
-    [data-theme="dark"] .sub-table tbody tr:hover { background: var(--hover-bg); }
-    [data-theme="dark"] .sub-table tbody tr.selected { background: rgba(60,150,202,0.12); }
-    [data-theme="dark"] .sub-table tr { background: var(--card-bg); }
-    [data-theme="dark"] .feed-title { color: var(--text-primary); }
-    [data-theme="dark"] .feed-url { color: var(--text-tertiary); }
-    [data-theme="dark"] .status-badge { background: var(--bg-secondary); color: var(--text-secondary); }
-    [data-theme="dark"] .status-badge.pending { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-    [data-theme="dark"] .status-badge.success { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-    [data-theme="dark"] .status-badge.failed { background: rgba(248, 113, 113, 0.15); color: #f87171; }
-    [data-theme="dark"] .status-badge.stopped { background: var(--bg-secondary); color: var(--text-tertiary); }
-    [data-theme="dark"] .error-block { background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.35); color: #fca5a5; }
-    [data-theme="dark"] .tab-nav { border-color: var(--border-color); }
-    [data-theme="dark"] .tab-btn { color: var(--text-secondary); }
-    [data-theme="dark"] .tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
-    [data-theme="dark"] .tab-btn:hover { color: var(--primary-color); }
-    [data-theme="dark"] .settings-form .panel-section { background: var(--card-bg); border-color: var(--border-color); }
-    [data-theme="dark"] .pagination-bar { background: var(--bg-secondary); border-color: var(--border-color); }
-    [data-theme="dark"] .empty-state { background: var(--bg-secondary); border-color: var(--border-color); color: var(--text-secondary); }
-    [data-theme="dark"] .empty-state-icon path { fill: var(--text-tertiary); }
-  </style>
+  <link rel="stylesheet" href="./css/dashboard.css" />
 </head>
 <body>
 <div class="container" v-scope>
   <div class="dashboard-shell">
-  <!-- Stats -->
-  <div class="stats-row">
-    <div class="stat-card"><div class="stat-card-value">{{ stats.total_subscriptions }}</div><div class="stat-card-label">总订阅</div></div>
-    <div class="stat-card"><div class="stat-card-value">{{ stats.active_subscriptions }}</div><div class="stat-card-label">启用中</div></div>
-    <div class="stat-card"><div class="stat-card-value">{{ stats.total_feeds }}</div><div class="stat-card-label">Feed 源</div></div>
-    <div class="stat-card"><div class="stat-card-value">{{ stats.unique_users }}</div><div class="stat-card-label">用户数</div></div>
-  </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-card-value">{{ stats.total_subscriptions }}</div><div class="stat-card-label">总订阅</div></div>
+      <div class="stat-card"><div class="stat-card-value">{{ stats.active_subscriptions }}</div><div class="stat-card-label">启用中</div></div>
+      <div class="stat-card"><div class="stat-card-value">{{ stats.total_feeds }}</div><div class="stat-card-label">Feed 源</div></div>
+      <div class="stat-card"><div class="stat-card-value">{{ stats.unique_users }}</div><div class="stat-card-label">用户数</div></div>
+    </div>
 
-  <!-- Tab Nav -->
-  <div class="tab-nav">
-    <button class="tab-btn" :class="{ active: activeTab === 'subs' }" @click="activeTab = 'subs'">订阅列表</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'users' }" @click="activeTab = 'users'; loadUsers()">用户</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'feeds' }" @click="activeTab = 'feeds'; loadFeeds()">Feed 源</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'push-history' }" @click="activeTab = 'push-history'; loadPushHistory()">推送历史</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'route-kb' }" @click="activeTab = 'route-kb'; loadRouteKbStatus()">知识库</button>
-    <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'; loadSettings()">默认订阅设置</button>
-  </div>
+    <div class="tab-nav">
+      <button class="tab-btn" :class="{ active: activeTab === 'subs' }" @click="openTab('subs')">订阅列表</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'users' }" @click="openTab('users')">用户</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'feeds' }" @click="openTab('feeds')">Feed 源</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'push-history' }" @click="openTab('push-history')">推送历史</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'handlers' }" @click="openTab('handlers')">处理器</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'route-kb' }" @click="openTab('route-kb')">知识库</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'settings' }" @click="openTab('settings')">默认订阅设置</button>
+      <button class="tab-btn" :class="{ active: activeTab === 'data-management' }" @click="openTab('data-management')">数据管理</button>
+    </div>
 
-  <!-- Action Bar -->
-  <div class="action-bar" v-if="activeTab === 'subs'">
-    <input class="search-input" type="text" v-model="searchQuery" placeholder="搜索订阅标题 / Feed 链接..." @input="filterSubs()" />
-    <button class="btn" :class="editMode ? 'btn-primary' : 'btn-secondary'" @click="toggleEditMode()">
-      {{ editMode ? '完成编辑' : '批量操作' }}
-    </button>
-    <button class="btn btn-icon" @click="loadData()" title="刷新">⟳</button>
-  </div>
-  <div v-if="activeTab === 'subs' && selectedUserId" style="margin-bottom:12px;font-size:13px;color:#64748b;">
-    筛选用户: <strong>{{ selectedUserId }}</strong>
-    <button class="btn btn-text btn-action" @click="selectedUserId = null; loadData()">清除筛选</button>
-  </div>
+    <div class="action-bar" v-if="activeTab === 'subs'">
+      <input class="search-input" type="text" v-model="subFilters.user_id" placeholder="用户 ID（可多值）" />
+      <input class="search-input" type="text" v-model="subFilters.feed_id" placeholder="Feed ID（可多值）" />
+      <input class="search-input" type="text" v-model="subFilters.sub_id" placeholder="订阅 ID（可多值）" />
+      <input class="search-input" type="text" v-model="subFilters.keyword" placeholder="关键词（可多值）" />
+      <button class="btn btn-secondary" :class="{ 'is-loading': isPending('subs:refresh') }" :disabled="isPending('subs:refresh')" @click="applySubscriptionFilters()">应用筛选</button>
+      <button class="btn btn-secondary" @click="clearSubscriptionFilters()" :disabled="isPending('subs:refresh') || !hasSubscriptionFilters()">清空筛选</button>
+      <button class="btn" :class="editMode ? 'btn-primary' : 'btn-secondary'" @click="toggleEditMode()">
+        {{ editMode ? '完成编辑' : '批量操作' }}
+      </button>
+      <button class="btn btn-icon" :class="{ 'is-loading': isPending('subs:refresh') }" :disabled="isPending('subs:refresh')" @click="runPending('subs:refresh', () => loadData())" title="刷新">⟳</button>
+    </div>
+    <div v-if="activeTab === 'subs'" style="margin-bottom:12px;font-size:12px;color:#94a3b8;">
+      多值筛选支持使用英文逗号、中文逗号或换行分隔；同字段内命中任一值即可。
+    </div>
+    <div v-if="activeTab === 'subs' && hasSubscriptionFilters()" style="margin-bottom:12px;font-size:13px;color:#64748b;">
+      当前筛选: <strong>{{ subscriptionFilterSummary() }}</strong>
+      <button class="btn btn-text btn-action" @click="clearSubscriptionFilters()">清除筛选</button>
+    </div>
 
-  <!-- Batch Toolbar -->
-  <div class="batch-toolbar" :class="{ visible: editMode && selectedIds.length > 0 }">
-    <span class="count">已选 {{ selectedIds.length }} 项</span>
-    <button class="btn btn-primary btn-small" @click="batchActivate()">批量启用</button>
-    <button class="btn btn-secondary btn-small" @click="batchDeactivate()">批量禁用</button>
-    <button class="btn btn-danger btn-small" @click="batchUnsubscribe()">批量取消</button>
-  </div>
+    <div class="batch-toolbar" :class="{ visible: editMode && selectedIds.length > 0 }">
+      <span class="count">已选 {{ selectedIds.length }} 项</span>
+      <button class="btn btn-primary btn-small" :class="{ 'is-loading': isPending('batch:activate') }" :disabled="isPending('batch:activate')" @click="batchActivate()">批量启用</button>
+      <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending('batch:deactivate') }" :disabled="isPending('batch:deactivate')" @click="batchDeactivate()">批量禁用</button>
+      <button class="btn btn-danger btn-small" :class="{ 'is-loading': isPending('batch:unsubscribe') }" :disabled="isPending('batch:unsubscribe')" @click="batchUnsubscribe()">批量取消</button>
+    </div>
 
-  <div class="dashboard-content">
-    <!-- Subscription Table -->
-    <section class="table-section" v-if="activeTab === 'subs'">
-      <div class="section-header">
-        <h2>订阅列表</h2>
-        <span style="font-size:13px;color:#94a3b8;">共 {{ filteredSubs.length }} 个</span>
-      </div>
+    <div class="action-bar" v-if="activeTab === 'users'">
+      <input class="search-input" type="text" v-model="userFilters.user_id" placeholder="用户 ID（可多值）" />
+      <input class="search-input" type="text" v-model="userFilters.keyword" placeholder="关键词（可多值）" />
+      <button class="btn btn-secondary" :class="{ 'is-loading': isPending('users:refresh') }" :disabled="isPending('users:refresh')" @click="applyUserFilters()">应用筛选</button>
+      <button class="btn btn-secondary" @click="clearUserFilters()" :disabled="isPending('users:refresh') || !hasUserFilters()">清空筛选</button>
+      <button class="btn" :class="userEditMode ? 'btn-primary' : 'btn-secondary'" @click="toggleUserEditMode()">
+        {{ userEditMode ? '完成编辑' : '批量操作' }}
+      </button>
+      <button class="btn btn-icon" :class="{ 'is-loading': isPending('users:refresh') }" :disabled="isPending('users:refresh')" @click="runPending('users:refresh', () => loadUsers())" title="刷新">⟳</button>
+    </div>
+    <div v-if="activeTab === 'users'" style="margin-bottom:12px;font-size:12px;color:#94a3b8;">
+      多值筛选支持使用英文逗号、中文逗号或换行分隔；同字段内命中任一值即可。
+    </div>
+    <div v-if="activeTab === 'users' && hasUserFilters()" style="margin-bottom:12px;font-size:13px;color:#64748b;">
+      当前筛选: <strong>{{ userFilterSummary() }}</strong>
+      <button class="btn btn-text btn-action" @click="clearUserFilters()">清除筛选</button>
+    </div>
+    <div class="batch-toolbar" :class="{ visible: userEditMode && selectedUserIds.length > 0 }">
+      <span class="count">已选 {{ selectedUserIds.length }} 项</span>
+      <button class="btn btn-danger btn-small" :class="{ 'is-loading': isPending('users:delete-batch') }" :disabled="isPending('users:delete-batch')" @click="deleteSelectedUsers()">批量删除</button>
+    </div>
 
-      <div v-if="!loading && showSubPagination()" class="pagination-bar pagination-top">
-        <span class="pagination-summary">第 {{ subPagination.page }} / {{ subTotalPages() }} 页，每页 {{ subPagination.pageSize }} 个</span>
-        <div class="pagination-actions">
-          <button class="btn btn-secondary btn-small" :disabled="subPagination.page <= 1" @click="subPrevPage()">上一页</button>
-          <span class="page-indicator">{{ subPagination.page }} / {{ subTotalPages() }}</span>
-          <button class="btn btn-secondary btn-small" :disabled="subPagination.page >= subTotalPages()" @click="subNextPage()">下一页</button>
+    <div class="action-bar" v-if="activeTab === 'feeds'">
+      <input class="search-input" type="text" v-model="feedFilters.feed_id" placeholder="Feed ID（可多值）" />
+      <input class="search-input" type="text" v-model="feedFilters.keyword" placeholder="关键词（可多值）" />
+      <button class="btn btn-secondary" :class="{ 'is-loading': isPending('feeds:refresh') }" :disabled="isPending('feeds:refresh')" @click="applyFeedFilters()">应用筛选</button>
+      <button class="btn btn-secondary" @click="clearFeedFilters()" :disabled="isPending('feeds:refresh') || !hasFeedFilters()">清空筛选</button>
+      <button class="btn" :class="feedEditMode ? 'btn-primary' : 'btn-secondary'" @click="toggleFeedEditMode()">
+        {{ feedEditMode ? '完成编辑' : '批量操作' }}
+      </button>
+      <button class="btn btn-icon" :class="{ 'is-loading': isPending('feeds:refresh') }" :disabled="isPending('feeds:refresh')" @click="runPending('feeds:refresh', () => loadFeeds())" title="刷新">⟳</button>
+    </div>
+    <div v-if="activeTab === 'feeds'" style="margin-bottom:12px;font-size:12px;color:#94a3b8;">
+      多值筛选支持使用英文逗号、中文逗号或换行分隔；同字段内命中任一值即可。
+    </div>
+    <div v-if="activeTab === 'feeds' && hasFeedFilters()" style="margin-bottom:12px;font-size:13px;color:#64748b;">
+      当前筛选: <strong>{{ feedFilterSummary() }}</strong>
+      <button class="btn btn-text btn-action" @click="clearFeedFilters()">清除筛选</button>
+    </div>
+    <div class="batch-toolbar" :class="{ visible: feedEditMode && selectedFeedIds.length > 0 }">
+      <span class="count">已选 {{ selectedFeedIds.length }} 项</span>
+      <button class="btn btn-primary btn-small" :class="{ 'is-loading': isPending('feeds:refresh-batch') }" :disabled="isPending('feeds:refresh-batch')" @click="refreshSelectedFeeds()">批量刷新</button>
+    </div>
+
+    <div class="action-bar push-history-action-bar" v-if="activeTab === 'push-history'">
+      <input class="search-input" type="text" v-model="pushHistoryFilter.keyword" placeholder="关键词或 ID（可多值）" />
+      <select class="select-input" v-model="pushHistoryFilter.status" @change="pushHistoryFilter.page = 1; loadPushHistory()">
+        <option value="">全部状态</option>
+        <option value="pending">待推送</option>
+        <option value="success">成功</option>
+        <option value="failed">失败</option>
+        <option value="stopped">已停止</option>
+      </select>
+      <button class="btn btn-secondary" :class="{ 'is-loading': isPending('push-history:refresh') }" :disabled="isPending('push-history:refresh')" @click="runPending('push-history:refresh', () => loadPushHistory())">应用筛选</button>
+      <button class="btn btn-secondary" :disabled="isPending('push-history:refresh') || !hasPushHistoryFilters()" @click="clearPushHistoryFilters()">清空筛选</button>
+      <button class="btn" :class="pushHistoryEditMode ? 'btn-primary' : 'btn-secondary'" @click="togglePushHistoryEditMode()">
+        {{ pushHistoryEditMode ? '完成编辑' : '批量操作' }}
+      </button>
+      <button class="btn btn-secondary" @click="openPushHistorySettingsPanel()">清理设置</button>
+      <button class="btn btn-icon" :class="{ 'is-loading': isPending('push-history:refresh') }" :disabled="isPending('push-history:refresh')" @click="runPending('push-history:refresh', () => loadPushHistory())" title="刷新">⟳</button>
+    </div>
+    <div v-if="activeTab === 'push-history'" style="margin-bottom:12px;font-size:12px;color:#94a3b8;">
+      多值筛选支持使用英文逗号、中文逗号或换行分隔；同字段内命中任一值即可。
+    </div>
+    <div v-if="activeTab === 'push-history' && hasPushHistoryFilters()" style="margin-bottom:12px;font-size:13px;color:#64748b;">
+      当前筛选: <strong>{{ pushHistoryFilterSummary() }}</strong>
+      <button class="btn btn-text btn-action" @click="clearPushHistoryFilters()">清除筛选</button>
+    </div>
+
+    <div class="dashboard-content">
+      <section class="table-section" v-if="activeTab === 'subs'">
+        <div class="section-header">
+          <h2>订阅列表</h2>
+          <span style="font-size:13px;color:#94a3b8;">共 {{ filteredSubs.length }} 个</span>
         </div>
-      </div>
+        <div v-if="!loading && showSubPagination()" class="pagination-bar pagination-top">
+          <span class="pagination-summary">第 {{ subPagination.page }} / {{ subTotalPages() }} 页，每页 {{ subPagination.pageSize }} 个</span>
+          <div class="pagination-actions">
+            <button class="btn btn-secondary btn-small" :disabled="subPagination.page <= 1" @click="subPrevPage()">上一页</button>
+            <span class="page-indicator">{{ subPagination.page }} / {{ subTotalPages() }}</span>
+            <button class="btn btn-secondary btn-small" :disabled="subPagination.page >= subTotalPages()" @click="subNextPage()">下一页</button>
+          </div>
+        </div>
+        <div class="table-scroll-area">
+          <div v-if="loading" class="empty-state"><p>加载中...</p></div>
+          <div v-else-if="filteredSubs.length === 0" class="empty-state">
+            <svg class="empty-state-icon" width="64" height="64" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+              <path d="M337.487 213.925c-6.537-6.547-15.571-10.598-25.553-10.598s-19.018 4.050-25.553 10.597l-256.357 256.383c-6.547 6.546-10.597 15.589-10.597 25.579 0 9.989 4.050 19.034 10.597 25.579l256.343 256.343c7.065 7.065 16.313 10.596 25.547 10.596s18.483-3.532 25.547-10.596c14.129-14.129 14.129-37.029 0-51.158l-230.72-230.758 230.733-230.797c6.555-6.547 10.61-15.596 10.61-25.591 0-9.989-4.05-19.034-10.597-25.579zM997.484 470.308l-256.343-256.382c-6.467-6.134-15.228-9.906-24.869-9.906-19.975 0-36.17 16.193-36.17 36.17 0 9.654 3.782 18.425 9.946 24.911l230.718 230.781-230.733 230.784c-6.551 6.546-10.604 15.593-10.604 25.585 0 19.969 16.183 36.159 36.149 36.17 9.236 0 18.484-3.532 25.548-10.596l256.343-256.343c6.558-6.545 10.615-15.595 10.615-25.591 0-9.99-4.052-19.035-10.603-25.579zM609.667 82.453c-2.506-0.624-5.381-0.981-8.34-0.981-17.042 0-31.313 11.868-34.999 27.789l-175.627 756.609c-0.583 2.435-0.917 5.231-0.917 8.105 0 20.022 16.229 36.255 36.252 36.259 17.063-0.034 31.356-11.861 35.158-27.763l175.499-756.59c0.598-2.463 0.942-5.292 0.942-8.199 0-17.066-11.82-31.372-27.719-35.177z" fill="#cbd5e0"/>
+            </svg>
+            <p>{{ hasSubscriptionFilters() ? '没有匹配的订阅' : '暂无订阅' }}</p>
+            <p style="font-size:13px;margin-top:8px;">{{ hasSubscriptionFilters() ? '试试调整筛选条件' : '可通过聊天命令创建订阅' }}</p>
+          </div>
+          <table class="sub-table subs-table" v-else :class="{ 'edit-mode': editMode }">
+            <thead>
+              <tr>
+                <th v-if="editMode" class="col-chk"></th>
+                <th class="col-status">状态</th>
+                <th class="col-feed">Feed</th>
+                <th class="col-user">用户</th>
+                <th class="col-interval">间隔</th>
+                <th class="col-session">目标会话</th>
+                <th class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="sub in pagedSubs()" :key="sub.id" :class="{ selected: selectedIds.includes(sub.id) }" @click="editMode ? toggleSelect(sub.id) : openDetailPanel(sub)">
+                <td v-if="editMode" class="col-chk"><input type="checkbox" :checked="selectedIds.includes(sub.id)" @click.stop="toggleSelect(sub.id)" /></td>
+                <td class="col-status" data-label="状态"><span class="status-dot" :class="sub.state === 1 ? 'active' : 'inactive'"></span><span class="status-text">{{ sub.state === 1 ? '启用' : '停用' }}</span></td>
+                <td class="col-feed" data-label="Feed"><div class="feed-title">{{ sub.feed_title || '#' + sub.id }}</div><div class="feed-url" :title="sub.feed_link">{{ sub.feed_link || '' }}</div></td>
+                <td class="col-user cell-mono" data-label="用户" :title="sub.user_id">{{ sub.user_id }}</td>
+                <td class="col-interval" data-label="间隔">{{ sub.interval > 0 ? sub.interval + ' 分钟' : '继承' }}</td>
+                <td class="col-session cell-mono" data-label="目标" :title="sub.target_session">{{ sub.target_session || '-' }}</td>
+                <td class="col-actions" data-label="操作"><div class="action-cell"><button class="btn btn-text btn-action" :class="{ 'is-loading': isPending(`sub:panel-edit:${sub.id}`) }" :disabled="isPending(`sub:panel-edit:${sub.id}`)" @click.stop="openEditPanel(sub)" title="编辑">编辑</button><button class="btn btn-text btn-action" :class="{ 'is-loading': isPending(`feed:refresh:${sub.feed_id}`) }" :disabled="isPending(`feed:refresh:${sub.feed_id}`)" @click.stop="handleRefreshDetail(sub.feed_id)" title="刷新">刷新</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div class="table-scroll-area">
-      <div v-if="loading" class="empty-state"><p>加载中...</p></div>
+      <section class="table-section" v-if="activeTab === 'users'">
+        <div class="section-header">
+          <h2>用户列表</h2>
+          <span style="font-size:13px;color:#94a3b8;">共 {{ users.length }} 个</span>
+        </div>
+        <div class="table-scroll-area">
+          <div v-if="usersLoading" class="empty-state"><p>加载中...</p></div>
+          <div v-else-if="users.length === 0" class="empty-state"><p>暂无用户数据</p></div>
+          <table class="sub-table users-table" v-else>
+            <thead><tr><th v-if="userEditMode" class="col-chk"><input type="checkbox" :checked="areAllUsersSelected()" @click.stop @change="toggleAllUserSelection()" /></th><th class="col-user">用户 ID</th><th class="col-status">状态</th><th class="col-interval">订阅数</th><th class="col-session">默认推送目标</th><th class="col-actions">操作</th></tr></thead>
+            <tbody>
+              <tr v-for="u in users" :key="u.user_id" :class="{ selected: selectedUserIds.includes(u.user_id) }" @click="userEditMode ? toggleUserSelection(u.user_id) : selectUser(u.user_id)">
+                <td v-if="userEditMode" class="col-chk"><input type="checkbox" :checked="selectedUserIds.includes(u.user_id)" @click.stop="toggleUserSelection(u.user_id)" /></td>
+                <td class="col-user cell-mono" data-label="用户" :title="u.user_id">{{ u.user_id }}</td>
+                <td class="col-status" data-label="状态"><span class="status-badge" :class="u.state >= 0 ? 'active' : 'inactive'">{{ formatUserState(u.state) }}</span></td>
+                <td class="col-interval" data-label="订阅数">-</td>
+                <td class="col-session cell-mono" data-label="默认推送目标" :title="u.default_target_session">{{ u.default_target_session || '-' }}</td>
+                <td class="col-actions" data-label="操作">
+                  <div class="action-cell">
+                    <button class="btn btn-text btn-action" :class="{ 'is-loading': isPending(`user:panel-edit:${u.user_id}`) }" :disabled="isPending(`user:panel-edit:${u.user_id}`)" @click.stop="openUserEditPanel(u)">编辑</button>
+                    <button class="btn btn-text btn-action danger" :class="{ 'is-loading': isPending(`user:delete:${u.user_id}`) }" :disabled="isPending(`user:delete:${u.user_id}`)" @click.stop="handleDeleteUser(u.user_id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div v-else-if="filteredSubs.length === 0" class="empty-state">
-        <svg class="empty-state-icon" width="64" height="64" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-          <path d="M337.487 213.925c-6.537-6.547-15.571-10.598-25.553-10.598s-19.018 4.050-25.553 10.597l-256.357 256.383c-6.547 6.546-10.597 15.589-10.597 25.579 0 9.989 4.050 19.034 10.597 25.579l256.343 256.343c7.065 7.065 16.313 10.596 25.547 10.596s18.483-3.532 25.547-10.596c14.129-14.129 14.129-37.029 0-51.158l-230.72-230.758 230.733-230.797c6.555-6.547 10.61-15.596 10.61-25.591 0-9.989-4.050-19.034-10.597-25.579zM997.484 470.308l-256.343-256.382c-6.467-6.134-15.228-9.906-24.869-9.906-19.975 0-36.17 16.193-36.17 36.17 0 9.654 3.782 18.425 9.946 24.911l230.718 230.781-230.733 230.784c-6.551 6.546-10.604 15.593-10.604 25.585 0 19.969 16.183 36.159 36.149 36.17 9.236 0 18.484-3.532 25.548-10.596l256.343-256.343c6.558-6.545 10.615-15.595 10.615-25.591 0-9.99-4.052-19.035-10.603-25.579zM609.667 82.453c-2.506-0.624-5.381-0.981-8.34-0.981-17.042 0-31.313 11.868-34.999 27.789l-175.627 756.609c-0.583 2.435-0.917 5.231-0.917 8.105 0 20.022 16.229 36.255 36.252 36.259 17.063-0.034 31.356-11.861 35.158-27.763l175.499-756.59c0.598-2.463 0.942-5.292 0.942-8.199 0-17.066-11.82-31.372-27.719-35.177z" fill="#cbd5e0"/>
-        </svg>
-        <p>{{ searchQuery ? '没有匹配的订阅' : '暂无订阅' }}</p>
-        <p style="font-size:13px;margin-top:8px;">{{ searchQuery ? '试试其他关键词' : '可通过聊天命令创建订阅' }}</p>
-      </div>
+      <section class="table-section" v-if="activeTab === 'feeds'">
+        <div class="section-header">
+          <h2>Feed 源</h2>
+          <span style="font-size:13px;color:#94a3b8;">共 {{ feeds.length }} 个</span>
+        </div>
+        <div class="table-scroll-area">
+          <div v-if="feedsLoading" class="empty-state"><p>加载中...</p></div>
+          <div v-else-if="feeds.length === 0" class="empty-state"><p>暂无 Feed 源</p></div>
+          <table class="sub-table feeds-table" v-else>
+            <thead><tr><th v-if="feedEditMode" class="col-chk"><input type="checkbox" :checked="areAllFeedsSelected()" @click.stop @change="toggleAllFeedSelection()" /></th><th class="col-feed">Feed</th><th class="col-interval">订阅数</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr></thead>
+            <tbody>
+              <tr v-for="f in feeds" :key="f.id" :class="{ selected: selectedFeedIds.includes(f.id) }" @click="feedEditMode ? toggleFeedSelection(f.id) : selectFeed(f.id)">
+                <td v-if="feedEditMode" class="col-chk"><input type="checkbox" :checked="selectedFeedIds.includes(f.id)" @click.stop="toggleFeedSelection(f.id)" /></td>
+                <td class="col-feed" data-label="Feed"><div class="feed-title">{{ f.title || '未知' }}</div><div class="feed-url" :title="f.link">{{ f.link || '' }}</div></td>
+                <td class="col-interval" data-label="订阅数">{{ f.subscription_count }}</td>
+                <td class="col-status" data-label="状态"><span class="status-dot" :class="f.state === 1 ? 'active' : 'inactive'"></span> {{ f.state === 1 ? '启用' : '停用' }}</td>
+                <td class="col-actions" data-label="操作"><div class="action-cell"><button class="btn btn-text btn-action" :class="{ 'is-loading': isPending(`feed:refresh:${f.id}`) }" :disabled="isPending(`feed:refresh:${f.id}`)" @click.stop="handleRefreshDetail(f.id)">刷新</button></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <table class="sub-table subs-table" v-else :class="{ 'edit-mode': editMode }">
-        <thead>
-          <tr>
-            <th v-if="editMode" class="col-chk"></th>
-            <th class="col-status">状态</th>
-            <th class="col-feed">Feed</th>
-            <th class="col-user">用户</th>
-            <th class="col-interval">间隔</th>
-            <th class="col-session">目标会话</th>
-            <th class="col-actions">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="sub in pagedSubs()" :key="sub.id"
-            :class="{ selected: selectedIds.includes(sub.id) }"
-            @click="editMode ? toggleSelect(sub.id) : openDetailPanel(sub)">
-            <td v-if="editMode" class="col-chk">
-              <input type="checkbox" :checked="selectedIds.includes(sub.id)" @click.stop="toggleSelect(sub.id)" />
-            </td>
-            <td class="col-status" data-label="状态">
-              <span class="status-dot" :class="sub.state === 1 ? 'active' : 'inactive'"></span>
-              <span class="status-text">{{ sub.state === 1 ? '启用' : '停用' }}</span>
-            </td>
-            <td class="col-feed" data-label="Feed">
-              <div class="feed-title">{{ sub.feed_title || '#' + sub.id }}</div>
-              <div class="feed-url" :title="sub.feed_link">{{ sub.feed_link || '' }}</div>
-            </td>
-            <td class="col-user cell-mono" data-label="用户" :title="sub.user_id">{{ sub.user_id }}</td>
-            <td class="col-interval" data-label="间隔">{{ sub.interval > 0 ? sub.interval + ' 分钟' : '继承' }}</td>
-            <td class="col-session cell-mono" data-label="目标" :title="sub.target_session">{{ sub.target_session || '-' }}</td>
-            <td class="col-actions" data-label="操作">
-              <div class="action-cell">
-                <button class="btn btn-text btn-action" @click.stop="switchToEdit(sub); panelVisible=true;" title="编辑">编辑</button>
-                <button class="btn btn-text btn-action" @click.stop="handleRefreshDetail(sub.feed_id)" title="刷新">刷新</button>
+      <section class="table-section" v-if="activeTab === 'handlers'">
+        <div class="section-header">
+          <h2>处理器</h2>
+          <div class="section-header-actions">
+            <button class="btn btn-secondary btn-small" :class="{ 'is-loading': handlersLoading }" :disabled="handlersLoading" @click="refreshHandlers()">刷新</button>
+            <button class="btn btn-primary btn-small" disabled title="外部处理器安装暂未开放">安装</button>
+          </div>
+        </div>
+        <div class="table-scroll-area">
+          <div v-if="handlersLoading" class="empty-state"><p>加载中...</p></div>
+          <div v-else-if="handlersRegistry.length === 0" class="empty-state"><p>暂无处理器数据</p></div>
+          <div v-else class="handler-grid">
+            <article
+              v-for="handler in handlersRegistry"
+              :key="handler.name"
+              class="handler-card"
+              :class="{ expanded: isHandlerExpanded(handler.name) }"
+              role="button"
+              tabindex="0"
+              :aria-expanded="isHandlerExpanded(handler.name) ? 'true' : 'false'"
+              @click="toggleHandlerCard(handler.name)"
+              @keydown.enter.prevent="toggleHandlerCard(handler.name)"
+              @keydown.space.prevent="toggleHandlerCard(handler.name)"
+            >
+              <div class="handler-card-head">
+                <div class="handler-card-main">
+                  <div class="handler-title-row">
+                    <div class="handler-title">{{ handler.title }}</div>
+                    <span class="handler-expand-indicator">{{ isHandlerExpanded(handler.name) ? '收起' : '展开' }}</span>
+                  </div>
+                  <div class="handler-meta">{{ handler.name }} · {{ handlerTypeLabel(handler.type) }}</div>
+                  <div class="handler-card-tags">
+                    <span class="handler-tag">{{ handlerStatusLabel(handler) }}</span>
+                    <span class="handler-tag">{{ handlerFieldCountText(handler) }}</span>
+                  </div>
+                </div>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-    </section>
-
-  <!-- Users -->
-  <div v-if="activeTab === 'users'" class="table-section">
-    <div class="section-header"><h2>用户列表</h2><span style="font-size:13px;color:#94a3b8;">共 {{ users.length }} 个</span></div>
-    <div class="table-scroll-area">
-    <div v-if="usersLoading" class="empty-state"><p>加载中...</p></div>
-    <div v-else-if="users.length === 0" class="empty-state"><p>暂无用户数据</p></div>
-    <table class="sub-table users-table" v-else>
-      <thead><tr><th class="col-user">用户 ID</th><th class="col-status">状态</th><th class="col-interval">订阅数</th><th class="col-session">默认推送目标</th><th class="col-actions">操作</th></tr></thead>
-      <tbody>
-        <tr v-for="u in users" :key="u.user_id">
-          <td class="col-user cell-mono" data-label="用户" :title="u.user_id">{{ u.user_id }}</td>
-          <td class="col-status" data-label="状态"><span class="status-badge" :class="u.state >= 0 ? 'active' : 'inactive'">{{ formatUserState(u.state) }}</span></td>
-          <td class="col-interval" data-label="订阅数">-</td>
-          <td class="col-session cell-mono" data-label="默认推送目标" :title="u.default_target_session">{{ u.default_target_session || '-' }}</td>
-          <td class="col-actions" data-label="操作">
-            <div class="action-cell">
-              <button class="btn btn-text btn-action" @click="selectUser(u.user_id)">查看订阅</button>
-              <button class="btn btn-text btn-action" @click="openUserEditPanel(u)">编辑</button>
-              <button class="btn btn-text btn-action danger" @click="handleDeleteUser(u.user_id)">删除</button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-  </div>
-
-  <!-- Feeds -->
-  <div v-if="activeTab === 'feeds'" class="table-section">
-    <div class="section-header"><h2>Feed 源</h2><span style="font-size:13px;color:#94a3b8;">共 {{ feeds.length }} 个</span></div>
-    <div class="table-scroll-area">
-    <div v-if="feedsLoading" class="empty-state"><p>加载中...</p></div>
-    <div v-else-if="feeds.length === 0" class="empty-state"><p>暂无 Feed 源</p></div>
-    <table class="sub-table feeds-table" v-else>
-      <thead><tr><th class="col-feed">Feed</th><th class="col-interval">订阅数</th><th class="col-status">状态</th><th class="col-actions">操作</th></tr></thead>
-      <tbody>
-        <tr v-for="f in feeds" :key="f.id">
-          <td class="col-feed" data-label="Feed">
-            <div class="feed-title">{{ f.title || '未知' }}</div>
-            <div class="feed-url" :title="f.link">{{ f.link || '' }}</div>
-          </td>
-          <td class="col-interval" data-label="订阅数">{{ f.subscription_count }}</td>
-          <td class="col-status" data-label="状态"><span class="status-dot" :class="f.state === 1 ? 'active' : 'inactive'"></span> {{ f.state === 1 ? '启用' : '停用' }}</td>
-          <td class="col-actions" data-label="操作">
-            <div class="action-cell">
-              <button class="btn btn-text btn-action" @click="handleRefreshDetail(f.id)">刷新</button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-  </div>
-
-  <!-- Route Knowledge -->
-  <div v-if="activeTab === 'route-kb'" class="settings-shell narrow-page">
-    <div class="settings-scroll-area">
-    <div class="settings-form">
-    <div class="panel-section">
-      <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
-        <div class="route-kb-title">
-          <h2>RSSHub Routes 知识库</h2>
-        </div>
-        <div class="section-header-actions">
-          <button class="btn btn-secondary btn-small" @click="loadRouteKbStatus()">刷新</button>
-          <button class="btn btn-primary btn-small" :disabled="routeKbSyncing || isRouteKbTaskRunning()" @click="handleRouteKbSync()">
-            {{ routeKbSyncing ? '启动中...' : '同步' }}
-          </button>
-        </div>
-      </div>
-      <div v-if="routeKbLoading" class="empty-state"><p>加载中...</p></div>
-      <div v-else-if="!routeKbStatus" class="empty-state"><p>暂无知识库状态</p></div>
-      <div v-else>
-        <div class="setting-row">
-          <span class="setting-label">知识库名称</span>
-          <span class="setting-value">{{ routeKbStatus.kb_name }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">KB ID</span>
-          <span class="setting-value">{{ routeKbStatus.kb_id || '未就绪' }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">已管理文件</span>
-          <span class="setting-value">{{ routeKbStatus.managed_files }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">KB 文档数</span>
-          <span class="setting-value">{{ routeKbStatus.kb_docs }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">来源版本</span>
-          <span class="setting-value">{{ routeKbStatus.source_version || '未知' }}</span>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">最后同步</span>
-          <span class="setting-value">{{ formatDate(routeKbStatus.last_sync_at) }}</span>
-        </div>
-        <div class="setting-row" v-if="routeKbStatus.last_error">
-          <span class="setting-label">最近错误</span>
-          <span class="setting-value error-block">{{ routeKbStatus.last_error }}</span>
-        </div>
-      </div>
-    </div>
-    <div class="panel-section" v-if="routeKbTask && routeKbTask.status !== 'idle'">
-      <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
-        <h2>同步任务</h2>
-        <button class="btn btn-secondary btn-small" @click="refreshRouteKbTask()">刷新任务</button>
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">任务 ID</span>
-        <span class="setting-value">{{ routeKbTask.task_id }}</span>
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">状态</span>
-        <span class="status-badge" :class="routeKbTask.status === 'completed' ? 'success' : (routeKbTask.status === 'failed' ? 'failed' : 'pending')">{{ routeKbTask.status }}</span>
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">进度</span>
-        <span class="setting-value">{{ routeKbTask.processed }}/{{ routeKbTask.total }}</span>
-      </div>
-      <div class="setting-row">
-        <span class="setting-label">计划</span>
-        <span class="setting-value">新增 {{ routeKbTask.added }}，更新 {{ routeKbTask.updated }}，删除 {{ routeKbTask.deleted }}，跳过 {{ routeKbTask.skipped || 0 }}，未变更 {{ routeKbTask.unchanged }}</span>
-      </div>
-      <div class="setting-row" v-if="routeKbTask.current_path">
-        <span class="setting-label">当前文件</span>
-        <span class="setting-value">{{ routeKbTask.current_path }}</span>
-      </div>
-      <div class="setting-row" v-if="routeKbTask.message">
-        <span class="setting-label">消息</span>
-        <span class="setting-value">{{ routeKbTask.message }}</span>
-      </div>
-      <div class="setting-row" v-if="routeKbTask.error">
-        <span class="setting-label">错误</span>
-        <span class="setting-value error-block">{{ routeKbTask.error }}</span>
-      </div>
-    </div>
-    </div>
-    </div>
-  </div>
-
-  <!-- Push History -->
-  <div v-if="activeTab === 'push-history'" class="table-section">
-    <div class="section-header">
-      <h2>推送历史</h2>
-      <div class="section-header-actions">
-        <select class="select-input" v-model="pushHistoryFilter.status" @change="pushHistoryFilter.page = 1; loadPushHistory()">
-          <option value="">全部状态</option>
-          <option value="pending">待推送</option>
-          <option value="success">成功</option>
-          <option value="failed">失败</option>
-          <option value="stopped">已停止</option>
-        </select>
-        <button class="btn btn-secondary btn-small" @click="cleanupPushHistory()">清理旧记录</button>
-      </div>
-    </div>
-    <div v-if="!pushHistoryLoading && showPushHistoryPagination()" class="pagination-bar pagination-top">
-      <span class="pagination-summary">共 {{ pushHistoryTotal }} 条，第 {{ pushHistoryFilter.page }} / {{ pushHistoryTotalPages() }} 页</span>
-      <div class="pagination-actions">
-        <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page <= 1" @click="pushHistoryPrevPage()">上一页</button>
-        <span class="page-indicator">{{ pushHistoryFilter.page }} / {{ pushHistoryTotalPages() }}</span>
-        <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page >= pushHistoryTotalPages()" @click="pushHistoryNextPage()">下一页</button>
-      </div>
-    </div>
-    <div class="table-scroll-area">
-    <div v-if="pushHistoryLoading" class="empty-state"><p>加载中...</p></div>
-    <div v-else-if="pushHistory.length === 0" class="empty-state"><p>暂无推送历史</p></div>
-    <table class="sub-table history-table" v-else>
-      <thead><tr><th class="col-status">状态</th><th class="col-user">用户</th><th class="col-feed">条目</th><th class="col-session">目标会话</th><th class="col-error">错误</th><th class="col-interval">重试</th><th class="col-actions">操作</th></tr></thead>
-      <tbody>
-        <tr v-for="h in pushHistory" :key="h.id">
-          <td class="col-status" data-label="状态"><span class="status-badge" :class="h.status">{{ h.status }}</span></td>
-          <td class="col-user cell-mono" data-label="用户" :title="h.user_id">{{ h.user_id }}</td>
-          <td class="col-feed" data-label="条目">
-            <div class="feed-title">{{ h.entry_title || '无标题' }}</div>
-            <div class="feed-url" :title="h.entry_link">{{ h.feed_title || '' }}</div>
-          </td>
-          <td class="col-session cell-mono" data-label="目标" :title="h.target_session">{{ h.target_session || '-' }}</td>
-          <td class="col-error cell-wrap" data-label="错误" :title="h.fail_reason || ''">{{ h.fail_reason || '-' }}</td>
-          <td class="col-interval" data-label="重试">{{ h.retry_count }}/{{ h.max_retries }}</td>
-          <td class="col-actions" data-label="操作">
-            <div class="action-cell">
-              <button class="btn btn-text btn-action danger" @click="deletePushHistoryItem(h.id)">删除</button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    </div>
-  </div>
-
-  <!-- Settings -->
-  <div v-if="activeTab === 'settings'" class="settings-shell narrow-page">
-    <div v-if="pluginSettingsLoading" class="empty-state"><p>加载中...</p></div>
-    <div v-else class="settings-scroll-area">
-      <div class="settings-form">
-      <div class="panel-section">
-        <h4>插件默认订阅配置</h4>
-        <div class="setting-row">
-          <span class="setting-label">默认监控间隔（分钟）</span>
-          <div class="input-wrapper" style="max-width:120px;">
-            <input type="number" v-model.number="subscriptionDefaults.interval" min="1" max="1440" />
+              <div class="handler-desc">{{ handler.description || '暂无说明' }}</div>
+              <div class="handler-fields" v-if="isHandlerExpanded(handler.name) && handler.fields.length > 0">
+                <div v-for="field in handler.fields" :key="field.key" class="handler-field">
+                  <div class="handler-field-label">
+                    <span>{{ field.label || field.key }}</span>
+                    <span class="handler-field-type">{{ field.type }}</span>
+                  </div>
+                  <div class="handler-field-desc">{{ field.description || '无说明' }}</div>
+                  <div class="handler-field-value">
+                    <span class="handler-field-default">默认: {{ handlerDefaultValueText(field.default) }}</span>
+                    <span v-if="field.options && field.options.length" class="handler-field-options">可选: {{ field.options.map((item) => item.value || item.label).join(' / ') }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="handler-fields empty" v-else-if="isHandlerExpanded(handler.name)">该处理器无额外配置项</div>
+            </article>
           </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认通知</span>
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="subscriptionDefaults.notify" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">默认发送模式</span>
-          <select class="select-input" v-model="subscriptionDefaults.send_mode">
-            <option value="仅链接">仅链接</option>
-            <option value="自动">自动</option>
-            <option value="直接发送">直接发送</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">内容长度限制</span>
-          <div class="input-wrapper" style="max-width:120px;">
-            <input type="number" v-model.number="subscriptionDefaults.length_limit" min="0" />
+      </section>
+
+      <section v-if="activeTab === 'route-kb'" class="settings-shell narrow-page">
+        <div class="settings-scroll-area">
+          <div class="settings-form">
+            <div class="panel-section">
+              <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
+                <div class="route-kb-title"><h2>RSSHub Routes 知识库</h2></div>
+                <div class="section-header-actions">
+                  <button class="btn btn-secondary btn-small" :class="{ 'is-loading': routeKbLoading }" :disabled="routeKbLoading" @click="loadRouteKbStatus()">刷新</button>
+                  <button class="btn btn-primary btn-small" :class="{ 'is-loading': isPending('route-kb:sync') }" :disabled="routeKbLoading || isRouteKbTaskRunning() || isPending('route-kb:sync')" @click="handleRouteKbSync()">
+                    {{ isPending('route-kb:sync') ? '启动中...' : '同步' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="routeKbLoading" class="empty-state"><p>加载中...</p></div>
+              <div v-else-if="!routeKbStatus" class="empty-state"><p>暂无知识库状态</p></div>
+              <div v-else>
+                <div class="setting-row"><span class="setting-label">知识库名称</span><span class="setting-value">{{ routeKbStatus.kb_name }}</span></div>
+                <div class="setting-row"><span class="setting-label">KB ID</span><span class="setting-value">{{ routeKbStatus.kb_id || '未就绪' }}</span></div>
+                <div class="setting-row"><span class="setting-label">已管理文件</span><span class="setting-value">{{ routeKbStatus.managed_files }}</span></div>
+                <div class="setting-row"><span class="setting-label">KB 文档数</span><span class="setting-value">{{ routeKbStatus.kb_docs }}</span></div>
+                <div class="setting-row"><span class="setting-label">来源版本</span><span class="setting-value">{{ routeKbStatus.source_version || '未知' }}</span></div>
+                <div class="setting-row"><span class="setting-label">最后同步</span><span class="setting-value">{{ formatDate(routeKbStatus.last_sync_at) }}</span></div>
+                <div class="setting-row" v-if="routeKbStatus.last_error"><span class="setting-label">最近错误</span><span class="setting-value error-block">{{ routeKbStatus.last_error }}</span></div>
+              </div>
+            </div>
+            <div class="panel-section" v-if="routeKbTask && routeKbTask.status !== 'idle'">
+              <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
+                <h2>同步任务</h2>
+              </div>
+              <div class="setting-row"><span class="setting-label">任务 ID</span><span class="setting-value">{{ routeKbTask.task_id }}</span></div>
+              <div class="setting-row"><span class="setting-label">状态</span><span class="status-badge" :class="routeKbTask.status === 'completed' ? 'success' : (routeKbTask.status === 'failed' ? 'failed' : 'pending')">{{ routeKbTask.status }}</span></div>
+              <div class="setting-row"><span class="setting-label">进度</span><span class="setting-value">{{ routeKbTask.processed }}/{{ routeKbTask.total }}</span></div>
+              <div class="setting-row"><span class="setting-label">计划</span><span class="setting-value">新增 {{ routeKbTask.added }}，更新 {{ routeKbTask.updated }}，删除 {{ routeKbTask.deleted }}，跳过 {{ routeKbTask.skipped || 0 }}，未变更 {{ routeKbTask.unchanged }}</span></div>
+              <div class="setting-row" v-if="routeKbTask.current_path"><span class="setting-label">当前文件</span><span class="setting-value">{{ routeKbTask.current_path }}</span></div>
+              <div class="setting-row" v-if="routeKbTask.message"><span class="setting-label">消息</span><span class="setting-value">{{ routeKbTask.message }}</span></div>
+              <div class="setting-row" v-if="routeKbTask.error"><span class="setting-label">错误</span><span class="setting-value error-block">{{ routeKbTask.error }}</span></div>
+            </div>
           </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认显示作者</span>
-          <select class="select-input" v-model="subscriptionDefaults.display_author">
-            <option value="禁用">禁用</option>
-            <option value="自动">自动</option>
-            <option value="强制">强制</option>
-          </select>
+      </section>
+
+      <section v-if="activeTab === 'push-history'" class="table-section">
+        <div class="section-header">
+          <h2>推送历史</h2>
+          <span style="font-size:13px;color:#94a3b8;">共 {{ pushHistoryTotal }} 条</span>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认显示来源</span>
-          <select class="select-input" v-model="subscriptionDefaults.display_via">
-            <option value="完全禁用">完全禁用</option>
-            <option value="仅链接">仅链接</option>
-            <option value="自动">自动</option>
-            <option value="强制">强制</option>
-          </select>
+        <div class="batch-toolbar" :class="{ visible: pushHistoryEditMode && selectedPushHistoryIds.length > 0 }">
+          <span class="count">已选 {{ selectedPushHistoryIds.length }} 项</span>
+          <button class="btn btn-danger btn-small" :class="{ 'is-loading': isPending('push-history:delete-batch') }" :disabled="isPending('push-history:delete-batch')" @click="deleteSelectedPushHistory()">批量删除</button>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认显示标题</span>
-          <select class="select-input" v-model="subscriptionDefaults.display_title">
-            <option value="禁用">禁用</option>
-            <option value="自动">自动</option>
-            <option value="强制">强制</option>
-          </select>
+        <div v-if="!pushHistoryLoading && showPushHistoryPagination()" class="pagination-bar pagination-top">
+          <span class="pagination-summary">共 {{ pushHistoryTotal }} 条，第 {{ pushHistoryFilter.page }} / {{ pushHistoryTotalPages() }} 页</span>
+          <div class="pagination-actions">
+            <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page <= 1" @click="pushHistoryPrevPage()">上一页</button>
+            <span class="page-indicator">{{ pushHistoryFilter.page }} / {{ pushHistoryTotalPages() }}</span>
+            <button class="btn btn-secondary btn-small" :disabled="pushHistoryFilter.page >= pushHistoryTotalPages()" @click="pushHistoryNextPage()">下一页</button>
+          </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认显示标签</span>
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="subscriptionDefaults.display_entry_tags" />
-            <span class="toggle-slider"></span>
-          </label>
+        <div class="table-scroll-area">
+          <div v-if="pushHistoryLoading" class="empty-state"><p>加载中...</p></div>
+          <div v-else-if="pushHistory.length === 0" class="empty-state"><p>暂无推送历史</p></div>
+          <table class="sub-table history-table" v-else>
+            <thead>
+              <tr>
+                <th v-if="pushHistoryEditMode" class="col-chk">
+                  <input
+                    type="checkbox"
+                    :checked="areAllPushHistorySelected()"
+                    @click.stop
+                    @change="toggleAllPushHistorySelection()"
+                  />
+                </th>
+                <th class="col-status">状态</th>
+                <th class="col-user">用户</th>
+                <th class="col-feed">条目</th>
+                <th class="col-session">目标会话</th>
+                <th class="col-error">错误</th>
+                <th class="col-interval">重试</th>
+                <th class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="h in pushHistory"
+                :key="h.id"
+                :class="{ selected: isPushHistorySelected(h.id) }"
+                @click="openPushHistorySubscriptions(h)"
+              >
+                <td v-if="pushHistoryEditMode" class="col-chk" data-label="选择">
+                  <input
+                    type="checkbox"
+                    :checked="isPushHistorySelected(h.id)"
+                    @click.stop
+                    @change="togglePushHistorySelect(h.id)"
+                  />
+                </td>
+                <td class="col-status" data-label="状态"><span class="status-badge" :class="h.status">{{ h.status }}</span></td>
+                <td class="col-user cell-mono" data-label="用户" :title="h.user_id">{{ h.user_id }}</td>
+                <td class="col-feed" data-label="条目"><div class="feed-title">{{ h.entry_title || '无标题' }}</div><div class="feed-url" :title="h.entry_link">{{ h.feed_title || '' }}</div></td>
+                <td class="col-session cell-mono" data-label="目标" :title="h.target_session">{{ h.target_session || '-' }}</td>
+                <td class="col-error cell-wrap" data-label="错误" :title="h.fail_reason || ''">{{ h.fail_reason || '-' }}</td>
+                <td class="col-interval" data-label="重试">{{ h.retry_count }}/{{ h.max_retries }}</td>
+                <td class="col-actions" data-label="操作">
+                  <div class="action-cell">
+                    <button class="btn btn-text btn-action" @click.stop="openPushHistoryDetail(h)">详情</button>
+                    <button class="btn btn-text btn-action danger" :class="{ 'is-loading': isPending(`push-history:delete:${h.id}`) }" :disabled="isPending(`push-history:delete:${h.id}`)" @click.stop="deletePushHistoryItem(h.id)">删除</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认样式</span>
-          <select class="select-input" v-model="subscriptionDefaults.style">
-            <option value="RSStT">RSStT</option>
-            <option value="flowerss">flowerss</option>
-          </select>
+      </section>
+
+      <section v-if="activeTab === 'settings'" class="settings-shell narrow-page">
+        <div v-if="pluginSettingsLoading" class="empty-state"><p>加载中...</p></div>
+        <div v-else class="settings-scroll-area">
+          <div class="settings-form">
+            <div class="panel-section">
+              <h4>插件默认订阅配置</h4>
+              <div class="setting-row"><span class="setting-label">默认监控间隔（分钟）</span><div class="input-wrapper" style="max-width:120px;"><input type="number" v-model.number="subscriptionDefaults.interval" min="1" max="1440" /></div></div>
+              <div class="setting-row"><span class="setting-label">默认通知</span><label class="toggle-switch"><input type="checkbox" v-model="subscriptionDefaults.notify" /><span class="toggle-slider"></span></label></div>
+              <div class="setting-row"><span class="setting-label">默认发送模式</span><select class="select-input" v-model="subscriptionDefaults.send_mode"><option value="仅链接">仅链接</option><option value="自动">自动</option><option value="直接发送">直接发送</option></select></div>
+              <div class="setting-row"><span class="setting-label">内容长度限制</span><div class="input-wrapper" style="max-width:120px;"><input type="number" v-model.number="subscriptionDefaults.length_limit" min="0" /></div></div>
+              <div class="setting-row"><span class="setting-label">默认显示作者</span><select class="select-input" v-model="subscriptionDefaults.display_author"><option value="禁用">禁用</option><option value="自动">自动</option><option value="强制">强制</option></select></div>
+              <div class="setting-row"><span class="setting-label">默认显示来源</span><select class="select-input" v-model="subscriptionDefaults.display_via"><option value="完全禁用">完全禁用</option><option value="仅链接">仅链接</option><option value="自动">自动</option><option value="强制">强制</option></select></div>
+              <div class="setting-row"><span class="setting-label">默认显示标题</span><select class="select-input" v-model="subscriptionDefaults.display_title"><option value="禁用">禁用</option><option value="自动">自动</option><option value="强制">强制</option></select></div>
+              <div class="setting-row"><span class="setting-label">默认显示标签</span><label class="toggle-switch"><input type="checkbox" v-model="subscriptionDefaults.display_entry_tags" /><span class="toggle-slider"></span></label></div>
+              <div class="setting-row"><span class="setting-label">默认排版策略</span><select class="select-input" v-model="subscriptionDefaults.style"><option value="auto">自动</option><option value="rssrt">RSSRT</option><option value="original">原始顺序</option></select></div>
+              <div class="setting-row"><span class="setting-label">默认显示媒体</span><label class="toggle-switch"><input type="checkbox" v-model="subscriptionDefaults.display_media" /><span class="toggle-slider"></span></label></div>
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-primary" :class="{ 'is-loading': isPending('plugin-settings:save') }" :disabled="isPending('plugin-settings:save')" @click="savePluginSettings()">保存插件设置</button>
+            </div>
+          </div>
         </div>
-        <div class="setting-row">
-          <span class="setting-label">默认显示媒体</span>
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="subscriptionDefaults.display_media" />
-            <span class="toggle-slider"></span>
-          </label>
+      </section>
+
+      <section v-if="activeTab === 'data-management'" class="settings-shell narrow-page">
+        <div v-if="dataManagementLoading" class="empty-state"><p>加载中...</p></div>
+        <div v-else class="settings-scroll-area">
+          <div class="settings-form">
+            <div class="panel-section">
+              <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
+                <h2>数据管理</h2>
+                <div class="section-header-actions">
+                  <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending('data-management:refresh') }" :disabled="isPending('data-management:refresh')" @click="refreshDataManagement()">刷新</button>
+                  <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending('data-management:cache-clear') }" :disabled="isPending('data-management:cache-clear')" @click="handleClearCache()">清理缓存</button>
+                  <button class="btn btn-danger btn-small" :class="{ 'is-loading': isPending('data-management:exports-clear') }" :disabled="isPending('data-management:exports-clear')" @click="handleClearExports()">清空导出</button>
+                </div>
+              </div>
+              <div class="data-overview-grid">
+                <div class="data-summary-card">
+                  <div class="data-summary-title">缓存</div>
+                  <div class="data-summary-value">{{ formatBytes(dataManagementOverview.cache.total_bytes) }}</div>
+                  <div class="data-summary-meta">{{ dataManagementOverview.cache.file_count }} 个文件</div>
+                </div>
+                <div class="data-summary-card">
+                  <div class="data-summary-title">导出</div>
+                  <div class="data-summary-value">{{ formatBytes(dataManagementOverview.exports.total_bytes) }}</div>
+                  <div class="data-summary-meta">{{ dataManagementOverview.exports.file_count }} 个文件</div>
+                </div>
+                <div class="data-summary-card">
+                  <div class="data-summary-title">合计</div>
+                  <div class="data-summary-value">{{ formatBytes(dataManagementOverview.totals.combined_bytes) }}</div>
+                  <div class="data-summary-meta">缓存 + 导出</div>
+                </div>
+              </div>
+              <div class="data-charts">
+                <div class="data-chart-panel">
+                  <h4>缓存占比</h4>
+                  <div class="pie-chart-wrap">
+                    <svg viewBox="0 0 36 36" class="pie-chart">
+                      <circle class="pie-track" cx="18" cy="18" r="15.9155"></circle>
+                      <circle
+                        v-for="segment in cacheSegments()"
+                        :key="segment.key"
+                        class="pie-segment"
+                        cx="18"
+                        cy="18"
+                        r="15.9155"
+                        :stroke="segment.color"
+                        :stroke-dasharray="segment.dashArray"
+                        :stroke-dashoffset="segment.dashOffset"
+                      ></circle>
+                    </svg>
+                  </div>
+                  <div class="legend-list">
+                    <div class="legend-item" v-for="segment in cacheSegments()" :key="segment.key">
+                      <span class="legend-swatch" :style="{ background: segment.color }"></span>
+                      <span class="legend-label">{{ segment.label }}</span>
+                      <span class="legend-value">{{ formatBytes(segment.bytes) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="data-chart-panel">
+                  <h4>导出占比</h4>
+                  <div class="pie-chart-wrap">
+                    <svg viewBox="0 0 36 36" class="pie-chart">
+                      <circle class="pie-track" cx="18" cy="18" r="15.9155"></circle>
+                      <circle
+                        v-for="segment in exportSegments()"
+                        :key="segment.key"
+                        class="pie-segment"
+                        cx="18"
+                        cy="18"
+                        r="15.9155"
+                        :stroke="segment.color"
+                        :stroke-dasharray="segment.dashArray"
+                        :stroke-dashoffset="segment.dashOffset"
+                      ></circle>
+                    </svg>
+                  </div>
+                  <div class="legend-list">
+                    <div class="legend-item" v-for="segment in exportSegments()" :key="segment.key">
+                      <span class="legend-swatch" :style="{ background: segment.color }"></span>
+                      <span class="legend-label">{{ segment.label }}</span>
+                      <span class="legend-value">{{ formatBytes(segment.bytes) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="panel-section">
+              <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
+                <h2>导出文件</h2>
+                <span style="font-size:13px;color:#94a3b8;">{{ exportFiles.length }} 个</span>
+              </div>
+              <div v-if="exportFiles.length === 0" class="empty-state"><p>暂无导出文件</p></div>
+              <table class="sub-table exports-table" v-else>
+                <thead><tr><th class="col-feed">文件名</th><th class="col-interval">大小</th><th class="col-session">更新时间</th><th class="col-actions">操作</th></tr></thead>
+                <tbody>
+                  <tr v-for="file in exportFiles" :key="file.name">
+                    <td class="col-feed cell-mono" data-label="文件名" :title="file.name">{{ file.name }}</td>
+                    <td class="col-interval" data-label="大小">{{ formatBytes(file.size_bytes) }}</td>
+                    <td class="col-session cell-mono" data-label="更新时间">{{ formatDate(file.modified_at) }}</td>
+                    <td class="col-actions" data-label="操作">
+                      <div class="action-cell">
+                        <button class="btn btn-text btn-action" :class="{ 'is-loading': isPending(`data-management:export-preview:${file.name}`) }" :disabled="isPending(`data-management:export-preview:${file.name}`)" @click="openExportPreview(file.name)">预览</button>
+                        <button class="btn btn-text btn-action danger" :class="{ 'is-loading': isPending(`data-management:export-delete:${file.name}`) }" :disabled="isPending(`data-management:export-delete:${file.name}`)" @click="handleDeleteExportFile(file.name)">删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" @click="savePluginSettings()">保存插件设置</button>
-      </div>
-      </div>
+      </section>
     </div>
   </div>
-  </div>
-  </div>
 
-  <!-- Panel Overlay -->
   <div class="panel-overlay" :class="{ visible: panelVisible }" @click="closePanel()"></div>
 
-  <!-- Slide Panel -->
   <section class="edit-panel" :class="{ 'panel-visible': panelVisible, expanded: panelExpanded }">
     <div class="panel-header">
-      <h3>{{ panelMode === 'edit' ? '编辑订阅' : '订阅详情' }}</h3>
+      <h3>{{ panelTitle() }}</h3>
       <div class="panel-actions">
         <button type="button" class="btn btn-icon" title="展开" @click="panelExpanded = !panelExpanded">{{ panelExpanded ? '⇋' : '⛶' }}</button>
-        <button class="btn btn-icon" @click="closePanel()">×</button>
+        <button class="btn btn-icon" :class="{ 'is-loading': closePanelDisabled() }" :disabled="closePanelDisabled()" @click="closePanel()">×</button>
       </div>
     </div>
 
-    <!-- Edit Subscription -->
     <form v-if="panelMode === 'edit'" class="form" @submit.prevent="handleEditSub()">
       <div class="panel-section">
         <h4>基本信息</h4>
@@ -640,24 +559,18 @@
         <div class="detail-row"><span class="detail-label">用户</span><span class="detail-value">{{ editForm.user_id }}</span></div>
         <div class="form-group">
           <label>标题</label>
-          <div class="input-wrapper">
-            <input type="text" v-model="editForm.title" placeholder="订阅显示名称" />
-          </div>
+          <div class="input-wrapper"><input type="text" v-model="editForm.title" placeholder="订阅显示名称" /></div>
         </div>
         <div class="form-group">
           <label>标签</label>
-          <div class="input-wrapper">
-            <input type="text" v-model="editForm.tags" placeholder="news,tech" />
-          </div>
+          <div class="input-wrapper"><input type="text" v-model="editForm.tags" placeholder="news,tech" /></div>
         </div>
       </div>
       <div class="panel-section">
         <h4>推送设置</h4>
         <div class="form-group">
           <label>目标会话</label>
-          <div class="input-wrapper">
-            <input type="text" v-model="editForm.target_session" />
-          </div>
+          <div class="input-wrapper"><input type="text" v-model="editForm.target_session" /></div>
         </div>
         <div class="form-group">
           <label>内容处理链</label>
@@ -670,172 +583,50 @@
                 <option value="disabled">禁用全部处理链</option>
               </select>
             </div>
-            <template v-if="editForm.handlers_mode === 'override'">
-              <div class="handler-toolbar">
-                <select class="select-input" @change="addBuiltinHandler(editForm, $event.target.value); $event.target.value = ''">
-                  <option value="">添加内置 handler</option>
-                  <option v-for="schema in availableBuiltinHandlers(editForm)" :key="schema.id" :value="schema.type + '.' + schema.name">{{ schema.title }}</option>
-                </select>
-                <label class="checkbox-row">
-                  <input type="checkbox" v-model="editForm.handlers_advanced" />
-                  <span>原始 JSON</span>
-                </label>
-              </div>
-              <div v-if="!editForm.handlers_advanced" class="handler-list">
-                <div v-for="(handler, index) in editForm.handlers" :key="handler.id || index" class="handler-item">
-                  <div class="handler-item-header">
-                    <div>
-                      <div class="handler-title">{{ handlerTitle(handler) }}</div>
-                      <div class="handler-desc" v-if="handlerDescription(handler)">{{ handlerDescription(handler) }}</div>
-                    </div>
-                    <div class="handler-actions">
-                      <label class="toggle-switch">
-                        <input type="checkbox" :checked="handler.status !== 0" @change="handler.status = $event.target.checked ? 1 : 0; syncHandlersJson(editForm)" />
-                        <span class="toggle-slider"></span>
-                      </label>
-                      <button type="button" class="btn btn-text btn-small" @click="moveHandler(editForm, index, -1)" :disabled="index === 0">上移</button>
-                      <button type="button" class="btn btn-text btn-small" @click="moveHandler(editForm, index, 1)" :disabled="index === editForm.handlers.length - 1">下移</button>
-                      <button type="button" class="btn btn-text btn-small danger" @click="removeHandler(editForm, index)">删除</button>
-                    </div>
-                  </div>
-                  <div class="handler-fields" v-if="handlerFields(handler).length">
-                    <div class="form-group" v-for="field in handlerFields(handler)" :key="field.name">
-                      <label>{{ field.label }}</label>
-                      <select v-if="field.type === 'select'" class="select-input" :value="ensureHandlerConfig(handler, field)" @change="updateHandlerField(editForm, handler, field, $event.target.value)">
-                        <option v-for="option in field.options" :key="option.value !== undefined ? option.value : option" :value="option.value !== undefined ? option.value : option">{{ option.label || option }}</option>
-                      </select>
-                      <label v-else-if="field.type === 'bool'" class="toggle-switch">
-                        <input type="checkbox" :checked="ensureHandlerConfig(handler, field)" @change="updateHandlerField(editForm, handler, field, $event.target.checked)" />
-                        <span class="toggle-slider"></span>
-                      </label>
-                      <input v-else-if="field.type === 'int' || field.type === 'float'" type="number" :step="field.type === 'float' ? 'any' : '1'" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)" />
-                      <textarea v-else-if="field.type === 'text' || field.type === 'list[string]' || field.type === 'json'" :rows="field.type === 'text' ? 4 : 5" :placeholder="field.placeholder" :value="handlerFieldValue(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)"></textarea>
-                      <input v-else type="text" :placeholder="field.placeholder" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(editForm, handler, field, $event.target.value)" />
-                    </div>
-                  </div>
-                </div>
-                <div v-if="editForm.handlers.length === 0" class="handler-empty">未配置处理链</div>
-              </div>
-              <div v-else class="handler-json">
-                <textarea v-model="editForm.handlers_json" rows="10"></textarea>
-                <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(editForm)">应用 JSON</button>
-              </div>
-            </template>
-            <div v-else class="handler-empty">
-              {{ editForm.handlers_mode === 'inherit' ? '当前订阅继承用户处理链' : '当前订阅禁用全部处理链' }}
+            <div v-if="editForm.handlers_mode === 'override'" class="handler-json">
+              <textarea v-model="editForm.handlers_json" rows="10"></textarea>
+              <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(editForm)">应用 JSON</button>
             </div>
+            <div v-else class="handler-empty">{{ editForm.handlers_mode === 'inherit' ? '当前订阅继承用户处理链' : '当前订阅禁用全部处理链' }}</div>
           </div>
         </div>
         <div class="form-group">
           <label>刷新间隔（分钟）</label>
-          <div class="input-wrapper">
-            <input type="number" v-model.number="editForm.interval" min="-100" max="1440" />
-          </div>
+          <div class="input-wrapper"><input type="number" v-model.number="editForm.interval" min="-100" max="1440" /></div>
         </div>
         <div class="setting-row">
           <span class="setting-label">状态</span>
-          <label class="toggle-switch">
-            <input type="checkbox" v-model="editForm.state_" />
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">{{ editForm.state_ ? '启用' : '停用' }}</span>
-          </label>
+          <label class="toggle-switch"><input type="checkbox" v-model="editForm.state_" /><span class="toggle-slider"></span><span class="toggle-label">{{ editForm.state_ ? '启用' : '停用' }}</span></label>
         </div>
       </div>
       <div class="panel-section">
         <h4>显示选项</h4>
-        <div class="setting-row">
-          <span class="setting-label">发送模式</span>
-          <select class="select-input" v-model.number="editForm.send_mode">
-            <option :value="-100">继承</option>
-            <option :value="-1">仅链接</option>
-            <option :value="0">自动</option>
-            <option :value="1">直接发送</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">通知</span>
-          <select class="select-input" v-model.number="editForm.notify">
-            <option :value="-100">继承</option>
-            <option :value="0">禁用</option>
-            <option :value="1">启用</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">内容长度限制</span>
-          <div class="input-wrapper" style="max-width:120px;">
-            <input type="number" v-model.number="editForm.length_limit" min="0" max="10000" />
-          </div>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示作者</span>
-          <select class="select-input" v-model.number="editForm.display_author">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示来源</span>
-          <select class="select-input" v-model.number="editForm.display_via">
-            <option :value="-100">继承</option>
-            <option :value="-2">完全禁用</option>
-            <option :value="-1">仅链接</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示标题</span>
-          <select class="select-input" v-model.number="editForm.display_title">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示标签</span>
-          <select class="select-input" v-model.number="editForm.display_entry_tags">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">启用</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">样式</span>
-          <select class="select-input" v-model.number="editForm.style">
-            <option :value="-100">继承</option>
-            <option :value="0">RSStT</option>
-            <option :value="1">flowerss</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示媒体</span>
-          <select class="select-input" v-model.number="editForm.display_media">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">启用</option>
-          </select>
-        </div>
+        <div class="setting-row"><span class="setting-label">发送模式</span><select class="select-input" v-model.number="editForm.send_mode"><option :value="-100">继承</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">直接发送</option></select></div>
+        <div class="setting-row"><span class="setting-label">通知</span><select class="select-input" v-model.number="editForm.notify"><option :value="-100">继承</option><option :value="0">禁用</option><option :value="1">启用</option></select></div>
+        <div class="setting-row"><span class="setting-label">内容长度限制</span><div class="input-wrapper" style="max-width:120px;"><input type="number" v-model.number="editForm.length_limit" min="0" max="10000" /></div></div>
+        <div class="setting-row"><span class="setting-label">显示作者</span><select class="select-input" v-model.number="editForm.display_author"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示来源</span><select class="select-input" v-model.number="editForm.display_via"><option :value="-100">继承</option><option :value="-2">完全禁用</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示标题</span><select class="select-input" v-model.number="editForm.display_title"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示标签</span><select class="select-input" v-model.number="editForm.display_entry_tags"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
+        <div class="setting-row"><span class="setting-label">排版策略</span><select class="select-input" v-model.number="editForm.style"><option :value="-100">继承</option><option :value="0">自动</option><option :value="1">RSSRT</option><option :value="2">原始顺序</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示媒体</span><select class="select-input" v-model.number="editForm.display_media"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
       </div>
       <div class="form-actions">
-        <button type="button" class="btn btn-danger" @click="handleDeleteSub()">删除订阅</button>
+        <button type="button" class="btn btn-danger" :class="{ 'is-loading': isPending(`sub:delete:${editForm.id}`) }" :disabled="isPending(`sub:delete:${editForm.id}`)" @click="handleDeleteSub()">删除订阅</button>
         <div class="center-actions">
           <button type="button" class="btn btn-text" @click="closePanel()">取消</button>
-          <button type="submit" class="btn btn-primary">保存修改</button>
+          <button type="submit" class="btn btn-primary" :class="{ 'is-loading': isPending(`sub:save:${editForm.id}`) }" :disabled="isPending(`sub:save:${editForm.id}`)">{{ isPending(`sub:save:${editForm.id}`) ? '保存中...' : '保存修改' }}</button>
         </div>
       </div>
     </form>
 
-    <!-- Detail Panel -->
-    <div v-if="panelMode === 'detail'" class="form">
+    <div v-else-if="panelMode === 'detail'" class="form">
       <div class="panel-section">
         <h4>订阅信息</h4>
         <div class="detail-row"><span class="detail-label">ID</span><span class="detail-value">{{ detailSub.id }}</span></div>
         <div class="detail-row"><span class="detail-label">状态</span><span class="detail-value"><span class="status-badge" :class="detailSub.state === 1 ? 'active' : 'inactive'">{{ detailSub.state === 1 ? '启用' : '停用' }}</span></span></div>
         <div class="detail-row"><span class="detail-label">Feed</span><span class="detail-value">{{ detailSub.feed_title || '未知' }}</span></div>
-        <div class="detail-row"><span class="detail-label">链接</span><span class="detail-value" style="font-size:12px;">{{ detailSub.feed_link }}</span></div>
+        <div class="detail-row"><span class="detail-label">链接</span><span class="detail-value cell-wrap">{{ detailSub.feed_link }}</span></div>
         <div class="detail-row"><span class="detail-label">用户</span><span class="detail-value">{{ detailSub.user_id }}</span></div>
         <div class="detail-row"><span class="detail-label">目标</span><span class="detail-value">{{ detailSub.target_session || '默认' }}</span></div>
         <div class="detail-row"><span class="detail-label">间隔</span><span class="detail-value">{{ detailSub.interval || '默认' }} 分钟</span></div>
@@ -847,10 +638,10 @@
         <h4>操作</h4>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-primary btn-small" @click="switchToEdit(detailSub)">编辑</button>
-          <button class="btn btn-secondary btn-small" @click="handleRefreshDetail(detailSub.feed_id)">刷新 Feed</button>
-          <button class="btn btn-secondary btn-small" @click="handleTestDetail(detailSub.id)">测试推送</button>
-          <button class="btn btn-secondary btn-small" @click="loadDetailItems(detailSub.feed_id)">查看条目</button>
-          <button class="btn btn-danger btn-small" @click="handleDeleteSub()">删除</button>
+          <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending(`feed:refresh:${detailSub.feed_id}`) }" :disabled="isPending(`feed:refresh:${detailSub.feed_id}`)" @click="handleRefreshDetail(detailSub.feed_id)">刷新 Feed</button>
+          <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending(`sub:test:${detailSub.id}`) }" :disabled="isPending(`sub:test:${detailSub.id}`)" @click="handleTestDetail(detailSub.id)">测试推送</button>
+          <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending(`detail:items:${detailSub.feed_id}`) }" :disabled="isPending(`detail:items:${detailSub.feed_id}`)" @click="loadDetailItems(detailSub.feed_id)">查看条目</button>
+          <button class="btn btn-danger btn-small" :class="{ 'is-loading': isPending(`sub:delete:${detailSub.id}`) }" :disabled="isPending(`sub:delete:${detailSub.id}`)" @click="handleDeleteSub()">删除</button>
         </div>
       </div>
       <div class="panel-section" v-if="detailItems.length > 0">
@@ -862,83 +653,105 @@
         </div>
       </div>
     </div>
+
+    <div v-else-if="panelMode === 'history-detail' && historyDetail" class="form">
+      <div class="panel-section">
+        <h4>基础信息</h4>
+        <div class="detail-row"><span class="detail-label">状态</span><span class="detail-value"><span class="status-badge" :class="historyDetail.status">{{ historyDetail.status }}</span></span></div>
+        <div class="detail-row"><span class="detail-label">来源</span><span class="detail-value">{{ historyDetail.source_type || 'feed' }} / {{ historyDetail.source_key || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">用户</span><span class="detail-value">{{ historyDetail.user_id }}</span></div>
+        <div class="detail-row"><span class="detail-label">Feed</span><span class="detail-value">{{ historyDetail.feed_title || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">条目</span><span class="detail-value">{{ historyDetail.entry_title || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">链接</span><span class="detail-value cell-wrap">{{ historyDetail.entry_link || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">GUID</span><span class="detail-value cell-wrap">{{ historyDetail.entry_guid || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">目标</span><span class="detail-value">{{ historyDetail.target_session || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">平台</span><span class="detail-value">{{ historyDetail.platform_name || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">重试</span><span class="detail-value">{{ historyDetail.retry_count }}/{{ historyDetail.max_retries }}</span></div>
+        <div class="detail-row"><span class="detail-label">创建时间</span><span class="detail-value">{{ formatDate(historyDetail.created_at) }}</span></div>
+        <div class="detail-row"><span class="detail-label">完成时间</span><span class="detail-value">{{ formatDate(historyDetail.completed_at) }}</span></div>
+      </div>
+      <div class="panel-section">
+        <h4>正文与来源</h4>
+        <div class="detail-row"><span class="detail-label">正文</span><span class="detail-value cell-wrap">{{ historyDetail.content || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">原始 XML</span><span class="detail-value cell-wrap">{{ historyDetail.raw_xml || '-' }}</span></div>
+        <div class="detail-row"><span class="detail-label">媒体</span><span class="detail-value cell-wrap">{{ prettyJson(historyDetail.media_urls) }}</span></div>
+        <div class="detail-row"><span class="detail-label">错误</span><span class="detail-value error-block">{{ historyDetail.fail_reason || '-' }}</span></div>
+      </div>
+      <div class="panel-section">
+        <h4>调用链</h4>
+        <div v-if="historyTraceSteps().length === 0" class="empty-state"><p>暂无 handler 记录</p></div>
+        <div v-else>
+          <div v-for="(step, index) in historyTraceSteps()" :key="step.id || step.name || index" class="entry-item">
+            <div class="entry-title">{{ step.name || step.id || '未知 Handler' }}</div>
+            <div class="entry-meta">状态: {{ historyTraceStatus(step) }} · {{ step.type || 'builtin' }}</div>
+            <div class="entry-summary" v-if="historyTraceReason(step)">{{ historyTraceReason(step) }}</div>
+            <div class="entry-summary" v-if="step.config">{{ prettyJson(step.config) }}</div>
+          </div>
+          <div class="trace-raw-block">
+            <div class="trace-raw-title">原始 Trace JSON</div>
+            <pre class="trace-raw-json">{{ prettyJson(historyDetail.handler_trace) }}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="panelMode === 'history-settings'" class="form">
+      <div class="panel-section">
+        <h4>自动清理</h4>
+        <div class="setting-row">
+          <span class="setting-label">保留周期</span>
+          <select class="select-input" v-model.number="historyRetentionDays">
+            <option :value="1">1 天</option>
+            <option :value="7">1 周</option>
+            <option :value="30">30 天</option>
+          </select>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h4>历史操作</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-small" :class="{ 'is-loading': isPending('push-history:settings-save') }" :disabled="isPending('push-history:settings-save')" @click="savePushHistorySettings()">保存设置</button>
+          <button class="btn btn-secondary btn-small" :class="{ 'is-loading': isPending('push-history:cleanup') }" :disabled="isPending('push-history:cleanup')" @click="cleanupPushHistory()">立即清理旧记录</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="panelMode === 'export-preview' && exportPreview" class="form">
+      <div class="panel-section">
+        <h4>文件信息</h4>
+        <div class="detail-row"><span class="detail-label">文件名</span><span class="detail-value cell-wrap">{{ exportPreview.name }}</span></div>
+        <div class="detail-row"><span class="detail-label">大小</span><span class="detail-value">{{ formatBytes(exportPreview.size) }}</span></div>
+      </div>
+      <div class="panel-section">
+        <div class="section-header" style="padding:0 0 12px 0;border-bottom:1px solid #f1f5f9;margin-bottom:8px;">
+          <h4 style="margin:0;">TOML 内容</h4>
+        </div>
+        <div class="trace-raw-block">
+          <pre class="trace-raw-json">{{ exportPreview.content || '' }}</pre>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <!-- User Edit Panel -->
   <div class="panel-overlay" :class="{ visible: userEditPanelVisible }" @click="closeUserEditPanel()"></div>
   <section class="edit-panel" :class="{ 'panel-visible': userEditPanelVisible }">
     <div class="panel-header">
       <h3>编辑用户配置</h3>
-      <div class="panel-actions">
-        <button class="btn btn-icon" @click="closeUserEditPanel()">×</button>
-      </div>
+      <div class="panel-actions"><button class="btn btn-icon" @click="closeUserEditPanel()">×</button></div>
     </div>
     <form class="form" @submit.prevent="handleSaveUserEdit()">
       <div class="panel-section">
         <h4>基本信息</h4>
         <div class="detail-row"><span class="detail-label">用户 ID</span><span class="detail-value">{{ userEditForm.user_id }}</span></div>
-        <div class="setting-row">
-          <span class="setting-label">用户状态</span>
-          <select class="select-input" v-model.number="userEditForm.state">
-            <option :value="-1">已封禁</option>
-            <option :value="1">用户</option>
-          </select>
-        </div>
+        <div class="setting-row"><span class="setting-label">用户状态</span><select class="select-input" v-model.number="userEditForm.state"><option :value="-1">已封禁</option><option :value="1">用户</option></select></div>
         <div class="form-group">
           <label>默认推送目标</label>
-          <div class="input-wrapper">
-            <input type="text" v-model="userEditForm.default_target_session" placeholder="unified_msg_origin" />
-          </div>
+          <div class="input-wrapper"><input type="text" v-model="userEditForm.default_target_session" placeholder="unified_msg_origin" /></div>
         </div>
         <div class="form-group">
           <label>内容处理链</label>
           <div class="handler-editor">
-            <div class="handler-toolbar">
-              <select class="select-input" @change="addBuiltinHandler(userEditForm, $event.target.value); $event.target.value = ''">
-                <option value="">添加内置 handler</option>
-                <option v-for="schema in availableBuiltinHandlers(userEditForm)" :key="schema.id" :value="schema.type + '.' + schema.name">{{ schema.title }}</option>
-              </select>
-              <label class="checkbox-row">
-                <input type="checkbox" v-model="userEditForm.handlers_advanced" />
-                <span>原始 JSON</span>
-              </label>
-            </div>
-            <div v-if="!userEditForm.handlers_advanced" class="handler-list">
-              <div v-for="(handler, index) in userEditForm.handlers" :key="handler.id || index" class="handler-item">
-                <div class="handler-item-header">
-                  <div>
-                    <div class="handler-title">{{ handlerTitle(handler) }}</div>
-                    <div class="handler-desc" v-if="handlerDescription(handler)">{{ handlerDescription(handler) }}</div>
-                  </div>
-                  <div class="handler-actions">
-                    <label class="toggle-switch">
-                      <input type="checkbox" :checked="handler.status !== 0" @change="handler.status = $event.target.checked ? 1 : 0; syncHandlersJson(userEditForm)" />
-                      <span class="toggle-slider"></span>
-                    </label>
-                    <button type="button" class="btn btn-text btn-small" @click="moveHandler(userEditForm, index, -1)" :disabled="index === 0">上移</button>
-                    <button type="button" class="btn btn-text btn-small" @click="moveHandler(userEditForm, index, 1)" :disabled="index === userEditForm.handlers.length - 1">下移</button>
-                    <button type="button" class="btn btn-text btn-small danger" @click="removeHandler(userEditForm, index)">删除</button>
-                  </div>
-                </div>
-                <div class="handler-fields" v-if="handlerFields(handler).length">
-                  <div class="form-group" v-for="field in handlerFields(handler)" :key="field.name">
-                    <label>{{ field.label }}</label>
-                    <select v-if="field.type === 'select'" class="select-input" :value="ensureHandlerConfig(handler, field)" @change="updateHandlerField(userEditForm, handler, field, $event.target.value)">
-                      <option v-for="option in field.options" :key="option.value !== undefined ? option.value : option" :value="option.value !== undefined ? option.value : option">{{ option.label || option }}</option>
-                    </select>
-                    <label v-else-if="field.type === 'bool'" class="toggle-switch">
-                      <input type="checkbox" :checked="ensureHandlerConfig(handler, field)" @change="updateHandlerField(userEditForm, handler, field, $event.target.checked)" />
-                      <span class="toggle-slider"></span>
-                    </label>
-                    <input v-else-if="field.type === 'int' || field.type === 'float'" type="number" :step="field.type === 'float' ? 'any' : '1'" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)" />
-                    <textarea v-else-if="field.type === 'text' || field.type === 'list[string]' || field.type === 'json'" :rows="field.type === 'text' ? 4 : 5" :placeholder="field.placeholder" :value="handlerFieldValue(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)"></textarea>
-                    <input v-else type="text" :placeholder="field.placeholder" :value="ensureHandlerConfig(handler, field)" @input="updateHandlerField(userEditForm, handler, field, $event.target.value)" />
-                  </div>
-                </div>
-              </div>
-              <div v-if="userEditForm.handlers.length === 0" class="handler-empty">未配置处理链</div>
-            </div>
-            <div v-else class="handler-json">
+            <div class="handler-json">
               <textarea v-model="userEditForm.handlers_json" rows="10"></textarea>
               <button type="button" class="btn btn-secondary btn-small" @click="applyHandlersJson(userEditForm)">应用 JSON</button>
             </div>
@@ -947,105 +760,32 @@
       </div>
       <div class="panel-section">
         <h4>推送设置</h4>
-        <div class="setting-row">
-          <span class="setting-label">推送间隔（分钟）</span>
-          <div class="input-wrapper" style="max-width:120px;">
-            <input type="number" v-model.number="userEditForm.interval" min="-100" max="1440" />
-          </div>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">通知</span>
-          <select class="select-input" v-model.number="userEditForm.notify">
-            <option :value="-100">继承</option>
-            <option :value="0">禁用</option>
-            <option :value="1">启用</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">发送模式</span>
-          <select class="select-input" v-model.number="userEditForm.send_mode">
-            <option :value="-100">继承</option>
-            <option :value="-1">仅链接</option>
-            <option :value="0">自动</option>
-            <option :value="1">直接发送</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">内容长度限制</span>
-          <div class="input-wrapper" style="max-width:120px;">
-            <input type="number" v-model.number="userEditForm.length_limit" min="0" max="10000" />
-          </div>
-        </div>
+        <div class="setting-row"><span class="setting-label">推送间隔（分钟）</span><div class="input-wrapper" style="max-width:120px;"><input type="number" v-model.number="userEditForm.interval" min="-100" max="1440" /></div></div>
+        <div class="setting-row"><span class="setting-label">通知</span><select class="select-input" v-model.number="userEditForm.notify"><option :value="-100">继承</option><option :value="0">禁用</option><option :value="1">启用</option></select></div>
+        <div class="setting-row"><span class="setting-label">发送模式</span><select class="select-input" v-model.number="userEditForm.send_mode"><option :value="-100">继承</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">直接发送</option></select></div>
+        <div class="setting-row"><span class="setting-label">内容长度限制</span><div class="input-wrapper" style="max-width:120px;"><input type="number" v-model.number="userEditForm.length_limit" min="0" max="10000" /></div></div>
       </div>
       <div class="panel-section">
         <h4>显示选项</h4>
-        <div class="setting-row">
-          <span class="setting-label">显示作者</span>
-          <select class="select-input" v-model.number="userEditForm.display_author">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示来源</span>
-          <select class="select-input" v-model.number="userEditForm.display_via">
-            <option :value="-100">继承</option>
-            <option :value="-2">完全禁用</option>
-            <option :value="-1">仅链接</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示标题</span>
-          <select class="select-input" v-model.number="userEditForm.display_title">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">自动</option>
-            <option :value="1">强制</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示标签</span>
-          <select class="select-input" v-model.number="userEditForm.display_entry_tags">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">启用</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">样式</span>
-          <select class="select-input" v-model.number="userEditForm.style">
-            <option :value="-100">继承</option>
-            <option :value="0">RSStT</option>
-            <option :value="1">flowerss</option>
-          </select>
-        </div>
-        <div class="setting-row">
-          <span class="setting-label">显示媒体</span>
-          <select class="select-input" v-model.number="userEditForm.display_media">
-            <option :value="-100">继承</option>
-            <option :value="-1">禁用</option>
-            <option :value="0">启用</option>
-          </select>
-        </div>
+        <div class="setting-row"><span class="setting-label">显示作者</span><select class="select-input" v-model.number="userEditForm.display_author"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示来源</span><select class="select-input" v-model.number="userEditForm.display_via"><option :value="-100">继承</option><option :value="-2">完全禁用</option><option :value="-1">仅链接</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示标题</span><select class="select-input" v-model.number="userEditForm.display_title"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">自动</option><option :value="1">强制</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示标签</span><select class="select-input" v-model.number="userEditForm.display_entry_tags"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
+        <div class="setting-row"><span class="setting-label">排版策略</span><select class="select-input" v-model.number="userEditForm.style"><option :value="-100">继承</option><option :value="0">自动</option><option :value="1">RSSRT</option><option :value="2">原始顺序</option></select></div>
+        <div class="setting-row"><span class="setting-label">显示媒体</span><select class="select-input" v-model.number="userEditForm.display_media"><option :value="-100">继承</option><option :value="-1">禁用</option><option :value="0">启用</option></select></div>
       </div>
       <div class="form-actions">
         <div></div>
         <div class="center-actions">
           <button type="button" class="btn btn-text" @click="closeUserEditPanel()">取消</button>
-          <button type="submit" class="btn btn-primary">保存修改</button>
+          <button type="submit" class="btn btn-primary" :class="{ 'is-loading': isPending(`user:save:${userEditForm.user_id}`) }" :disabled="isPending(`user:save:${userEditForm.user_id}`)">{{ isPending(`user:save:${userEditForm.user_id}`) ? '保存中...' : '保存修改' }}</button>
         </div>
       </div>
     </form>
   </section>
 
-  <!-- Toast -->
   <div class="toast" :class="[toast.type, { show: toast.show }]" v-if="toast.show">{{ toast.message }}</div>
 
-  <!-- Confirm Dialog -->
   <div class="confirm-dialog" :class="{ visible: dialog.show }" v-if="dialog.show" style="display:flex;">
     <div class="confirm-dialog-overlay" @click="dialog.resolve(false)"></div>
     <div class="confirm-dialog-content">

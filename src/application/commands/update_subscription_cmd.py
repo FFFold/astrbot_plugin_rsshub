@@ -7,6 +7,7 @@
 from ...domain.entities.handlers import parse_handlers_input
 from ...domain.entities.subscription import SUPPORTED_HANDLERS_MODES
 from ...domain.repositories.subscription_repository import SubscriptionRepository
+from ...infrastructure.config import validate_interval_value
 from ..dto.result_dto import CommandResult
 from ..dto.subscription_dto import SubscriptionDTO
 
@@ -75,6 +76,16 @@ class UpdateSubscriptionCommand:
             if key in JSON_OPTIONS:
                 try:
                     normalized_options[key] = parse_handlers_input(value)
+                except ValueError as exc:
+                    return CommandResult(success=False, message=str(exc))
+                continue
+            if key == "interval":
+                try:
+                    normalized_options[key] = validate_interval_value(
+                        value,
+                        allow_inherit=True,
+                        field_name="interval",
+                    )
                 except ValueError as exc:
                     return CommandResult(success=False, message=str(exc))
                 continue

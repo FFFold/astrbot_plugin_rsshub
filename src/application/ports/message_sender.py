@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from ...domain.entities.content_types import LayoutFragment
+
 
 @dataclass(frozen=True)
 class MessageContext:
@@ -16,6 +18,7 @@ class MessageContext:
     timeout_seconds: int = 30
     proxy: str = ""
     send_mode: int | None = None
+    style: int = 0
     sender_strategy: Any = None
 
 
@@ -26,6 +29,7 @@ class SendRequest:
     session_id: str
     message: str = ""
     media: list[tuple[str, str]] | None = None
+    layout: list[LayoutFragment] | None = None
 
 
 @dataclass(frozen=True)

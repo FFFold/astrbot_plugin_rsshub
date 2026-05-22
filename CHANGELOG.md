@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.0] - 2026-05-18
+## [2.0.0] - 2026-05-22
 
 ### Removed
 
@@ -8,13 +8,11 @@
 - 收敛 `_conf_schema.json`：保留启动级基础设施、Routes 知识库、`ffmpeg` 和 `sender_strategies`；订阅默认值改由 AstrBot Plugin Pages 承载。
 - 移除传统翻译管道、翻译提供商、翻译缓存仓库/API/UI，以及内置内容处理/AI 筛选增强管道；后续翻译、总结和改写交由 AstrBot LLM 能力或扩展特性完成。
 - 移除 `rsshub_search_routes` 和 `rsshub_get_route_schema` LLM tool；RSSHub 路由检索后续走 AstrBot 知识库和 route skill。
-- 移除只包裹 `Feed` 去重方法的旧 `ContentFilterService`，避免与当前 `FeedPollingService` 去重路径重复。
-- 移除 Plugin Pages 中的 `link_preview` 控件和前端状态；链接预览不再作为 WebUI 可视化配置项维护。
 
 ### Changed
 
 - 将 LLM 工具注册模块从 `src/application/commands/llmtools.py` 调整为 `src/application/llmtools.py`，避免把非命令模块放在命令包下。
-- 拆分配置职责：运行态 settings dataclass 统一放在 `src/shared/settings.py`，AstrBot 配置解析与兼容读取保留在 `src/infrastructure/config/settings_adapter.py`。
+- 拆分配置职责：共享常量统一收口到 `src/shared/constants.py`；类型化配置模型与运行态设置模型统一收口到 `src/infrastructure/config/datamodels.py`，AstrBot 配置解析与 raw-to-runtime 装配统一收口到 `src/infrastructure/config/config_loader.py`。
 - Plugin Pages「设置」页更名为「默认订阅设置」，仅维护订阅默认值，不再暴露内容管道配置。
 - Plugin Pages 用户/订阅处理链编辑器改为 schema-driven：优先读取 `handlers/schema`，接口不可用时使用内置 fallback；两处编辑共用启停、排序、添加内置 handler、删除、字段编辑和原始 JSON 高级模式。
 - Plugin Pages 不再提供新增订阅、TOML 导入和订阅导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 完成。
@@ -60,14 +58,14 @@
 - 修复旧 SQLite 库字段残留问题：迁移和启动自愈会重建 `rsshub_sub` / `rsshub_user`，移除旧翻译字段与旧继承开关字段。
 - 修复 OneBot 视频发送策略：默认不再优先把本地 mp4 路径塞进合并转发节点；启用 Telegraph 自动分流时，多媒体消息会优先转为 Telegraph 页面链接发送，失败后回落平台原生发送链路。
 
+<details>
+<summary>历史更新记录</summary>
+
 ## [1.1.3] - 2026-04-28
 
 ### Fixed
 
 - **优化 FFmpeg 查找策略**：`ensure_ffmpeg_ready` 方法现在优先使用系统 FFmpeg，以确保编解码器和协议的完整支持
-
-<details>
-<summary>历史更新记录</summary>
 
 ## [1.1.2] - 2026-04-26
 
@@ -307,7 +305,6 @@
 
 ### Added
 
-- 新增推送调试配置项 `debug_payload`：
   - 开启后可在推送末尾附带 `guid`、`id`、`link`、`published`、`updated` 等原始字段
   - 便于排查 RSS 源字段异常与去重行为
 

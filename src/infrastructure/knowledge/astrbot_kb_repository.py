@@ -11,7 +11,7 @@ from ...application.ports.route_knowledge import (
     RouteKnowledgeDocumentRecord,
 )
 from ...application.services.route_knowledge_service import managed_doc_name
-from ...shared.settings import RouteKnowledgeSettings
+from ...infrastructure.config import RouteKnowledgeSettings
 
 DEFAULT_KB_EMOJI = "📡"
 _RAW_TAG_PATTERN = re.compile(r"</?[A-Za-z][^>\n]*>")

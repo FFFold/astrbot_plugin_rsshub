@@ -1,8 +1,34 @@
-const bridge = typeof window !== 'undefined' ? window.AstrBotPluginPage : null;
+function getBridge() {
+  return typeof window !== 'undefined' ? window.AstrBotPluginPage || null : null;
+}
+
+function requireBridge() {
+  const bridge = getBridge();
+  if (!bridge) {
+    throw new Error('AstrBotPluginPage bridge not available');
+  }
+  return bridge;
+}
+
+function buildDirectApiUrl(path, params = {}) {
+  const normalizedPath = String(path || '').replace(/^\/+/, '');
+  const url = new URL(`/astrbot_plugin_rsshub/${normalizedPath}`, window.location.origin);
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined || value === null || value === '') continue;
+    url.searchParams.set(key, String(value));
+  }
+  return url;
+}
 
 export async function ready() {
-  if (!bridge) throw new Error('AstrBotPluginPage bridge not available');
-  return await bridge.ready();
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const bridge = getBridge();
+    if (bridge) {
+      return await bridge.ready();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('AstrBotPluginPage bridge not available');
 }
 
 async function handleResponse(result) {
@@ -13,154 +39,204 @@ async function handleResponse(result) {
   return result;
 }
 
-export async function getSubscriptions(userId) {
-  const params = userId ? { user_id: userId } : {};
-  const result = await bridge.apiGet('subscriptions', params);
-  const r = await handleResponse(result);
+async function apiGet(path, params = {}) {
+  const bridge = requireBridge();
+  const result = await bridge.apiGet(path, params);
+  return await handleResponse(result);
+}
+
+async function apiPost(path, payload = {}) {
+  const bridge = requireBridge();
+  const result = await bridge.apiPost(path, payload);
+  return await handleResponse(result);
+}
+
+export async function getSubscriptions(filters = {}) {
+  const params = {};
+  if (filters.user_id) params.user_id = filters.user_id;
+  if (filters.feed_id !== undefined && filters.feed_id !== null && filters.feed_id !== '') {
+    params.feed_id = filters.feed_id;
+  }
+  if (filters.sub_id !== undefined && filters.sub_id !== null && filters.sub_id !== '') {
+    params.sub_id = filters.sub_id;
+  }
+  if (filters.keyword) params.keyword = filters.keyword;
+  const r = await apiGet('subscriptions', params);
   return { items: r.items || [], total: r.total || 0 };
 }
 
-export async function getUsers() {
-  const result = await bridge.apiGet('users');
-  const r = await handleResponse(result);
-  return { items: r.items || [], total: r.total || 0 };
-}
-
-export async function getFeeds() {
-  const result = await bridge.apiGet('feeds');
-  const r = await handleResponse(result);
+export async function getFeeds(filters = {}) {
+  const params = {};
+  if (filters.feed_id) params.feed_id = filters.feed_id;
+  if (filters.keyword) params.keyword = filters.keyword;
+  const r = await apiGet('feeds', params);
   return { items: r.items || [], total: r.total || 0 };
 }
 
 export async function unsubscribe(subId, userId) {
   const payload = { sub_id: subId };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('unsubscribe', payload);
-  return await handleResponse(result);
+  return await apiPost('unsubscribe', payload);
 }
 
 export async function updateSubscription(subId, options, userId) {
   const payload = { sub_id: subId, options };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('subscriptions/update', payload);
-  return await handleResponse(result);
+  return await apiPost('subscriptions/update', payload);
 }
 
 export async function getFeedItems(feedId, page = 1, pageSize = 20) {
-  const result = await bridge.apiGet('feeds/items', { feed_id: feedId, page, page_size: pageSize });
-  return await handleResponse(result);
+  return await apiGet('feeds/items', { feed_id: feedId, page, page_size: pageSize });
 }
 
 export async function refreshFeed(feedId) {
-  const result = await bridge.apiPost('feeds/refresh', { feed_id: feedId });
-  return await handleResponse(result);
+  return await apiPost('feeds/refresh', { feed_id: feedId });
+}
+
+export async function refreshFeeds(feedIds) {
+  return await apiPost('feeds/refresh', { feed_ids: feedIds });
 }
 
 export async function getPluginSettings() {
-  const result = await bridge.apiGet('plugin-settings');
-  return await handleResponse(result);
+  return await apiGet('plugin-settings');
 }
 
-export async function getHandlerSchema() {
-  const result = await bridge.apiGet('handlers/schema');
-  return await handleResponse(result);
+export async function getHandlers() {
+  const r = await apiGet('handlers');
+  return { items: r.items || [] };
 }
 
-export async function setPluginSettings({ subscription_defaults = {} } = {}) {
-  const result = await bridge.apiPost('plugin-settings', { subscription_defaults });
-  return await handleResponse(result);
+export async function setPluginSettings({
+  subscription_defaults = {},
+  history_retention_days,
+} = {}) {
+  const payload = { subscription_defaults };
+  if (history_retention_days !== undefined) {
+    payload.history_retention_days = history_retention_days;
+  }
+  return await apiPost('plugin-settings', payload);
 }
 
-export async function testSubscription(subId, userId) {
+export async function testSubscription(subId, userId, targetSession, platformName) {
   const payload = { sub_id: subId };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('test-subscription', payload);
-  return await handleResponse(result);
+  if (targetSession) payload.target_session = targetSession;
+  if (platformName) payload.platform_name = platformName;
+  return await apiPost('test-subscription', payload);
 }
 
 export async function batchActivate(subIds, userId) {
   const payload = { sub_ids: subIds };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('batch/activate', payload);
-  return await handleResponse(result);
+  return await apiPost('batch/activate', payload);
 }
 
 export async function batchDeactivate(subIds, userId) {
   const payload = { sub_ids: subIds };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('batch/deactivate', payload);
-  return await handleResponse(result);
+  return await apiPost('batch/deactivate', payload);
 }
 
 export async function batchUnsubscribe(subIds, userId) {
   const payload = { sub_ids: subIds };
   if (userId) payload.user_id = userId;
-  const result = await bridge.apiPost('batch/unsubscribe', payload);
-  return await handleResponse(result);
+  return await apiPost('batch/unsubscribe', payload);
 }
 
 export async function getStats() {
-  const result = await bridge.apiGet('stats');
-  return await handleResponse(result);
+  return await apiGet('stats');
 }
 
-let _prevCounter = 0;
+let previousCounter = 0;
 
-export async function getPushHistory({ status = '', page = 1, pageSize = 20 } = {}) {
+export async function getPushHistory({ status = '', keyword = '', page = 1, pageSize = 20 } = {}) {
   const params = { page, page_size: pageSize };
   if (status) params.status = status;
-  const result = await bridge.apiGet('push-history', params);
-  const r = await handleResponse(result);
-  return { items: r.items || [], total: r.total || 0, page: r.page || 1, page_size: r.page_size || pageSize };
+  if (keyword) params.keyword = keyword;
+  const r = await apiGet('push-history', params);
+  return {
+    items: r.items || [],
+    total: r.total || 0,
+    page: r.page || 1,
+    page_size: r.page_size || pageSize,
+  };
 }
 
 export async function getRouteKbStatus() {
-  const result = await bridge.apiGet('route-kb/status');
-  return await handleResponse(result);
+  return await apiGet('route-kb/status');
 }
 
 export async function syncRouteKb() {
-  const result = await bridge.apiPost('route-kb/sync', {});
-  return await handleResponse(result);
+  return await apiPost('route-kb/sync', {});
 }
 
 export async function getRouteKbTask() {
-  const result = await bridge.apiGet('route-kb/task');
-  return await handleResponse(result);
+  return await apiGet('route-kb/task');
 }
 
 export async function deletePushHistory(historyId) {
-  const result = await bridge.apiPost('push-history/delete', { history_id: historyId });
-  return await handleResponse(result);
+  return await apiPost('push-history/delete', { history_id: historyId });
+}
+
+export async function deletePushHistoryBatch(historyIds) {
+  return await apiPost('push-history/delete', { history_ids: historyIds });
 }
 
 export async function cleanupPushHistory(days = 30) {
-  const result = await bridge.apiPost('push-history/cleanup', { days });
-  return await handleResponse(result);
+  return await apiPost('push-history/cleanup', { days });
 }
 
-export async function getUserDetails() {
-  const result = await bridge.apiGet('users/detail');
-  const r = await handleResponse(result);
+export async function getUserDetails(filters = {}) {
+  const params = {};
+  if (filters.user_id) params.user_id = filters.user_id;
+  if (filters.keyword) params.keyword = filters.keyword;
+  const r = await apiGet('users/detail', params);
   return { items: r.items || [], total: r.total || 0 };
 }
 
 export async function updateUser(userId, settings) {
-  const result = await bridge.apiPost('users/update', { user_id: userId, settings });
-  return await handleResponse(result);
+  return await apiPost('users/update', { user_id: userId, settings });
 }
 
 export async function deleteUser(userId) {
-  const result = await bridge.apiPost('users/delete', { user_id: userId });
-  return await handleResponse(result);
+  return await apiPost('users/delete', { user_id: userId });
+}
+
+export async function deleteUsers(userIds) {
+  return await apiPost('users/delete', { user_ids: userIds });
+}
+
+export async function getDataManagementOverview() {
+  return await apiGet('data-management/overview');
+}
+
+export async function getDataManagementExports() {
+  const r = await apiGet('data-management/exports');
+  return { items: r.items || [] };
+}
+
+export async function clearDataManagementCache() {
+  return await apiPost('data-management/cache/clear', {});
+}
+
+export async function clearDataManagementExports() {
+  return await apiPost('data-management/exports/clear', {});
+}
+
+export async function deleteDataManagementExport(name) {
+  return await apiPost('data-management/exports/delete', { name });
+}
+
+export async function getDataManagementExportContent(name) {
+  return await apiGet('data-management/exports/content', { name });
 }
 
 export async function checkUpdates() {
   try {
-    const r = await bridge.apiGet('updates');
+    const r = await apiGet('updates');
     const counter = r?.counter ?? 0;
-    const changed = counter !== _prevCounter;
-    _prevCounter = counter;
+    const changed = counter !== previousCounter;
+    previousCounter = counter;
     return { changed };
   } catch {
     return { changed: false };

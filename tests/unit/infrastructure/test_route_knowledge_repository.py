@@ -7,7 +7,7 @@ import pytest
 from astrbot_plugin_rsshub.src.application.ports.route_knowledge import (
     RouteKnowledgeDocument,
 )
-from astrbot_plugin_rsshub.src.shared.settings import RouteKnowledgeSettings
+from astrbot_plugin_rsshub.src.infrastructure.config import RouteKnowledgeSettings
 from astrbot_plugin_rsshub.src.infrastructure.knowledge.astrbot_kb_repository import (
     AstrBotRouteKnowledgeRepository,
 )
