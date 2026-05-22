@@ -23,13 +23,14 @@ from ...domain.entities.content_types import AudioContent, FileContent, VideoCon
 from ...domain.entities.feed import Feed, normalize_entry_hashes
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
+from ...infrastructure.config import FeedFetchSettings, RSSSettings
 from ...infrastructure.pipeline import (
     EffectivePushOptions,
     EntryFormatInput,
     EntryTextFormatter,
 )
+from ...infrastructure.pipeline.entry_formatter import normalize_plain_text
 from ...infrastructure.utils import get_logger
-from ...shared.settings import FeedFetchSettings, RSSSettings
 from ..ports import FeedFetcherFactory, FeedParser, MediaFingerprintService
 from .content_handlers import EntryContentContext
 from .html_parser import HTMLParser
@@ -290,7 +291,7 @@ class FeedPollingService:
         else:
             message += "，无新增"
 
-        logger.info(
+        logger.debug(
             "poll_feed: feed=%s, total=%d, new=%d, dispatched=%d",
             feed.link,
             len(entries),
@@ -679,6 +680,7 @@ class FeedPollingService:
                     raw_xml=str(getattr(entry, "raw_xml", "") or "").strip(),
                     media_urls=tuple(media_urls),
                     media_items=tuple(media_items),
+                    layout=tuple(parsed.layout),
                 ),
             )
             dispatched += (
@@ -698,16 +700,26 @@ class FeedPollingService:
         feed_link: str,
         author: str,
     ) -> str:
-        body = body.strip()
-        title = title.strip()
-        if title and body and body != title:
-            content = f"{title}\n\n{body}"
-        else:
-            content = body or title
-        via_suffix = f"via {link} | {feed_title or feed_link}"
-        if author:
-            via_suffix += f" (author: {author})"
-        return f"{content}\n\n{via_suffix}"
+        body = normalize_plain_text(body)
+        title = normalize_plain_text(title)
+        author = normalize_plain_text(author)
+        feed_title = normalize_plain_text(feed_title)
+        link = str(link or "").strip()
+        feed_link = str(feed_link or "").strip()
+
+        body = EntryTextFormatter._remove_repeated_title(body, title)
+        lines = [part for part in (title, body) if part]
+        content = "\n\n".join(lines)
+        via_suffix = EntryTextFormatter._build_via_suffix(
+            link=link,
+            feed_title=feed_title,
+            feed_link=feed_link,
+            author=author,
+            options=EffectivePushOptions(),
+        )
+        if via_suffix:
+            return f"{content}\n\n{via_suffix}" if content else via_suffix
+        return content
 
     @staticmethod
     async def _format_dispatch_content_async(

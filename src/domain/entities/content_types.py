@@ -106,12 +106,25 @@ class HtmlNode(BaseModel):
         return "".join(child.get_plain() for child in self.children)
 
 
+class LayoutFragment(BaseModel):
+    """A send-layout fragment preserving parsed content order."""
+
+    kind: str = Field(..., description="text/image/video/audio/file")
+    text: str = Field(default="", description="Text content")
+    media_type: str = Field(default="", description="Media type")
+    url: str = Field(default="", description="Media URL")
+    name: str = Field(default="", description="File name")
+
+
 class ParsedResult(BaseModel):
     """HTML解析结果"""
 
     html_tree: HtmlNode = Field(..., description="解析后的HTML树")
     media: list[ImageContent | VideoContent | AudioContent | FileContent] = Field(
         default_factory=list, description="媒体列表"
+    )
+    layout: list[LayoutFragment] = Field(
+        default_factory=list, description="按解析顺序生成的推送布局片段"
     )
     links: list[str] = Field(default_factory=list, description="链接列表")
     mentions: list[MentionContent] = Field(default_factory=list, description="提及列表")

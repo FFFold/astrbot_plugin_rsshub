@@ -8,9 +8,9 @@ import pytest
 from astrbot_plugin_rsshub.src.application.services.feed_polling_service import (
     FeedPollingService,
 )
-from astrbot_plugin_rsshub.src.shared.settings import RSSSettings
 from astrbot_plugin_rsshub.src.domain.entities.feed import Feed
 from astrbot_plugin_rsshub.src.infrastructure.fetcher.rss.parser import EntryParsed
+from astrbot_plugin_rsshub.src.infrastructure.config import RSSSettings
 
 
 def _web_feed(**kwargs):
@@ -337,6 +337,22 @@ async def test_poll_feed_dispatch_parses_html_summary_and_media():
         in call_kwargs["content"]
     )
     assert call_kwargs["media_urls"] == ["https://example.com/image.jpg"]
+
+
+@pytest.mark.asyncio
+async def test_format_dispatch_content_omits_broken_via_when_all_tail_fields_missing():
+    content = FeedPollingService._format_dispatch_content(
+        title="",
+        body="Body only",
+        link="",
+        feed_title="",
+        feed_link="",
+        author="",
+    )
+
+    assert content == "Body only"
+    assert "via" not in content
+    assert "|" not in content
 
 
 @pytest.mark.asyncio

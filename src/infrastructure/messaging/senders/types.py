@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from ....domain.entities.content_types import LayoutFragment
+
 
 @dataclass
 class PreparedMedia:
@@ -57,6 +59,7 @@ class MessageContext:
     timeout_seconds: int = 30
     proxy: str = ""
     send_mode: int | None = None
+    style: int = 0
     sender_strategy: Any = None
 
 
@@ -71,6 +74,7 @@ class SendRequest:
     message: str = ""
     media: list[tuple[str, str]] | None = None
     prepared_media: list[PreparedMedia] | None = None
+    layout: list[LayoutFragment] | None = None
 
 
 class BaseMessageSender(Protocol):

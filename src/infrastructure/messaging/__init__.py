@@ -17,13 +17,6 @@ from .event_bus import (
     reset_event_bus,
 )
 from .notification_service import NotificationServiceImpl, get_notification_service
-from .plugin_manager import (
-    Extension,
-    PluginManager,
-    get_plugin_manager,
-    on_event,
-    reset_plugin_manager,
-)
 from .senders import (
     BaseMessageSender,
     ChannelInfo,
@@ -36,6 +29,7 @@ from .senders import (
     QQOfficialMessageSender,
     SendResult,
     TelegramMessageSender,
+    WeixinOCMessageSender,
     get_bot_self_id,
     get_sender_for_platform,
     register_sender,
@@ -55,12 +49,6 @@ __all__ = [
     "MessageSendEvent",
     "MessageSentEvent",
     "DeduplicationEvent",
-    # Plugin Manager
-    "Extension",
-    "PluginManager",
-    "get_plugin_manager",
-    "reset_plugin_manager",
-    "on_event",
     # Senders
     "SendResult",
     "PreparedMedia",
@@ -71,6 +59,7 @@ __all__ = [
     "TelegramMessageSender",
     "OneBotMessageSender",
     "QQOfficialMessageSender",
+    "WeixinOCMessageSender",
     "InfrastructureMessageSenderAdapter",
     "InfrastructureMessageSenderProvider",
     "get_sender_for_platform",

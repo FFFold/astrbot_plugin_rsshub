@@ -8,7 +8,7 @@ from ....application.ports import (
     SendRequest,
     SendResult,
 )
-from ....shared.settings import SenderStrategySettings
+from ....infrastructure.config import SenderStrategySettings
 from ...utils import get_logger
 from .factory import get_sender_for_platform
 from .types import ChannelInfo
@@ -39,6 +39,7 @@ class InfrastructureMessageSenderAdapter:
             timeout_seconds=context.timeout_seconds if context else 30,
             proxy=context.proxy if context else "",
             send_mode=context.send_mode if context else None,
+            style=context.style if context else 0,
             sender_strategy=(
                 getattr(context, "sender_strategy", None)
                 if context and getattr(context, "sender_strategy", None) is not None
@@ -50,6 +51,7 @@ class InfrastructureMessageSenderAdapter:
                 session_id=request.session_id,
                 message=request.message,
                 media=request.media,
+                layout=request.layout,
             ),
             context=infra_context,
         )

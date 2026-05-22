@@ -21,6 +21,7 @@ from ...domain.entities.content_types import (
     FileContent,
     HtmlNode,
     ImageContent,
+    LayoutFragment,
     LinkContent,
     MentionContent,
     ParsedResult,
@@ -70,8 +71,10 @@ class HTMLParser:
         """
         self.soup = await self._run_async(BeautifulSoup, self.html, "lxml")
         children = await self._parse_children(self.soup)
+        html_tree = HtmlNode(children=children)
         return ParsedResult(
-            html_tree=HtmlNode(children=children),
+            html_tree=html_tree,
+            layout=build_layout_fragments(html_tree),
             media=self.media,
             links=self.links,
             mentions=self.mentions,
@@ -468,6 +471,77 @@ async def parse_html(html: str, feed_link: str | None = None) -> ParsedResult:
     """
     parser = HTMLParser(html, feed_link)
     return await parser.parse()
+
+
+def build_layout_fragments(root: HtmlNode) -> list[LayoutFragment]:
+    """Build ordered send-layout fragments from the parsed HTML tree."""
+    fragments: list[LayoutFragment] = []
+    text_parts: list[str] = []
+
+    def flush_text() -> None:
+        text = normalize_layout_text("".join(text_parts))
+        text_parts.clear()
+        if text:
+            fragments.append(LayoutFragment(kind="text", text=text))
+
+    def walk(node: ContentNodeType | HtmlNode) -> None:
+        if isinstance(node, HtmlNode):
+            for child in node.children:
+                walk(child)
+            return
+        if isinstance(node, TextContent):
+            text_parts.append(node.text)
+            return
+        if isinstance(node, LinkContent):
+            text_parts.append(node.text or node.url)
+            return
+        if isinstance(node, MentionContent):
+            text_parts.append(node.get_plain())
+            return
+        if isinstance(node, ImageContent):
+            flush_text()
+            fragments.append(
+                LayoutFragment(kind="image", media_type="image", url=node.url)
+            )
+            if node.alt:
+                text_parts.append(node.alt)
+            return
+        if isinstance(node, VideoContent):
+            flush_text()
+            fragments.append(
+                LayoutFragment(kind="video", media_type="video", url=node.url)
+            )
+            return
+        if isinstance(node, AudioContent):
+            flush_text()
+            fragments.append(
+                LayoutFragment(kind="audio", media_type="audio", url=node.url)
+            )
+            return
+        if isinstance(node, FileContent):
+            flush_text()
+            fragments.append(
+                LayoutFragment(
+                    kind="file",
+                    media_type="file",
+                    url=node.url,
+                    name=node.name,
+                )
+            )
+            return
+        text_parts.append(node.get_plain())
+
+    walk(root)
+    flush_text()
+    return fragments
+
+
+def normalize_layout_text(value: str) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r" *\n *", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 ESCAPED_TAG_RE = re.compile(r"&lt;\s*/?\s*[a-zA-Z][^&]{0,500}?&gt;")

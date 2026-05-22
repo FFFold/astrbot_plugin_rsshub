@@ -21,6 +21,7 @@ from .types import (
     get_bot_self_id,
     set_bot_self_id_provider,
 )
+from .weixin_oc_sender import WeixinOCMessageSender
 
 __all__ = [
     # 基础类型
@@ -34,6 +35,7 @@ __all__ = [
     "TelegramMessageSender",
     "OneBotMessageSender",
     "QQOfficialMessageSender",
+    "WeixinOCMessageSender",
     "InfrastructureMessageSenderAdapter",
     "InfrastructureMessageSenderProvider",
     # 工厂方法

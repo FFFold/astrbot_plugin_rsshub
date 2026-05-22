@@ -23,8 +23,6 @@ _EXPORT_MAP = {
     "RouteKnowledgeTaskStatus": "route_knowledge_service",
     "RouteKnowledgeSyncAlreadyRunning": "route_knowledge_service",
     "build_sync_plan": "route_knowledge_service",
-    "should_inject_route_knowledge_prompt": "route_knowledge_service",
-    "build_route_knowledge_prompt": "route_knowledge_service",
     "PushJob": "session_push_queue",
     "PushJobResult": "session_push_queue",
     "StopPushJobResult": "session_push_queue",
