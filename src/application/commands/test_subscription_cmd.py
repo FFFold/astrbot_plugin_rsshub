@@ -16,7 +16,6 @@ except Exception:  # pragma: no cover - lightweight test fallback
     class AstrMessageEvent:  # type: ignore[no-redef]
         unified_msg_origin: str = ""
 
-
 from ...domain.entities.content_types import AudioContent, VideoContent
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
@@ -269,37 +268,33 @@ class TestSubscriptionCommand:
             )
 
             if subscription is not None and feed is not None:
-                stats = (
-                    await self._notification_dispatcher.dispatch_to_feed_subscribers(
-                        feed_id=feed.id,
-                        content=content,
-                        entry_title=title,
-                        entry_link=entry_link,
+                stats = await self._notification_dispatcher.dispatch_to_feed_subscribers(
+                    feed_id=feed.id,
+                    content=content,
+                    entry_title=title,
+                    entry_link=entry_link,
+                    feed_title=effective_feed_title,
+                    feed_link=feed_url,
+                    media_urls=media_urls,
+                    media_items=media_items,
+                    entry_guid=str(getattr(entry, "guid", "") or entry_link or title),
+                    subscription_ids=[subscription.id],
+                    raw_entry=EntryContentContext(
+                        title=title,
+                        summary=str(entry.summary or raw_content or "").strip(),
+                        content=str(raw_content or "").strip(),
+                        link=entry_link,
+                        author=author,
                         feed_title=effective_feed_title,
                         feed_link=feed_url,
-                        media_urls=media_urls,
-                        media_items=media_items,
-                        entry_guid=str(
-                            getattr(entry, "guid", "") or entry_link or title
-                        ),
-                        subscription_ids=[subscription.id],
-                        raw_entry=EntryContentContext(
-                            title=title,
-                            summary=str(entry.summary or raw_content or "").strip(),
-                            content=str(raw_content or "").strip(),
-                            link=entry_link,
-                            author=author,
-                            feed_title=effective_feed_title,
-                            feed_link=feed_url,
-                            raw_xml=str(getattr(entry, "raw_xml", "") or "").strip(),
-                            media_urls=tuple(media_urls),
-                            media_items=tuple(media_items),
-                            layout=tuple(parsed.layout),
-                        ),
-                        include_inactive_subscription_ids=True,
-                        bypass_success_dedup=True,
-                        event=event,
-                    )
+                        raw_xml=str(getattr(entry, "raw_xml", "") or "").strip(),
+                        media_urls=tuple(media_urls),
+                        media_items=tuple(media_items),
+                        layout=tuple(parsed.layout),
+                    ),
+                    include_inactive_subscription_ids=True,
+                    bypass_success_dedup=True,
+                    event=event,
                 )
                 if stats.get("success", 0) > 0 or stats.get("pending", 0) > 0:
                     entered_chain += 1

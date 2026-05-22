@@ -257,9 +257,7 @@ class DefaultMessageSender:
             prepared_media=prepared_media,
             text=request.message,
             failed_urls=effective_failed_urls,
-            platform=platform
-            if platform is not None
-            else (context.platform_name if context else ""),
+            platform=platform if platform is not None else (context.platform_name if context else ""),
         )
 
     @staticmethod

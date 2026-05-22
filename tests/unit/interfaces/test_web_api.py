@@ -246,12 +246,8 @@ async def test_handlers_endpoint_returns_registry_schema():
     assert names == {"ai_filter", "ai_transform"}
     ai_filter = next(item for item in payload["items"] if item["name"] == "ai_filter")
     assert any(field["type"] == "select" for field in ai_filter["schema"])
-    ai_transform = next(
-        item for item in payload["items"] if item["name"] == "ai_transform"
-    )
-    scope_field = next(
-        field for field in ai_transform["schema"] if field["key"] == "scope"
-    )
+    ai_transform = next(item for item in payload["items"] if item["name"] == "ai_transform")
+    scope_field = next(field for field in ai_transform["schema"] if field["key"] == "scope")
     assert scope_field["default"] == "plaintext"
 
 
@@ -355,9 +351,7 @@ async def test_subscriptions_endpoint_uses_dashboard_filters():
     )
     feed_repo = MagicMock()
     feed_repo.get_by_id = AsyncMock(
-        return_value=SimpleNamespace(
-            id=12, title="Pixiv Feed", link="https://example.com/feed"
-        )
+        return_value=SimpleNamespace(id=12, title="Pixiv Feed", link="https://example.com/feed")
     )
     handler = _handler(polling_service=MagicMock())
     handler._sub_repo = sub_repo
@@ -750,22 +744,8 @@ async def test_feeds_endpoint_supports_keyword_filtering():
     feed_repo = MagicMock()
     feed_repo.get_all = AsyncMock(
         return_value=[
-            SimpleNamespace(
-                id=1,
-                title="Pixiv Feed",
-                link="https://example.com/pixiv",
-                state=1,
-                last_modified=None,
-                updated_at=None,
-            ),
-            SimpleNamespace(
-                id=2,
-                title="Twitter Feed",
-                link="https://example.com/x",
-                state=1,
-                last_modified=None,
-                updated_at=None,
-            ),
+            SimpleNamespace(id=1, title="Pixiv Feed", link="https://example.com/pixiv", state=1, last_modified=None, updated_at=None),
+            SimpleNamespace(id=2, title="Twitter Feed", link="https://example.com/x", state=1, last_modified=None, updated_at=None),
         ]
     )
     sub_repo = MagicMock()
@@ -811,30 +791,9 @@ async def test_feeds_endpoint_supports_multi_feed_id_filtering():
     feed_repo = MagicMock()
     feed_repo.get_all = AsyncMock(
         return_value=[
-            SimpleNamespace(
-                id=1,
-                title="Pixiv Feed",
-                link="https://example.com/pixiv",
-                state=1,
-                last_modified=None,
-                updated_at=None,
-            ),
-            SimpleNamespace(
-                id=2,
-                title="Twitter Feed",
-                link="https://example.com/x",
-                state=1,
-                last_modified=None,
-                updated_at=None,
-            ),
-            SimpleNamespace(
-                id=3,
-                title="Bili Feed",
-                link="https://example.com/bili",
-                state=1,
-                last_modified=None,
-                updated_at=None,
-            ),
+            SimpleNamespace(id=1, title="Pixiv Feed", link="https://example.com/pixiv", state=1, last_modified=None, updated_at=None),
+            SimpleNamespace(id=2, title="Twitter Feed", link="https://example.com/x", state=1, last_modified=None, updated_at=None),
+            SimpleNamespace(id=3, title="Bili Feed", link="https://example.com/bili", state=1, last_modified=None, updated_at=None),
         ]
     )
     sub_repo = MagicMock()
@@ -1248,17 +1207,17 @@ async def test_test_subscription_serializes_nested_dto_payload():
             message="ok",
             data={
                 "subscription": SubscriptionDTO(
-                    id=12,
+                        id=12,
                     user_id="alice",
                     feed_id=34,
                     title="示例订阅",
                     tags="pixiv",
-                    target_session="default:GroupMessage:1",
-                    platform_name="aiocqhttp",
-                    state=1,
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                ),
+                        target_session="default:GroupMessage:1",
+                        platform_name="aiocqhttp",
+                        state=1,
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    ),
                 "test_result": SimpleNamespace(
                     entry_count=1,
                     sample_entries=[{"title": "Entry"}],
@@ -1537,9 +1496,7 @@ def _write_file(path: Path, content: str | bytes) -> None:
 
 
 @pytest.mark.asyncio
-async def test_data_management_overview_returns_cache_and_export_stats(
-    monkeypatch, tmp_path
-):
+async def test_data_management_overview_returns_cache_and_export_stats(monkeypatch, tmp_path):
     cache_dir = tmp_path / "cache"
     export_dir = tmp_path / "exports"
     _write_file(cache_dir / "media" / "a.jpg", b"1234")
@@ -1547,9 +1504,7 @@ async def test_data_management_overview_returns_cache_and_export_stats(
     _write_file(export_dir / "feeds.toml", "name='a'\n")
     _write_file(export_dir / "nested" / "backup.toml", "name='b'\n")
 
-    monkeypatch.setattr(
-        web_api, "get_plugin_cache_dir", lambda *parts: cache_dir.joinpath(*parts)
-    )
+    monkeypatch.setattr(web_api, "get_plugin_cache_dir", lambda *parts: cache_dir.joinpath(*parts))
     monkeypatch.setattr(web_api, "get_plugin_export_dir", lambda: export_dir)
 
     handler = _handler(polling_service=MagicMock())
@@ -1701,9 +1656,7 @@ async def test_clear_cache_removes_all_cached_files(monkeypatch, tmp_path):
     _write_file(cache_dir / "media" / "a.jpg", b"a")
     _write_file(cache_dir / "gif" / "b.gif", b"bb")
 
-    monkeypatch.setattr(
-        web_api, "get_plugin_cache_dir", lambda *parts: cache_dir.joinpath(*parts)
-    )
+    monkeypatch.setattr(web_api, "get_plugin_cache_dir", lambda *parts: cache_dir.joinpath(*parts))
 
     handler = _handler(polling_service=MagicMock())
     app = Quart(__name__)

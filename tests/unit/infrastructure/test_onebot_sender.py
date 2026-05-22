@@ -300,7 +300,9 @@ async def test_onebot_sender_ignores_telegraph_strategy(monkeypatch):
     nodes = calls[0][1][0].nodes
     assert len(nodes) == 3
     text_nodes = [
-        node.content[0].text for node in nodes if isinstance(node.content[0], _Plain)
+        node.content[0].text
+        for node in nodes
+        if isinstance(node.content[0], _Plain)
     ]
     assert text_nodes == ["entry content"]
     assert all("Telegraph:" not in text for text in text_nodes)

@@ -88,12 +88,8 @@ async def test_llm_tool_list_handlers_returns_registry_schema():
     assert names == {"ai_filter", "ai_transform"}
     ai_filter = next(item for item in data["items"] if item["name"] == "ai_filter")
     assert any(field["key"] == "input_scope" for field in ai_filter["schema"])
-    ai_transform = next(
-        item for item in data["items"] if item["name"] == "ai_transform"
-    )
-    scope_field = next(
-        field for field in ai_transform["schema"] if field["key"] == "scope"
-    )
+    ai_transform = next(item for item in data["items"] if item["name"] == "ai_transform")
+    scope_field = next(field for field in ai_transform["schema"] if field["key"] == "scope")
     assert scope_field["default"] == "plaintext"
     assert scope_field["options"] == ["plaintext", "xml"]
 
@@ -197,7 +193,9 @@ async def test_llm_tool_rss_get_session_defaults_uses_plugin_kv_store():
     assert "会话默认配置" in result
     assert "send_mode = 1" in result
     assert "display_media = 0" in result
-    plugin_ctx.get_kv_data.assert_awaited_once_with("rsshub_session_defaults_p:g:1", {})
+    plugin_ctx.get_kv_data.assert_awaited_once_with(
+        "rsshub_session_defaults_p:g:1", {}
+    )
 
 
 @pytest.mark.asyncio
