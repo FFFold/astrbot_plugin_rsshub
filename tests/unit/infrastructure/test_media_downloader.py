@@ -36,6 +36,35 @@ async def test_media_downloader_caches_recent_download_failures(
     MediaDownloader._failure_cache.clear()
 
 
+@pytest.mark.asyncio
+async def test_media_downloader_persists_recent_download_failures_across_instances(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    MediaDownloader._failure_cache.clear()
+    calls = 0
+
+    async def fail_download(self, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("origin status=522")
+
+    monkeypatch.setattr(MediaDownloader, "download_to_temp", fail_download)
+
+    first = MediaDownloader(cache_dir=tmp_path)
+    with pytest.raises(RuntimeError, match="origin status=522"):
+        await first.get_or_download(url="https://example.com/p1.jpg")
+
+    MediaDownloader._failure_cache.clear()
+    second = MediaDownloader(cache_dir=tmp_path)
+    with pytest.raises(RuntimeError, match="recent media download failure cached"):
+        await second.get_or_download(url="https://example.com/p1.jpg")
+
+    assert calls == 1
+    assert list(tmp_path.glob("*.fail"))
+    MediaDownloader._failure_cache.clear()
+
+
 def test_media_downloader_failure_cache_prunes_expired_and_oldest_entries():
     MediaDownloader._failure_cache.clear()
     original_max_entries = MediaDownloader._FAILURE_CACHE_MAX_ENTRIES
