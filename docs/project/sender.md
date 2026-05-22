@@ -1,0 +1,136 @@
+# 发送、适配器与媒体指纹
+
+## 负责什么
+
+这一章覆盖三个紧密相关的部分：
+
+- `NotificationServiceImpl`
+- sender adapter / provider
+- media fingerprint
+
+## 为什么要单独写这一层
+
+“发消息”看起来是一个动作，但其实分成三件事：
+
+1. 生成平台无关的发送请求
+2. 适配具体平台 sender
+3. 处理媒体、失败和幂等
+
+如果把这些揉成一团，OneBot、Telegram、QQ Official 的差异会很快把主链路拖乱。
+
+## NotificationService
+
+`NotificationServiceImpl` 是 scheduler/legacy 入口到应用 dispatcher 的桥接层。
+
+### 正常流程
+
+1. 接收 feed 更新
+2. 遍历 entries
+3. 组装正文、媒体、raw_xml
+4. 调用 `NotificationDispatcher.dispatch_to_feed_subscribers()`
+
+### 错误通知
+
+如果 feed 抓取失败，会直接对相关订阅发送错误通知，而不是走普通条目链。
+
+## Sender Provider / Adapter
+
+### `InfrastructureMessageSenderProvider`
+
+它根据平台名返回一个适配后的 sender：
+
+- Telegram
+- OneBot / aiocqhttp
+- QQ Official
+- Weixin OC
+
+### 平台策略
+
+provider 会同时解析 sender strategy：
+
+- `telegram` -> Telegram 策略
+- `aiocqhttp` / `onebot` -> OneBot 策略
+
+### Adapter 作用
+
+`InfrastructureMessageSenderAdapter` 把应用层 `SendRequest` 转成基础设施层 sender 能懂的结构。
+
+这样做是为了：
+
+- 保持应用层不依赖具体平台实现
+- 统一 sender 返回值
+- 统一错误与重绑语义
+
+### 推送排版策略
+
+`style` 是发送排版策略，不再表示旧 RSStT/flowerss 文本风格：
+
+- `0=auto`：使用平台自动/经典策略。
+- `1=RSSRT`：保留给 RSSRT 排版策略。
+- `2=original`：使用解析树 layout fragments，尽量保留 RSS/HTML 中图文出现顺序。
+
+### QQ Official / Weixin OC 顺序发送
+
+`qq_official` 和 `weixin_oc` 不再统一走默认整条 chain 策略。它们在 sender adapter 内部按平台能力处理：
+
+- QQ Official 单图 + 文本合成一条 `Image + Plain`。
+- QQ Official classic 中的视频/多媒体仍按媒体优先、文本最后拆发。
+- QQ Official original 按 layout fragments 尝试图片 + 后续文本合链，视频仍独立。
+- Weixin OC 始终逐条发送，original 只影响顺序，不合并图文。
+
+这样做是为了避开平台对多媒体图文链的吞文本问题，同时保留 QQ Official 单图图文链的可读性。
+
+如果中途某个媒体失败，sender 不会立刻停止，而是继续发送剩余媒体和最终文本。最终 `SendResult.ok=False`，`transient` / `needs_rebind` 聚合所有失败结果，`detail` 带有 `partial send` 语义。最终文本只追加失败媒体的原始链接，不追加成功媒体链接。
+
+### OneBot 经典与原始顺序
+
+OneBot auto/classic 使用合并转发，节点名优先使用 feed title。合并转发失败后会回退为纯文本 Nodes。OneBot original 不使用大合并转发包，而是按 layout fragments 逐条发送图文片段，适合 AI 日报这类多图长文。
+
+## 媒体 fingerprint
+
+### `HttpMediaFingerprintService`
+
+这个服务会下载媒体 URL 的小样本，然后算 `sha256`。
+
+### 算法步骤
+
+1. 限制 URL 数量
+2. 只接受 http/https
+3. 发起短超时请求
+4. 逐块读取响应
+5. 超过 `max_bytes` 就放弃
+6. 对内容做 `sha256`
+
+### 返回值形式
+
+返回值统一加前缀：
+
+- `media:<sha256>`
+
+### 为什么不用直接拼 URL
+
+因为很多媒体链接：
+
+- 可能是临时签名 URL
+- 可能会重定向
+- 可能同内容不同地址
+
+下载少量字节算内容 hash，更适合做“媒体是否相同”的判断。
+
+## 失败与回退
+
+- 非 http/https -> 直接忽略
+- 响应非 200 -> 跳过
+- 超过大小上限 -> 跳过
+- 下载异常 -> debug 级别记录并跳过
+
+也就是说，media fingerprint 是增强能力，不是发送门槛。
+
+## 设计理由
+
+这一层的原则是：
+
+- sender 适配不能侵入业务规则
+- sender adapter 可以处理平台专属发送次数与顺序
+- fingerprint 不能阻断推送
+- 失败要能回退到最小可发内容

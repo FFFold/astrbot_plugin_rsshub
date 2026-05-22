@@ -1,13 +1,45 @@
 # Changelog
 
+## [2.0.0] - 2026-05-22
+
+### Added
+
+- 新增 `/rsshelp`、`/sub_status`、`/sub_stop`、`/rsshub_kb_init`、`/rsshub_kb_sync`、`/rsshub_kb_status`、`/rsshub_kb_task` 等命令。
+- 新增 AstrBot Plugin Pages 管理面板，覆盖订阅、用户、Feed、推送历史、默认订阅设置、处理器、数据管理和 RSSHub Routes 知识库同步。
+- 新增 schema-driven 内容处理链，内置 `ai_filter` 与 `ai_transform`；`ai_transform` 支持 `plaintext` 与 `xml` scope，XML 改写会经过校验和重新解析。
+- 新增推送排版策略：`style=0` 自动，`style=1` RSSRT，`style=2` 原始顺序；原始顺序会尽量按 RSS/HTML 解析树保留图文相邻关系。
+- 新增 RSSHub Routes 知识库同步命令与 Web API：`/rsshub_kb_init`、`/rsshub_kb_sync`、`/rsshub_kb_status`、`/rsshub_kb_task`。
+- 新增 AI agent 工具 `rss_list_push_history` 与 `rss_push_xml_entry`，支持查询推送历史和提交 XML/HTML 即时推送。
+- 新增推送历史详情、批量操作、自动清理配置和订阅联动筛选；新增缓存与导出文件的数据管理视图。
+
+### Changed
+
+- 配置体系重构：启动级配置保留在 `_conf_schema.json`，订阅默认值和处理链配置迁移到 Plugin Pages；类型化运行时配置收口到 `src/infrastructure/config/`。
+- 数据模型收口：用户/订阅配置统一使用 `-100` 表示继承，移除旧 `use_sub_config` / `use_user_config` / 翻译列；迁移脚本压缩为当前 v2 基线。
+- 发送链路重构：格式化器只负责解析后的文本和媒体，平台差异放在 sender adapter；OneBot、QQ Official、Weixin OC、Telegram 使用各自平台策略。
+- Plugin Pages 不再提供新增订阅或订阅 TOML 导入/导出入口；这些用户归属明确的操作继续通过聊天命令或 AI agent 工具完成。
+- 文档体系重建为 `docs/README.md`、`docs/project/`、`docs/dev/`、`docs/usage/`，README 只保留入口和用户向说明。
+
+### Fixed
+
+- 修复部分 RSS 源只推送图片不推送正文的问题，补齐 `content:encoded`、HTML 文本提取、图文 layout fragment 和平台发送顺序处理。
+- 修复失败重试和推送历史审计链路：推送历史保存媒体 URL、原始 XML、handler trace，并限制失败原因长度。
+- 修复 Routes KB raw URL 拼接，支持代理前缀形式的 GitHub Raw 镜像。
+
+### Removed
+
+- 移除传统翻译管道、翻译缓存、旧内容增强管道和旧 route-search LLM tools。
+- 移除冗余内置处理器 `xml_parse`；HTML/XML 清洗归入基础解析与格式化链。
+- 移除旧版配置管理 shim、碎片开发期迁移脚本和 Plugin Pages 中不应承担用户归属的导入/导出入口。
+
+<details>
+<summary>历史更新记录</summary>
+
 ## [1.1.3] - 2026-04-28
 
 ### Fixed
 
 - **优化 FFmpeg 查找策略**：`ensure_ffmpeg_ready` 方法现在优先使用系统 FFmpeg，以确保编解码器和协议的完整支持
-
-<details>
-<summary>历史更新记录</summary>
 
 ## [1.1.2] - 2026-04-26
 
@@ -247,7 +279,6 @@
 
 ### Added
 
-- 新增推送调试配置项 `debug_payload`：
   - 开启后可在推送末尾附带 `guid`、`id`、`link`、`published`、`updated` 等原始字段
   - 便于排查 RSS 源字段异常与去重行为
 
@@ -383,7 +414,7 @@
   - `/sub` `/unsub` `/sub_list` 命令均支持共享模式
 - 新增可配置的发送策略：
   - 支持在配置中开启/关闭特定平台的发送策略
-  - 新增 `sender_strategies` 配置项，包含 `telegram` 和 `aiocqhttp` 两个子项
+  - 当时新增的 `sender_strategies.telegram` / `sender_strategies.aiocqhttp` 子项已在后续版本迁移为 `enabled_platforms` + `platform_strategies`
   - 新增 `/rss_conf sender_strategy_telegram <true/false>` 命令控制 Telegram 策略
   - 新增 `/rss_conf sender_strategy_aiocqhttp <true/false>` 命令控制 OneBot 策略
   - 关闭特定平台策略后将自动使用默认发送策略
