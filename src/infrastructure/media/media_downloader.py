@@ -32,6 +32,7 @@ class MediaDownloader:
     _FAILURE_CACHE_MAX_ENTRIES: int = 1024
     _CACHE_GC_INTERVAL_SECONDS: int = 5 * 60
     _CACHE_GC_GRACE_SECONDS: int = 10 * 60
+    _FAILURE_CACHE_SUFFIX = ".fail"
     _CACHE_MEDIA_SUFFIXES: tuple[str, ...] = (
         ".jpg",
         ".jpeg",
@@ -181,6 +182,9 @@ class MediaDownloader:
     def _failure_cache_key(cls, url: str, proxy: str | None) -> str:
         return hashlib.sha256(f"{url}\n{proxy or ''}".encode()).hexdigest()
 
+    def _failure_cache_path(self, url: str, proxy: str | None) -> Path:
+        return self._cache_dir / f"{self._failure_cache_key(url, proxy)}.fail"
+
     @classmethod
     def _prune_failure_cache(cls) -> None:
         if not cls._failure_cache:
@@ -206,32 +210,71 @@ class MediaDownloader:
         for key, _value in sorted_items[: len(cls._failure_cache) - max_entries]:
             cls._failure_cache.pop(key, None)
 
-    @classmethod
-    def _read_failure_cache(cls, url: str, proxy: str | None) -> str | None:
+    def _read_disk_failure_cache(self, url: str, proxy: str | None) -> str | None:
+        fail_path = self._failure_cache_path(url, proxy)
+        if not fail_path.exists():
+            return None
+        try:
+            raw_expire_ts, detail = fail_path.read_text(encoding="utf-8").split(
+                "\n", 1
+            )
+            expire_ts = float(raw_expire_ts)
+        except Exception:
+            self.safe_unlink(fail_path)
+            return None
+        if expire_ts < time.time():
+            self.safe_unlink(fail_path)
+            return None
+        return detail.strip()
+
+    def _read_failure_cache(self, url: str, proxy: str | None) -> str | None:
+        cls = type(self)
         cls._prune_failure_cache()
         key = cls._failure_cache_key(url, proxy)
         cached = cls._failure_cache.get(key)
         if cached is None:
-            return None
+            disk_cached = self._read_disk_failure_cache(url, proxy)
+            if disk_cached is not None:
+                cls._failure_cache[key] = (
+                    time.time() + cls._FAILURE_CACHE_TTL_SECONDS,
+                    disk_cached[:300],
+                )
+            return disk_cached
         expire_ts, detail = cached
         if expire_ts < time.time():
             cls._failure_cache.pop(key, None)
+            self.safe_unlink(self._failure_cache_path(url, proxy))
             return None
         return detail
 
-    @classmethod
-    def _write_failure_cache(cls, url: str, proxy: str | None, detail: str) -> None:
+    def _write_failure_cache(self, url: str, proxy: str | None, detail: str) -> None:
+        cls = type(self)
         cls._prune_failure_cache()
         key = cls._failure_cache_key(url, proxy)
+        expire_ts = time.time() + cls._FAILURE_CACHE_TTL_SECONDS
+        normalized_detail = detail[:300]
         cls._failure_cache[key] = (
-            time.time() + cls._FAILURE_CACHE_TTL_SECONDS,
-            detail[:300],
+            expire_ts,
+            normalized_detail,
         )
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._failure_cache_path(url, proxy).write_text(
+                f"{expire_ts}\n{normalized_detail}",
+                encoding="utf-8",
+            )
+        except Exception as ex:
+            logger.debug(
+                "Media failure cache write failed: url=%s, err=%s",
+                url,
+                ex,
+            )
         cls._prune_failure_cache()
 
-    @classmethod
-    def _clear_failure_cache(cls, url: str, proxy: str | None) -> None:
+    def _clear_failure_cache(self, url: str, proxy: str | None) -> None:
+        cls = type(self)
         cls._failure_cache.pop(cls._failure_cache_key(url, proxy), None)
+        self.safe_unlink(self._failure_cache_path(url, proxy))
 
     def _cache_file_path(self, url: str, suffix: str | None = None) -> Path:
         digest = self._cache_file_prefix(url)
@@ -265,8 +308,18 @@ class MediaDownloader:
                 continue
             meta_paths_to_check.append(meta_path)
 
+        for fail_path in self._cache_dir.glob(f"*{self._FAILURE_CACHE_SUFFIX}"):
+            try:
+                raw_expire_ts = fail_path.read_text(encoding="utf-8").split("\n", 1)[0]
+                expire_ts = float(raw_expire_ts)
+            except Exception:
+                expire_ts = 0.0
+            if expire_ts + self._CACHE_GC_GRACE_SECONDS >= now_ts:
+                continue
+            meta_paths_to_check.append(fail_path)
+
         stale_orphan_age = self._stale_orphan_age_threshold()
-        for suffix in self._CACHE_MEDIA_SUFFIXES:
+        for suffix in (*self._CACHE_MEDIA_SUFFIXES, self._FAILURE_CACHE_SUFFIX):
             for media_path in self._cache_dir.glob(f"*{suffix}"):
                 meta_path = media_path.with_suffix(".meta")
                 if meta_path.exists():
@@ -294,7 +347,8 @@ class MediaDownloader:
                 continue
 
             try:
-                expire_ts = float(meta_path.read_text(encoding="utf-8").strip())
+                raw_expire_ts = meta_path.read_text(encoding="utf-8").split("\n", 1)[0]
+                expire_ts = float(raw_expire_ts)
             except Exception:
                 expire_ts = 0.0
             if expire_ts + self._CACHE_GC_GRACE_SECONDS >= now_ts:
