@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -33,3 +34,30 @@ async def test_media_downloader_caches_recent_download_failures(
 
     assert calls == 1
     MediaDownloader._failure_cache.clear()
+
+
+def test_media_downloader_failure_cache_prunes_expired_and_oldest_entries():
+    MediaDownloader._failure_cache.clear()
+    original_max_entries = MediaDownloader._FAILURE_CACHE_MAX_ENTRIES
+    MediaDownloader._FAILURE_CACHE_MAX_ENTRIES = 2
+    now = time.time()
+
+    try:
+        MediaDownloader._failure_cache.update(
+            {
+                "expired": (now - 1, "expired"),
+                "oldest": (now + 10, "oldest"),
+                "middle": (now + 20, "middle"),
+                "newest": (now + 30, "newest"),
+            }
+        )
+
+        MediaDownloader._prune_failure_cache()
+
+        assert MediaDownloader._failure_cache == {
+            "middle": (now + 20, "middle"),
+            "newest": (now + 30, "newest"),
+        }
+    finally:
+        MediaDownloader._FAILURE_CACHE_MAX_ENTRIES = original_max_entries
+        MediaDownloader._failure_cache.clear()

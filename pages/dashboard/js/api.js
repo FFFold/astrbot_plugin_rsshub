@@ -24,7 +24,35 @@ function toBridgePayload(value) {
   if (value === undefined || value === null) {
     return value;
   }
-  return JSON.parse(JSON.stringify(value));
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch (_error) {
+      // Fall back to plain objects for reactive or otherwise non-cloneable values.
+    }
+  }
+  return cloneBridgeValue(value, new WeakSet());
+}
+
+function cloneBridgeValue(value, seen) {
+  if (value === undefined || value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (seen.has(value)) {
+    throw new Error('Bridge payload contains circular references');
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const cloned = value.map((item) => cloneBridgeValue(item, seen));
+    seen.delete(value);
+    return cloned;
+  }
+  const cloned = {};
+  for (const [key, item] of Object.entries(value)) {
+    cloned[key] = cloneBridgeValue(item, seen);
+  }
+  seen.delete(value);
+  return cloned;
 }
 
 export async function ready() {

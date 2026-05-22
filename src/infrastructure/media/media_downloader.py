@@ -29,6 +29,7 @@ class MediaDownloader:
 
     _CACHE_TTL_SECONDS: int = 15 * 60
     _FAILURE_CACHE_TTL_SECONDS: int = 5 * 60
+    _FAILURE_CACHE_MAX_ENTRIES: int = 1024
     _CACHE_GC_INTERVAL_SECONDS: int = 5 * 60
     _CACHE_GC_GRACE_SECONDS: int = 10 * 60
     _CACHE_MEDIA_SUFFIXES: tuple[str, ...] = (
@@ -177,11 +178,37 @@ class MediaDownloader:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
 
     @classmethod
-    def _failure_cache_key(cls, url: str, proxy: str) -> str:
+    def _failure_cache_key(cls, url: str, proxy: str | None) -> str:
         return hashlib.sha256(f"{url}\n{proxy or ''}".encode()).hexdigest()
 
     @classmethod
-    def _read_failure_cache(cls, url: str, proxy: str) -> str | None:
+    def _prune_failure_cache(cls) -> None:
+        if not cls._failure_cache:
+            return
+
+        now = time.time()
+        expired_keys = [
+            key
+            for key, (expire_ts, _detail) in cls._failure_cache.items()
+            if expire_ts < now
+        ]
+        for key in expired_keys:
+            cls._failure_cache.pop(key, None)
+
+        max_entries = cls._FAILURE_CACHE_MAX_ENTRIES
+        if max_entries <= 0 or len(cls._failure_cache) <= max_entries:
+            return
+
+        sorted_items = sorted(
+            cls._failure_cache.items(),
+            key=lambda item: item[1][0],
+        )
+        for key, _value in sorted_items[: len(cls._failure_cache) - max_entries]:
+            cls._failure_cache.pop(key, None)
+
+    @classmethod
+    def _read_failure_cache(cls, url: str, proxy: str | None) -> str | None:
+        cls._prune_failure_cache()
         key = cls._failure_cache_key(url, proxy)
         cached = cls._failure_cache.get(key)
         if cached is None:
@@ -193,15 +220,17 @@ class MediaDownloader:
         return detail
 
     @classmethod
-    def _write_failure_cache(cls, url: str, proxy: str, detail: str) -> None:
+    def _write_failure_cache(cls, url: str, proxy: str | None, detail: str) -> None:
+        cls._prune_failure_cache()
         key = cls._failure_cache_key(url, proxy)
         cls._failure_cache[key] = (
             time.time() + cls._FAILURE_CACHE_TTL_SECONDS,
             detail[:300],
         )
+        cls._prune_failure_cache()
 
     @classmethod
-    def _clear_failure_cache(cls, url: str, proxy: str) -> None:
+    def _clear_failure_cache(cls, url: str, proxy: str | None) -> None:
         cls._failure_cache.pop(cls._failure_cache_key(url, proxy), None)
 
     def _cache_file_path(self, url: str, suffix: str | None = None) -> Path:
