@@ -214,3 +214,10 @@ __marimo__/
 
 # idea
 .idea
+
+# macOS
+.DS_Store
+
+/.playwright-mcp/
+/pyrightconfig.*
+/tsconfig.json

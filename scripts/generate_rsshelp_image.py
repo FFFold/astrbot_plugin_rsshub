@@ -142,6 +142,7 @@ def _group_commands(cmds: list[CommandDoc]) -> list[dict]:
         "推送任务": [],
         "配置命令": [],
         "数据导入导出": [],
+        "帮助命令": [],
         "管理员": [],
     }
     for c in sorted(cmds, key=lambda x: x.command):
@@ -151,7 +152,9 @@ def _group_commands(cmds: list[CommandDoc]) -> list[dict]:
             groups["配置命令"].append(c)
         elif c.command.startswith("sub_export") or c.command.startswith("sub_import"):
             groups["数据导入导出"].append(c)
-        elif c.command.startswith("sub_test"):
+        elif c.command.startswith("rsshelp"):
+            groups["帮助命令"].append(c)
+        elif c.command.startswith("sub_test") or c.command.startswith("rsshub_kb_"):
             groups["管理员"].append(c)
         else:
             groups["订阅管理"].append(c)
@@ -221,33 +224,48 @@ def render_png_fallback(commands: list[CommandDoc], output_png: Path) -> None:
     grouped = _group_commands(commands)
     row_heights: list[int] = []
     for g in grouped:
-        h = 60
+        h = 72
         for c in g["commands"]:
-            h += 58 + (20 if c.aliases else 0)
-        row_heights.append(h + 12)
-    total_h = 120 + sum(row_heights) + 60
+            h += 64 + (24 if c.aliases else 0)
+        row_heights.append(h + 18)
+    total_h = 150 + sum(row_heights) + 72
     total_h = max(total_h, 900)
 
-    im = Image.new("RGB", (width, total_h), "#f4f7fb")
+    im = Image.new("RGB", (width, total_h), "#fff7f3")
     draw = ImageDraw.Draw(im)
-    font_title = _font(48)
+    font_brand = _font(18)
+    font_title = _font(50)
     font_h2 = _font(30)
     font_cmd = _font(22)
     font_text = _font(18)
     font_meta = _font(16)
 
+    draw.ellipse((1120, -40, 1420, 260), fill="#fff0e7")
+    draw.ellipse((1180, 20, 1500, 340), fill="#ffe3d1")
     draw.rectangle(
-        (20, 20, width - 20, total_h - 20), fill="#ffffff", outline="#dce6f2", width=2
+        (20, 20, width - 20, total_h - 20), fill="#ffffff", outline="#ffd8c2", width=2
     )
+    draw.rounded_rectangle(
+        (52, 54, 66, 68),
+        radius=4,
+        fill="#ff5d01",
+    )
+    draw.text((78, 46), "RSSHub for AstrBot", font=font_brand, fill="#ff5d01")
     draw.text((50, 45), "RSSHub 命令帮助", font=font_title, fill="#10243d")
     draw.text(
-        (50, 105),
+        (50, 108),
+        "预生成静态帮助图，命令说明来自当前插件入口定义",
+        font=font_text,
+        fill="#6f7f90",
+    )
+    draw.text(
+        (50, 138),
         f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  命令数：{len(commands)}",
         font=font_meta,
-        fill="#5e738f",
+        fill="#6f7f90",
     )
 
-    y = 150
+    y = 182
     box_w = width - padding * 2
     for idx, g in enumerate(grouped):
         x = padding
@@ -255,21 +273,21 @@ def render_png_fallback(commands: list[CommandDoc], output_png: Path) -> None:
         h = row_heights[idx]
         draw.rounded_rectangle(
             (x, box_y, x + box_w, box_y + h),
-            radius=16,
-            fill="#fcfeff",
-            outline="#dce6f2",
+            radius=18,
+            fill="#fffaf7",
+            outline="#ffe9db",
             width=2,
         )
-        draw.text((x + 16, box_y + 14), g["title"], font=font_h2, fill="#10243d")
-        inner_y = box_y + 58
+        draw.text((x + 18, box_y + 16), g["title"], font=font_h2, fill="#24313f")
+        inner_y = box_y + 62
         for c in g["commands"]:
-            draw.text((x + 16, inner_y), f"/{c.command}", font=font_cmd, fill="#0b76d1")
+            draw.text((x + 18, inner_y), f"/{c.command}", font=font_cmd, fill="#ff5d01")
             inner_y += line_h
-            draw.text((x + 16, inner_y), c.summary, font=font_text, fill="#10243d")
+            draw.text((x + 18, inner_y), c.summary, font=font_text, fill="#24313f")
             inner_y += line_h
             if c.aliases:
                 alias_text = "别名: " + " / ".join(c.aliases)
-                draw.text((x + 16, inner_y), alias_text, font=font_meta, fill="#5e738f")
+                draw.text((x + 18, inner_y), alias_text, font=font_meta, fill="#6f7f90")
                 inner_y += 24
         y += h + 16
 

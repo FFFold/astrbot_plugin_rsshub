@@ -115,7 +115,7 @@ pytest -q tests/unit/test_route_knowledge_generator.py
 - 调整发送入口：
   - Feed/entry 默认格式化结果也转换成 `ComponentDocument`。
   - Notification dispatcher 和 message sender 先支持组件文档，再保留原文本 fallback。
-  - 组件结果优先于 RSStT/flowerss 文本格式化；未返回组件时才走基础格式化 fallback。
+  - 组件结果优先于基础文本格式化；`style=0` 使用自动排版，`style=1` 使用 RSSRT 排版，`style=2` 使用原始顺序 layout fragments。
 - 保留发送兼容行为：
   - 媒体下载失败时追加原始链接。
   - Telegram caption 限制仍生效。
