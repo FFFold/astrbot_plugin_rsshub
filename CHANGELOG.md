@@ -23,6 +23,7 @@
 ### Fixed
 
 - 修复部分 RSS 源只推送图片不推送正文的问题，补齐 `content:encoded`、HTML 文本提取、图文 layout fragment 和平台发送顺序处理。
+- 修复旧库迁移到 v2 后 `rsshub_sub.handlers_mode` 缺失导致 `/sub_list` 查询失败的问题。
 - 修复失败重试和推送历史审计链路：推送历史保存媒体 URL、原始 XML、handler trace，并限制失败原因长度。
 - 修复 Routes KB raw URL 拼接，支持代理前缀形式的 GitHub Raw 镜像。
 

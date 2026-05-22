@@ -7,6 +7,7 @@ from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
 from astrbot_plugin_rsshub.src.infrastructure.persistence.migrations import (
     MigrationRunner,
     cleanup_legacy_translation_tables,
+    ensure_profile_schema,
     ensure_push_history_schema,
 )
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -99,6 +100,68 @@ async def test_cleanup_legacy_translation_tables_drops_existing_tables():
     executed_sql = "\n".join(sql for sql, _ in conn.executed)
     assert "DROP TABLE IF EXISTS rsshub_translation_cache" in executed_sql
     assert "DROP TABLE IF EXISTS rsshub_translate_history" in executed_sql
+
+
+@pytest.mark.asyncio
+async def test_ensure_profile_schema_adds_handlers_mode_to_existing_sub_table():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE rsshub_user (
+                id VARCHAR PRIMARY KEY
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            CREATE TABLE rsshub_sub (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id VARCHAR NOT NULL,
+                handlers TEXT NOT NULL DEFAULT '[]'
+            )
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO rsshub_user (id) VALUES ('u1')
+            """
+        )
+        await conn.exec_driver_sql(
+            """
+            INSERT INTO rsshub_sub (id, user_id, handlers)
+            VALUES
+                (1, 'u1', '[]'),
+                (2, 'u1', '[{"id":"builtin.ai_filter.default"}]')
+            """
+        )
+
+        applied = await ensure_profile_schema(conn)
+
+        assert applied == ["rsshub_user.handlers", "rsshub_sub.handlers_mode"]
+        sub_columns = {
+            str(row[1])
+            for row in (
+                await conn.exec_driver_sql("PRAGMA table_info(rsshub_sub)")
+            ).fetchall()
+        }
+        user_columns = {
+            str(row[1])
+            for row in (
+                await conn.exec_driver_sql("PRAGMA table_info(rsshub_user)")
+            ).fetchall()
+        }
+        rows = (
+            await conn.exec_driver_sql(
+                "SELECT id, handlers_mode FROM rsshub_sub ORDER BY id"
+            )
+        ).fetchall()
+
+        assert "handlers" in user_columns
+        assert "handlers_mode" in sub_columns
+        assert rows == [(1, "inherit"), (2, "override")]
+
+    await engine.dispose()
 
 
 @pytest.mark.asyncio
