@@ -144,12 +144,15 @@ jobs:
           heading_text="${first_heading_line#*:}"
           version="$(printf '%s\n' "$heading_text" | sed -E 's/^##[[:space:]]*\[?v?([^]]+)\]?.*$/\1/')"
 
-          next_line_rel="$(tail -n +$((start_line + 1)) "$changelog_path" | grep -n -m1 -E '^##[[:space:]]*\[?v?[0-9]+\.[0-9]+\.[0-9]+([-.+][^]]+)?\]?.*$' | cut -d: -f1 || true)"
-          if [ -n "$next_line_rel" ]; then
-            end_line=$((start_line + next_line_rel - 1))
-            notes="$(sed -n "${start_line},${end_line}p" "$changelog_path")"
+          next_marker_rel="$(tail -n +$((start_line + 1)) "$changelog_path" \
+            | grep -n -m1 -E '^(##[[:space:]]*\[?v?[0-9]+\.[0-9]+\.[0-9]+([-.+][^]]+)?\]?.*|<details>)' \
+            | cut -d: -f1 || true)"
+          notes_start=$((start_line + 1))
+          if [ -n "$next_marker_rel" ]; then
+            notes_end=$((start_line + next_marker_rel - 1))
+            notes="$(sed -n "${notes_start},${notes_end}p" "$changelog_path")"
           else
-            notes="$(sed -n "${start_line},\$p" "$changelog_path")"
+            notes="$(sed -n "${notes_start},\$p" "$changelog_path")"
           fi
 
           if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
