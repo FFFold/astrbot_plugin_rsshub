@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from astrbot_plugin_rsshub.src.domain.entities.handlers import handlers_json
+from astrbot_plugin_rsshub.src.domain.entities.subscription import HANDLERS_MODE_INHERIT
 from astrbot_plugin_rsshub.src.infrastructure.persistence.database import (
     DatabaseManager,
 )
@@ -14,6 +16,7 @@ from astrbot_plugin_rsshub.src.infrastructure.persistence.models import SubORM
 from astrbot_plugin_rsshub.src.infrastructure.persistence.subscription_repository_impl import (
     SubscriptionRepositoryImpl,
 )
+from astrbot_plugin_rsshub.src.shared.constants import INHERIT_VALUE, STATE_ENABLED
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -236,11 +239,38 @@ async def test_ensure_profile_schema_allows_current_sub_orm_reads():
         sub = await session.get(SubORM, 1)
 
     assert sub is not None
-    assert SubscriptionRepositoryImpl._to_entity(sub).interval == -100
-    assert sub.handlers_mode == "inherit"
-    assert sub.interval == -100
+    entity = SubscriptionRepositoryImpl._to_entity(sub)
+
+    expected_options = {
+        "interval": INHERIT_VALUE,
+        "notify": INHERIT_VALUE,
+        "send_mode": INHERIT_VALUE,
+        "length_limit": INHERIT_VALUE,
+        "display_author": INHERIT_VALUE,
+        "display_via": INHERIT_VALUE,
+        "display_title": INHERIT_VALUE,
+        "display_entry_tags": INHERIT_VALUE,
+        "style": INHERIT_VALUE,
+        "display_media": INHERIT_VALUE,
+    }
+    for field, expected in expected_options.items():
+        assert getattr(sub, field) == expected
+        assert getattr(entity, field) == expected
+
+    assert sub.state == STATE_ENABLED
+    assert entity.state == STATE_ENABLED
+    assert sub.handlers_mode == HANDLERS_MODE_INHERIT
+    assert entity.handlers_mode == HANDLERS_MODE_INHERIT
     assert sub.title == ""
-    assert sub.handlers == "[]"
+    assert entity.title == ""
+    assert sub.tags == ""
+    assert entity.tags == ""
+    assert sub.handlers == handlers_json([])
+    assert entity.handlers == []
+    assert sub.created_at is not None
+    assert sub.updated_at is not None
+    assert entity.created_at is not None
+    assert entity.updated_at is not None
     await engine.dispose()
 
 
