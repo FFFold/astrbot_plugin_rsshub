@@ -133,8 +133,12 @@ async def test_sub_test_execute_target_by_sub_id_uses_dispatcher_chain():
     assert call["media_items"] == [("image", "https://example.com/a.jpg")]
     assert call["media_urls"] == ["https://example.com/a.jpg"]
     assert isinstance(call["raw_entry"], EntryContentContext)
-    assert call["raw_entry"].content == "t1<br /><img src='https://example.com/a.jpg' />"
-    assert call["raw_entry"].summary == "t1<br /><img src='https://example.com/a.jpg' />"
+    assert (
+        call["raw_entry"].content == "t1<br /><img src='https://example.com/a.jpg' />"
+    )
+    assert (
+        call["raw_entry"].summary == "t1<br /><img src='https://example.com/a.jpg' />"
+    )
     assert call["raw_entry"].raw_xml == "<item><title>t1</title></item>"
 
 

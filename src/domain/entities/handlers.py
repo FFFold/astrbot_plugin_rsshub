@@ -172,9 +172,7 @@ class HandlerSpec(BaseModel):
 
     def normalized(self) -> HandlerSpec:
         """Return a normalized copy."""
-        handler_type = (
-            str(self.type or "").strip().lower() or HandlerType.BUILTIN.value
-        )
+        handler_type = str(self.type or "").strip().lower() or HandlerType.BUILTIN.value
         if handler_type not in SUPPORTED_HANDLER_TYPES:
             handler_type = HandlerType.EXTERNAL.value
 

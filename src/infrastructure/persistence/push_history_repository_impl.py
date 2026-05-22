@@ -330,7 +330,9 @@ class PushHistoryRepositoryImpl:
 
     async def delete_many(self, history_ids: list[int]) -> int:
         """批量删除推送历史。"""
-        ids = sorted({int(history_id) for history_id in history_ids if int(history_id) > 0})
+        ids = sorted(
+            {int(history_id) for history_id in history_ids if int(history_id) > 0}
+        )
         if not ids:
             return 0
 

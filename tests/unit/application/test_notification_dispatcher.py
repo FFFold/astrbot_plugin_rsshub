@@ -76,14 +76,18 @@ class FakeProviderContext:
             {
                 "prompt": prompt,
                 "system_prompt": kwargs.get("system_prompt", ""),
-                "tools": [tool.name for tool in getattr(kwargs.get("tools"), "tools", [])],
+                "tools": [
+                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
+                ],
             }
         )
         return FakeProviderResponse(self.provider.completion_text)
 
 
 class FakeProviderSelectorContext:
-    def __init__(self, *, default_provider: FakeProvider, selected_provider: FakeProvider):
+    def __init__(
+        self, *, default_provider: FakeProvider, selected_provider: FakeProvider
+    ):
         self.default_provider = default_provider
         self.selected_provider = selected_provider
         self.requested_provider_ids = []
@@ -104,7 +108,9 @@ class FakeProviderSelectorContext:
             {
                 "prompt": kwargs.get("prompt", ""),
                 "system_prompt": kwargs.get("system_prompt", ""),
-                "tools": [tool.name for tool in getattr(kwargs.get("tools"), "tools", [])],
+                "tools": [
+                    tool.name for tool in getattr(kwargs.get("tools"), "tools", [])
+                ],
             }
         )
         return FakeProviderResponse(self.selected_provider.completion_text)

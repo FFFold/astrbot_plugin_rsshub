@@ -476,7 +476,9 @@ class WebApiHandler:
                     else f"用户 {user_ids[0]} 已删除",
                 }
             )
-        return jsonify({"ok": False, "error": "用户不存在或删除失败", "removed_count": 0})
+        return jsonify(
+            {"ok": False, "error": "用户不存在或删除失败", "removed_count": 0}
+        )
 
     # ─── Feed 列表 ────────────────────────────────────────────
 
@@ -655,9 +657,7 @@ class WebApiHandler:
         feed_ids: list[int] = []
         if data:
             if isinstance(data.get("feed_ids"), list):
-                feed_ids = [
-                    int(item) for item in data["feed_ids"] if str(item).strip()
-                ]
+                feed_ids = [int(item) for item in data["feed_ids"] if str(item).strip()]
             elif data.get("feed_id"):
                 feed_ids = [int(data.get("feed_id", 0))]
 
@@ -849,9 +849,7 @@ class WebApiHandler:
             platform_name = str(subscription.platform_name or "").strip()
         if not target_session:
             user = await self._user_repo.get_by_id(user_id)
-            target_session = str(
-                getattr(user, "default_target_session", "") or ""
-            )
+            target_session = str(getattr(user, "default_target_session", "") or "")
         if not target_session:
             return jsonify({"ok": False, "error": "订阅和用户都未配置推送目标会话"})
         if not platform_name:
@@ -1035,7 +1033,9 @@ class WebApiHandler:
         try:
             cache_dir = _ensure_directory(get_plugin_cache_dir())
             export_dir = _ensure_directory(get_plugin_export_dir())
-            cache_summary = _build_directory_summary(cache_dir, breakdown_mode="top_level")
+            cache_summary = _build_directory_summary(
+                cache_dir, breakdown_mode="top_level"
+            )
             export_summary = _build_directory_summary(
                 export_dir, breakdown_mode="extension"
             )
@@ -1121,8 +1121,7 @@ class WebApiHandler:
 
         filename = export_file.name
         content_disposition = (
-            f'attachment; filename="{filename}"; '
-            f"filename*=UTF-8''{quote(filename)}"
+            f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"
         )
         return Response(
             export_file.read_bytes(),
@@ -1274,11 +1273,15 @@ class WebApiHandler:
         history_ids = []
         if data:
             if isinstance(data.get("history_ids"), list):
-                history_ids = [int(item) for item in data["history_ids"] if str(item).strip()]
+                history_ids = [
+                    int(item) for item in data["history_ids"] if str(item).strip()
+                ]
             elif data.get("history_id"):
                 history_ids = [int(data["history_id"])]
 
-        history_ids = sorted({history_id for history_id in history_ids if history_id > 0})
+        history_ids = sorted(
+            {history_id for history_id in history_ids if history_id > 0}
+        )
         if not history_ids:
             return jsonify({"ok": False, "error": "history_id 或 history_ids 不能为空"})
 
@@ -1329,10 +1332,7 @@ def _dump_dataclass_like(value: Any) -> dict[str, Any]:
         if isinstance(item, tuple):
             return [_convert(part) for part in item]
         if hasattr(item, "model_dump"):
-            return {
-                key: _convert(part)
-                for key, part in item.model_dump().items()
-            }
+            return {key: _convert(part) for key, part in item.model_dump().items()}
         if hasattr(item, "__dict__"):
             return {
                 key: _convert(part)
@@ -1369,9 +1369,7 @@ def _ensure_directory(path: Path) -> Path:
     return path
 
 
-def _build_directory_summary(
-    path: Path, *, breakdown_mode: str
-) -> dict[str, Any]:
+def _build_directory_summary(path: Path, *, breakdown_mode: str) -> dict[str, Any]:
     files = list(_iter_files(path))
     total_size = sum(file.stat().st_size for file in files)
     return {
@@ -1410,11 +1408,7 @@ def _iter_files(path: Path):
 
 
 def _list_export_files(export_dir: Path) -> list[Path]:
-    return [
-        file
-        for file in sorted(export_dir.rglob("*.toml"))
-        if file.is_file()
-    ]
+    return [file for file in sorted(export_dir.rglob("*.toml")) if file.is_file()]
 
 
 def _resolve_export_file(export_dir: Path, name: str) -> Path:

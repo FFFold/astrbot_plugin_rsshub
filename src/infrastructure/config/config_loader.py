@@ -427,9 +427,7 @@ def validate_interval_value(
 
     minimal_interval = get_minimal_interval(config)
     if normalized < minimal_interval:
-        raise ValueError(
-            f"{field_name} 不能小于最小监控间隔 {minimal_interval} 分钟"
-        )
+        raise ValueError(f"{field_name} 不能小于最小监控间隔 {minimal_interval} 分钟")
     if normalized > MAX_INTERVAL_MINUTES:
         raise ValueError(f"{field_name} 不能大于 {MAX_INTERVAL_MINUTES} 分钟")
     return normalized
