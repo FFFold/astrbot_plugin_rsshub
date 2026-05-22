@@ -28,6 +28,7 @@ class MediaDownloader:
     """媒体下载器，支持缓存管理和格式转换。"""
 
     _CACHE_TTL_SECONDS: int = 15 * 60
+    _FAILURE_CACHE_TTL_SECONDS: int = 5 * 60
     _CACHE_GC_INTERVAL_SECONDS: int = 5 * 60
     _CACHE_GC_GRACE_SECONDS: int = 10 * 60
     _CACHE_MEDIA_SUFFIXES: tuple[str, ...] = (
@@ -41,6 +42,7 @@ class MediaDownloader:
         ".ogg",
         ".bin",
     )
+    _failure_cache: dict[str, tuple[float, str]] = {}
 
     def __init__(self, cache_dir: Path | None = None) -> None:
         if cache_dir is None:
@@ -173,6 +175,34 @@ class MediaDownloader:
 
     def _cache_file_prefix(self, url: str) -> str:
         return hashlib.sha256(url.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _failure_cache_key(cls, url: str, proxy: str) -> str:
+        return hashlib.sha256(f"{url}\n{proxy or ''}".encode()).hexdigest()
+
+    @classmethod
+    def _read_failure_cache(cls, url: str, proxy: str) -> str | None:
+        key = cls._failure_cache_key(url, proxy)
+        cached = cls._failure_cache.get(key)
+        if cached is None:
+            return None
+        expire_ts, detail = cached
+        if expire_ts < time.time():
+            cls._failure_cache.pop(key, None)
+            return None
+        return detail
+
+    @classmethod
+    def _write_failure_cache(cls, url: str, proxy: str, detail: str) -> None:
+        key = cls._failure_cache_key(url, proxy)
+        cls._failure_cache[key] = (
+            time.time() + cls._FAILURE_CACHE_TTL_SECONDS,
+            detail[:300],
+        )
+
+    @classmethod
+    def _clear_failure_cache(cls, url: str, proxy: str) -> None:
+        cls._failure_cache.pop(cls._failure_cache_key(url, proxy), None)
 
     def _cache_file_path(self, url: str, suffix: str | None = None) -> Path:
         digest = self._cache_file_prefix(url)
@@ -452,9 +482,22 @@ class MediaDownloader:
 
         is_m3u8 = self._guess_suffix(url) == ".m3u8"
         if is_m3u8:
-            return await self._download_m3u8_to_cache(
-                url=url, proxy=proxy, m3u8_timeout=m3u8_timeout
-            )
+            cache_url = f"{url}#mp4"
+            cached_failure = self._read_failure_cache(cache_url, proxy)
+            if cached_failure is not None:
+                raise RuntimeError(
+                    f"recent media download failure cached: url={url}, "
+                    f"last_error={cached_failure}"
+                )
+            try:
+                path = await self._download_m3u8_to_cache(
+                    url=url, proxy=proxy, m3u8_timeout=m3u8_timeout
+                )
+            except Exception as ex:
+                self._write_failure_cache(cache_url, proxy, str(ex))
+                raise
+            self._clear_failure_cache(cache_url, proxy)
+            return path
 
         is_video = self._guess_suffix(url) in {
             ".mp4",
@@ -477,6 +520,12 @@ class MediaDownloader:
                     cached,
                 )
                 return cached
+            cached_failure = self._read_failure_cache(cache_url, proxy)
+            if cached_failure is not None:
+                raise RuntimeError(
+                    f"recent media download failure cached: url={url}, "
+                    f"last_error={cached_failure}"
+                )
 
         logger.debug(
             "Media cache download start: url=%s, timeout_seconds=%s, "
@@ -486,11 +535,15 @@ class MediaDownloader:
             bool(proxy),
             try_convert_gif,
         )
-        tmp_path = await self.download_to_temp(
-            url=url,
-            timeout_seconds=timeout_seconds,
-            proxy=proxy,
-        )
+        try:
+            tmp_path = await self.download_to_temp(
+                url=url,
+                timeout_seconds=timeout_seconds,
+                proxy=proxy,
+            )
+        except Exception as ex:
+            self._write_failure_cache(cache_url, proxy, str(ex))
+            raise
         logger.debug(
             "Media cache download complete: url=%s, tmp=%s, tmp_exists=%s",
             url,
@@ -548,6 +601,7 @@ class MediaDownloader:
                     )
                     return cached
                 written = self._write_cache(cache_url, converted_path)
+                self._clear_failure_cache(cache_url, proxy)
                 logger.debug(
                     "Media cache return new write: url=%s, path=%s",
                     cache_url,
