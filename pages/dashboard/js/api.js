@@ -20,6 +20,13 @@ function buildDirectApiUrl(path, params = {}) {
   return url;
 }
 
+function toBridgePayload(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
 export async function ready() {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const bridge = getBridge();
@@ -41,13 +48,13 @@ async function handleResponse(result) {
 
 async function apiGet(path, params = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiGet(path, params);
+  const result = await bridge.apiGet(path, toBridgePayload(params));
   return await handleResponse(result);
 }
 
 async function apiPost(path, payload = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiPost(path, payload);
+  const result = await bridge.apiPost(path, toBridgePayload(payload));
   return await handleResponse(result);
 }
 
