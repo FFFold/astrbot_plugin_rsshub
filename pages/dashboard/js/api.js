@@ -20,6 +20,41 @@ function buildDirectApiUrl(path, params = {}) {
   return url;
 }
 
+function toBridgePayload(value) {
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof structuredClone === 'function') {
+    try {
+      return structuredClone(value);
+    } catch (_error) {
+      // Fall back to plain objects for reactive or otherwise non-cloneable values.
+    }
+  }
+  return cloneBridgeValue(value, new WeakSet());
+}
+
+function cloneBridgeValue(value, seen) {
+  if (value === undefined || value === null || typeof value !== 'object') {
+    return value;
+  }
+  if (seen.has(value)) {
+    throw new Error('Bridge payload contains circular references');
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    const cloned = value.map((item) => cloneBridgeValue(item, seen));
+    seen.delete(value);
+    return cloned;
+  }
+  const cloned = {};
+  for (const [key, item] of Object.entries(value)) {
+    cloned[key] = cloneBridgeValue(item, seen);
+  }
+  seen.delete(value);
+  return cloned;
+}
+
 export async function ready() {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const bridge = getBridge();
@@ -41,13 +76,13 @@ async function handleResponse(result) {
 
 async function apiGet(path, params = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiGet(path, params);
+  const result = await bridge.apiGet(path, toBridgePayload(params));
   return await handleResponse(result);
 }
 
 async function apiPost(path, payload = {}) {
   const bridge = requireBridge();
-  const result = await bridge.apiPost(path, payload);
+  const result = await bridge.apiPost(path, toBridgePayload(payload));
   return await handleResponse(result);
 }
 
