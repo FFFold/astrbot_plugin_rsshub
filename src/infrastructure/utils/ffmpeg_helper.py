@@ -38,6 +38,15 @@ class FFmpegTool:
     )
 
     @staticmethod
+    def _normalize_proxy_url(proxy: str | None) -> str:
+        proxy_url = (proxy or "").strip()
+        if not proxy_url:
+            return ""
+        if "://" not in proxy_url:
+            return f"http://{proxy_url}"
+        return proxy_url
+
+    @staticmethod
     def ensure_ffmpeg_ready(*, auto_install: bool = True) -> str | None:
         """Resolve an FFmpeg executable path for plugin runtime use.
 
@@ -210,6 +219,88 @@ class FFmpegTool:
             stdout.decode("utf-8", errors="ignore") if stdout else "",
         )
         return has_audio
+
+    @staticmethod
+    async def has_valid_video_stream(
+        video_path: Path,
+        *,
+        timeout_seconds: int = 10,
+        auto_install_ffmpeg: bool = True,
+    ) -> bool:
+        """Detect whether a media file has a playable video stream."""
+        ffprobe_exe = FFmpegTool.ensure_ffprobe_ready(auto_install=auto_install_ffmpeg)
+        if not ffprobe_exe:
+            logger.debug(
+                "FFprobe not available, accepting video without validation: path=%s",
+                video_path,
+            )
+            return video_path.exists() and video_path.is_file()
+
+        if not video_path.exists() or not video_path.is_file():
+            return False
+
+        args = [
+            ffprobe_exe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_type:format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(video_path),
+        ]
+
+        process: asyncio.subprocess.Process | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=max(1, int(timeout_seconds)),
+            )
+        except asyncio.TimeoutError:
+            logger.warning("FFprobe video validation timeout: path=%s", video_path)
+            if process is not None:
+                process.kill()
+                await process.wait()
+            return False
+        except (OSError, ValueError) as ex:
+            logger.warning(
+                "FFprobe video validation failed: path=%s, err=%s",
+                video_path,
+                ex,
+            )
+            return False
+
+        output = stdout.decode("utf-8", errors="ignore") if stdout else ""
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        has_video = "video" in lines
+        duration = 0.0
+        for line in reversed(lines):
+            try:
+                duration = float(line)
+                break
+            except ValueError:
+                continue
+
+        valid = process.returncode == 0 and has_video and duration > 0
+        if not valid:
+            err_tail = (stderr or b"").decode("utf-8", errors="ignore")[-300:]
+            logger.warning(
+                "FFprobe video validation rejected file: path=%s, "
+                "returncode=%s, has_video=%s, duration=%s, stderr_tail=%s",
+                video_path,
+                process.returncode,
+                has_video,
+                duration,
+                err_tail,
+            )
+        return valid
 
     @staticmethod
     async def transcode_to_mp4(
@@ -484,25 +575,35 @@ class FFmpegTool:
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        proxy_url = FFmpegTool._normalize_proxy_url(proxy)
+
         args = [
             ffmpeg_exe,
             "-y",
             "-protocol_whitelist",
             "file,http,https,tcp,tls,crypto,httpproxy",
-            "-i",
-            m3u8_url,
-            "-c",
-            "copy",
-            "-bsf:a",
-            "aac_adtstoasc",
-            str(output_path),
         ]
+        if proxy_url:
+            args.extend(["-http_proxy", proxy_url])
+        args.extend(
+            [
+                "-i",
+                m3u8_url,
+                "-c",
+                "copy",
+                "-bsf:a",
+                "aac_adtstoasc",
+                str(output_path),
+            ]
+        )
 
         env = None
-        if proxy:
+        if proxy_url:
             env = os.environ.copy()
-            env["HTTP_PROXY"] = proxy
-            env["HTTPS_PROXY"] = proxy
+            env["HTTP_PROXY"] = proxy_url
+            env["HTTPS_PROXY"] = proxy_url
+            env["http_proxy"] = proxy_url
+            env["https_proxy"] = proxy_url
 
         process: asyncio.subprocess.Process | None = None
         try:
@@ -549,6 +650,13 @@ class FFmpegTool:
             return False
 
         if output_path.exists() and output_path.stat().st_size > 0:
+            if not await FFmpegTool.has_valid_video_stream(
+                output_path,
+                timeout_seconds=10,
+                auto_install_ffmpeg=auto_install_ffmpeg,
+            ):
+                output_path.unlink(missing_ok=True)
+                return False
             logger.debug(
                 "FFmpeg m3u8 download success: url=%s, out=%s, bytes=%s",
                 m3u8_url,

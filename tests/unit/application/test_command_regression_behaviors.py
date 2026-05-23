@@ -60,6 +60,8 @@ async def test_sub_test_execute_target_dispatches_messages():
         end=2,
     )
     assert result.success is True
+    assert "范围" not in result.message
+    assert "最新 2 条" in result.message
     assert dispatcher.send_to_session.await_count == 2
     first_call = dispatcher.send_to_session.await_args_list[0].kwargs
     assert "<br" not in first_call["content"]
@@ -123,6 +125,8 @@ async def test_sub_test_execute_target_by_sub_id_uses_dispatcher_chain():
     )
 
     assert result.success is True
+    assert "范围" not in result.message
+    assert "最新 1 条" in result.message
     dispatcher.send_to_session.assert_not_called()
     dispatcher.dispatch_to_feed_subscribers.assert_awaited_once()
     call = dispatcher.dispatch_to_feed_subscribers.await_args.kwargs
@@ -140,6 +144,66 @@ async def test_sub_test_execute_target_by_sub_id_uses_dispatcher_chain():
         call["raw_entry"].summary == "t1<br /><img src='https://example.com/a.jpg' />"
     )
     assert call["raw_entry"].raw_xml == "<item><title>t1</title></item>"
+
+
+@pytest.mark.asyncio
+async def test_sub_test_execute_target_by_sub_id_reports_real_send_failure():
+    sub_repo = MagicMock()
+    feed_repo = MagicMock()
+    dispatcher = MagicMock()
+    dispatcher.dispatch_to_feed_subscribers = AsyncMock(
+        return_value={
+            "success": 0,
+            "failed": 1,
+            "pending": 0,
+            "skipped": 0,
+            "last_error": "File of size 22961780 bytes is too big for a photo",
+        }
+    )
+
+    subscription = Subscription(
+        id=7,
+        user_id="u1",
+        feed_id=10,
+        target_session="sess",
+        platform_name="telegram",
+    )
+    feed = Feed(id=10, link="https://a.com/rss", title="timeline")
+    sub_repo.get_by_id = AsyncMock(return_value=subscription)
+    feed_repo.get_by_id = AsyncMock(return_value=feed)
+    polling = MagicMock()
+    polling.fetch_feed_entries = AsyncMock(
+        return_value=SimpleNamespace(
+            success=True,
+            entries=[EntryParsed(title="t1", link="l1", summary="s1")],
+            message="ok",
+            web_feed=SimpleNamespace(rss_d=SimpleNamespace(feed={"title": "timeline"})),
+        )
+    )
+
+    cmd = TestSubscriptionCommand(
+        subscription_repo=sub_repo,
+        feed_repo=feed_repo,
+        polling_service=polling,
+        notification_dispatcher=dispatcher,
+    )
+
+    result = await cmd.execute_target(
+        target="7",
+        user_id="u1",
+        target_session="sess",
+        platform_name="telegram",
+    )
+
+    assert result.success is False
+    assert "测试推送发送失败" in result.message
+    assert "too big for a photo" in result.message
+    assert (
+        dispatcher.dispatch_to_feed_subscribers.await_args.kwargs[
+            "include_error_detail"
+        ]
+        is True
+    )
 
 
 @pytest.mark.asyncio

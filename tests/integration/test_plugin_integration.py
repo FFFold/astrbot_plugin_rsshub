@@ -61,6 +61,13 @@ def main_module(monkeypatch):
         def permission_type(*_args, **_kwargs):
             return lambda fn: fn
 
+        @staticmethod
+        def event_message_type(*_args, **_kwargs):
+            return lambda fn: fn
+
+        class EventMessageType:
+            ALL = "all"
+
     api_mod = sys.modules["astrbot.api"]
     api_mod.AstrBotConfig = dict
 
@@ -120,12 +127,40 @@ class TestCommandIntegration:
             "unsub_all",
             "export_subs",
             "import_subs",
+            "import_upload_listener",
             "rsshelp",
             "test_sub",
         ]
 
         for cmd in command_methods:
             assert cmd in methods, f"Command method {cmd} not found"
+
+    def test_import_upload_listener_finds_file_like_component(self, main_module):
+        plugin = main_module.RSSHubPlugin(MagicMock(), {})
+
+        class UploadedFile:
+            async def get_file(self):
+                return "/tmp/subs.toml"
+
+        event = MagicMock()
+        event.message_obj = MagicMock(message=[UploadedFile()])
+
+        assert plugin._find_uploaded_file(event) is event.message_obj.message[0]
+
+    def test_pending_import_prune_removes_expired_entries(
+        self, main_module, monkeypatch
+    ):
+        plugin = main_module.RSSHubPlugin(MagicMock(), {})
+        plugin._pending_imports = {
+            "expired": 100.0,
+            "active": 300.0,
+        }
+
+        monkeypatch.setattr(main_module.time, "time", lambda: 200.0)
+
+        plugin._prune_pending_imports()
+
+        assert plugin._pending_imports == {"active": 300.0}
 
 
 class TestSchedulerIntegration:

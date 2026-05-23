@@ -35,9 +35,9 @@ class InfrastructureMessageSenderAdapter:
                 title=context.channel_title if context else "",
                 link=context.channel_link if context else "",
             ),
+            entry_title=context.entry_title if context else "",
+            entry_link=context.entry_link if context else "",
             platform_name=context.platform_name if context else "",
-            timeout_seconds=context.timeout_seconds if context else 30,
-            proxy=context.proxy if context else "",
             send_mode=context.send_mode if context else None,
             style=context.style if context else 0,
             sender_strategy=(

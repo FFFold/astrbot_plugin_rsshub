@@ -89,7 +89,7 @@ tests/                      # unit/integration tests, fixtures, mocks
   - `/rsshub_kb_sync`
   - `/rsshub_kb_status`
   - `/rsshub_kb_task`
-- `/sub_test <ID|URL> [start] [end]` must be **real push**, not preview-only.
+- `/sub_test <ID|URL>` must be **real push** of the latest entry, not preview-only; chat command does not accept extra range args.
 - `/sub_import` supports TOML file path and upload-waiting flow; no OPML fallback.
 - `/sub_list` only lists current session; no `all` scope in chat command.
 - `/sub` and `/unsub` both support batch arguments.
@@ -107,6 +107,10 @@ tests/                      # unit/integration tests, fixtures, mocks
 - Keep sender error detail and `PushHistory.fail_reason` within the 512-character persistence/model limit, and truncate legacy oversized DB values on read.
 - `send_mode` semantics are `-1=仅链接`、`0=自动`、`1=直接发送`; legacy `1=Telegraph` should normalize to `0`, and legacy `2=直接消息` should normalize to `1`.
 - Telegraph is a Telegram sender auto-routing policy instead of an explicit `send_mode`; it should only trigger for the Telegram sender when deduplicated normalized media count is greater than 1. Do not expose or execute Telegraph routing for OneBot/QQ Official.
+- Telegram local image files larger than 10 MiB must be sent as files instead of photos to avoid Bot API photo size rejection.
+- m3u8/HLS pre-download must validate FFmpeg output with ffprobe before caching; reject zero-duration or no-video files and let sender failure fallback expose the original URL.
+- Media sending always pre-downloads media before building platform components. Only successful media downloads are cached; do not reintroduce in-memory or disk failure caches, and do not restore a user-facing `download_media_before_send` toggle.
+- When title display is disabled, formatter must not remove a body prefix just because it equals the title; repeated-title removal only applies when the title is actually shown.
 - `minimal_interval` is a persisted write-time hard floor for subscription/default interval values; do not weaken it into a runtime-only clamp.
 - `failed_queue_capacity=0` disables automatic retry queue pickup only; failed `push_history` records must still be written and retained.
 - `failed_queue_max_retries` is the automatic retry ceiling for one `push_history` record; it does not authorize dropping failed history.
@@ -138,6 +142,7 @@ tests/                      # unit/integration tests, fixtures, mocks
 - Management UI is via Plugin Pages + `WebApiHandler` routes.
 - `_conf_schema.json` only exposes startup-level config, Routes KB provider/source settings, content handler AI provider/persona selection, credentials, and platform strategies; subscription defaults belong in Plugin Pages.
 - Fixed-choice `_conf_schema.json` fields should use `options`; bounded numeric fields should use `slider` instead of free-form numbers.
+- Startup config must be self-healed against `_conf_schema.json`: add missing defaults, remove unknown/legacy fields, coerce recoverable numeric values, clamp sliders, and reset invalid options before typed runtime parsing. Any `_conf_schema.json` field add/remove/type change must update config self-heal regression tests.
 - `sender_strategies.enabled_platforms` is a list-style platform multi-select in `_conf_schema.json`, but it should only expose platforms with meaningful sender-strategy toggles today: `telegram`, `aiocqhttp`, `qq_official`. Do not add `weixin_oc` back into this list unless WeChat gains a real dedicated strategy surface. `sender_strategies.platform_strategies` is the single `template_list` for platform strategy templates such as `telegram_strategy` and `onebot_strategy`. Runtime reads only the first item for each template type. Template fields may differ by platform; keep OneBot-only fields such as `prefer_local_video` out of the Telegram template and Telegraph fields out of the OneBot template. Keep runtime compatibility for old bool-map, object configs, and legacy per-platform template lists in infrastructure adapters.
 - Plugin Pages may manage existing subscriptions, users, push history, subscription defaults, and Routes KB tasks, but must not provide new subscription creation or subscription TOML import/export entry points. Use chat commands or AI agent tools for those user-owned flows.
 - Plugin Pages handler editors are schema-driven and shared between user/subscription forms; they should read `handlers/schema` when available, keep a frontend fallback, and preserve raw JSON editing for unknown extension handlers. Builtin handlers only include `ai_filter` and `ai_transform`; HTML/XML 清洗属于基础解析与格式化链，不是可配置 handler. `ai_filter.input_scope` is `text|raw_xml|both`; `ai_transform.scope` is `plaintext|xml`.
@@ -172,7 +177,7 @@ uv run ruff check data/plugins/astrbot_plugin_rsshub
 Recent regression recovery completed:
 
 - Restored command semantics for `/sub_test`, `/sub`, `/unsub`, `/sub_list`, `/sub_export`, `/sub_import`.
-- Restored `/sub_test` real push path for ID/URL and 1-based range.
+- Restored `/sub_test` real push path for ID/URL; chat command sends the latest entry only.
 - Restored OneBot merged-forward compatibility behavior and legacy `via ...` tail format.
 - Added/updated handler + application regression tests for command routing and formatting.
 - Command surface cleanup:
