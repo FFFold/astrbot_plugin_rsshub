@@ -24,6 +24,7 @@
 - 项目与架构：[`docs/project/README.md`](./docs/project/README.md)
 - 开发与贡献：[`docs/dev/README.md`](./docs/dev/README.md)
 - 使用文档索引：[`docs/usage/README.md`](./docs/usage/README.md)
+- 插件讨论群：https://qm.qq.com/q/2KRsO8usbe
 
 > 当前 `usage/` 目录还在逐步拆分中。命令、配置和管理页说明目前仍以本 README 为主。
 
