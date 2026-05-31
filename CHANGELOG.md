@@ -1,5 +1,43 @@
 # Changelog
 
+## [2.0.3] - 2026-06-01
+
+### Added
+
+- 新增 `http_config`，统一配置 RSS 拉取、媒体预下载与 FFmpeg m3u8/HLS 下载使用的代理和超时。
+- 新增 `http_config.media_timeout`，用于单独配置媒体下载超时，上限提升到 1800 秒。
+- Plugin Pages 推送历史新增单条「重试」操作，可人工重放旧记录并把本次结果写回原历史行；列表按最近活动时间排序，重试后该行会回到顶部。
+- `rss_subscribe` AI 工具收口为单参数 `targets: string[]`，支持一次订阅多个完整 URL 或 RSSHub 路由路径。
+- `rss_push_xml_entry` AI 工具新增安全排版参数，可临时指定 `style`、`send_mode`、媒体/标题/作者/via/tags 显示和正文长度。
+- 为缺失中文命名别名的命令增加了命令别名。
+- 新增数据库用户一致性自愈：订阅或推送历史引用到的 `user_id` 会在启动迁移阶段补齐到用户表。
+- Plugin Pages 用户、Feed、订阅删除流程新增「同时清理推送历史」选项，默认保留历史审计数据。
+- Plugin Pages 订阅列表新增按 Feed URL 精确筛选入口，推送历史跳转订阅不再依赖可能复用的 `sub_id`。
+- 新增跨平台测试脚本 `tests/run_tests.sh`，方便 macOS/Linux 本地执行分类测试。
+
+### Changed
+
+- OneBot 默认优先使用插件预下载后的本地视频文件，避免 NapCat/OneBot 端自行拉取 m3u8 或远程视频导致发送失败。
+- Telegram photo 大小阈值收口为内置常量，默认 10 MiB；超限图片会按文件发送。
+- QQ Official 默认不再按媒体数量预先降级为文件；多媒体会优先按图片/视频组件发送，真实发送失败后再按内置策略降级为文件或原始链接。
+- QQ Official Markdown 配置暂时保留为兼容入口，但主动推送临时统一纯文本，避免 Markdown 原文在 QQ 官方平台直接暴露。
+- 旧 `basic_config.proxy`、`basic_config.timeout`、`media_config.download_media_timeout` 和 `m3u8_download_timeout` 会在启动配置自愈时迁移到 `http_config`。
+- 表格图片渲染从 `infrastructure.media` 归位到 `infrastructure.rendering`，媒体包只保留下载、指纹和发送前媒体处理职责。
+
+### Removed
+
+- 媒体缓存 GC、媒体完整性阈值和平台降级策略收口为内置常量，不再作为用户配置项暴露。
+
+### Fixed
+
+- 修复无声视频转 GIF 后仍按视频组件上传的问题；转换后的 `.gif` 会统一按图片发送，并覆盖普通发送与原始顺序排版路径。
+- 修复坏媒体文件可能进入成功缓存的问题；命中缓存和写入缓存前都会做基础完整性校验，坏缓存会被删除并触发重新下载。
+- 修复 m3u8/HLS 合并输出校验不足的问题；FFmpeg 输出必须通过视频流与时长校验后才会写入成功缓存。
+- 修复 QQ Official 单图+文本合发失败时可能静默丢失媒体的问题；失败会按内置策略优先文件降级，并在结果/文本中保留可见的原始媒体链接。
+- 修复表格图片缓存并发写入、original layout 占位文本、generated media 缺失时暴露内部标识，以及关闭媒体时表格正文丢失的问题。
+
+<details>
+
 ## [2.0.2] - 2026-05-23
 
 ### Changed
@@ -12,7 +50,7 @@
 
 - 移除媒体下载失败缓存；下载失败不再写入内存或 `.fail` 文件，网络、代理或反代恢复后同一媒体会在下次推送重新尝试下载。
 - 保留成功媒体缓存行为，避免重复下载已成功缓存的媒体。
-- 修复启用 `basic_config.proxy` 后，FFmpeg m3u8/HLS 下载没有显式走代理的问题；裸 `host:port` 代理配置现在会统一按 `http://host:port` 处理。
+- 修复启用代理后，FFmpeg m3u8/HLS 下载没有显式走代理的问题；裸 `host:port` 代理配置现在会统一按 `http://host:port` 处理。
 - 修复 `/sub_import` 不带参数进入上传等待后，后续上传 TOML 文件未被监听处理的问题。
 - 修复 Plugin Pages 推送历史保留 1 天 / 1 周 / 30 天清理按钮清理不充分的问题；清理判断改为按最后活动时间，并返回真实清理数量。
 - 修复测试推送在真实发送失败时误报“未进入正式发送链路”的问题，现在会优先显示 sender 返回的失败原因。
@@ -59,9 +97,6 @@
 - 移除传统翻译管道、翻译缓存、旧内容增强管道和旧 route-search LLM tools。
 - 移除冗余内置处理器 `xml_parse`；HTML/XML 清洗归入基础解析与格式化链。
 - 移除旧版配置管理 shim、碎片开发期迁移脚本和 Plugin Pages 中不应承担用户归属的导入/导出入口。
-
-<details>
-<summary>历史更新记录</summary>
 
 ## [1.1.3] - 2026-04-28
 

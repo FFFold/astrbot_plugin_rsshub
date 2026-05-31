@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...domain.entities.content_types import is_generated_media_url
+
 if TYPE_CHECKING:
     from ..messaging.senders.types import PreparedMedia
 
@@ -29,8 +31,6 @@ class MessageChainFormatter:
         text: str,
         failed_urls: list[str],
         platform: str = "",
-        *,
-        prefer_local_video: bool = True,
     ) -> list[MessageComponent]:
         """
         构建平台无关消息组件。
@@ -40,7 +40,6 @@ class MessageChainFormatter:
             text=text,
             failed_urls=failed_urls,
             platform=platform,
-            prefer_local_video=prefer_local_video,
         )
 
     def build_chain(
@@ -78,6 +77,8 @@ class MessageChainFormatter:
         seen: set[str] = set()
         for item in prepared_media:
             url = str(item.original_url or "").strip()
+            if is_generated_media_url(url):
+                continue
             if url and url not in seen:
                 urls.append(url)
                 seen.add(url)

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import delete
 from sqlmodel import asc, or_, select
 
 from ...domain.entities.handlers import dump_handlers, handlers_json
@@ -40,18 +41,32 @@ class SubscriptionRepositoryImpl:
             orms = result.scalars().all()
             return [self._to_entity(orm) for orm in orms]
 
-    async def get_by_user_and_feed(
-        self, user_id: str, feed_id: int
+    async def get_by_user_feed_session(
+        self, user_id: str, feed_id: int, target_session: str | None
     ) -> Subscription | None:
-        """根据用户和Feed获取订阅"""
+        """根据用户、Feed 与目标会话获取订阅。
+
+        订阅按 (user_id, feed_id, target_session) 唯一，同一用户在不同会话可对
+        同一 Feed 各订阅一份，因此查重必须带上 target_session。
+
+        数据库未对这三列加唯一约束，旧库或并发可能残留重复行；此处用 limit(1) +
+        first() 防御，命中任一匹配即可，避免 scalar_one_or_none 在重复时抛
+        MultipleResultsFound。
+        """
         db = get_database()
         async with db.get_session() as session:
-            stmt = select(SubORM).where(
-                SubORM.user_id == user_id,
-                SubORM.feed_id == feed_id,
+            stmt = (
+                select(SubORM)
+                .where(
+                    SubORM.user_id == user_id,
+                    SubORM.feed_id == feed_id,
+                    SubORM.target_session == target_session,
+                )
+                .order_by(asc(SubORM.id))
+                .limit(1)
             )
             result = await session.execute(stmt)
-            orm = result.scalar_one_or_none()
+            orm = result.scalars().first()
             return self._to_entity(orm) if orm else None
 
     async def get_all_active(self) -> list[Subscription]:
@@ -68,6 +83,7 @@ class SubscriptionRepositoryImpl:
         *,
         user_ids: list[str] | None = None,
         feed_ids: list[int] | None = None,
+        feed_links: list[str] | None = None,
         sub_ids: list[int] | None = None,
         keywords: list[str] | None = None,
     ) -> list[Subscription]:
@@ -78,7 +94,7 @@ class SubscriptionRepositoryImpl:
                 FeedORM, FeedORM.id == SubORM.feed_id, isouter=True
             )
             has_filters = any(
-                values for values in (user_ids, feed_ids, sub_ids, keywords)
+                values for values in (user_ids, feed_ids, feed_links, sub_ids, keywords)
             )
 
             if not has_filters:
@@ -88,6 +104,8 @@ class SubscriptionRepositoryImpl:
                 stmt = stmt.where(SubORM.user_id.in_(user_ids))
             if feed_ids:
                 stmt = stmt.where(SubORM.feed_id.in_(feed_ids))
+            if feed_links:
+                stmt = stmt.where(FeedORM.link.in_(feed_links))
             if sub_ids:
                 stmt = stmt.where(SubORM.id.in_(sub_ids))
             if keywords:
@@ -158,6 +176,19 @@ class SubscriptionRepositoryImpl:
             if count > 0:
                 await session.commit()
             return count
+
+    async def delete_all_by_feed_ids(self, feed_ids: list[int]) -> int:
+        """删除指定 Feed 的所有订阅。"""
+        ids = sorted({int(feed_id) for feed_id in feed_ids if int(feed_id) > 0})
+        if not ids:
+            return 0
+
+        db = get_database()
+        async with db.get_session() as session:
+            stmt = delete(SubORM).where(SubORM.feed_id.in_(ids))
+            result = await session.execute(stmt)
+            await session.commit()
+            return int(result.rowcount or 0)
 
     async def update_options(
         self, sub_id: int, user_id: str, **kwargs

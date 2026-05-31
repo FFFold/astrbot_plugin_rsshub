@@ -11,9 +11,12 @@ from ...domain.entities.feed import Feed
 from ...domain.entities.subscription import Subscription
 from ...domain.repositories.feed_repository import FeedRepository
 from ...domain.repositories.subscription_repository import SubscriptionRepository
+from ...domain.repositories.user_repository import UserRepository
 from ...domain.value_objects.feed_url import FeedUrl
 from ...infrastructure.config import validate_interval_value
 from ..dto.result_dto import CommandResult
+
+IMPORT_UPLOAD_WAIT_SECONDS = 5 * 60
 
 
 @dataclass
@@ -49,9 +52,11 @@ class ImportSubscriptionsCommand:
         self,
         subscription_repo: SubscriptionRepository,
         feed_repo: FeedRepository,
+        user_repo: UserRepository | None = None,
     ):
         self._subscription_repo = subscription_repo
         self._feed_repo = feed_repo
+        self._user_repo = user_repo
 
     async def execute(
         self,
@@ -90,6 +95,11 @@ class ImportSubscriptionsCommand:
                 success=False,
                 message="没有找到有效的订阅记录",
             )
+
+        normalized_user_id = str(user_id or "").strip()
+        if self._user_repo is not None and normalized_user_id:
+            await self._user_repo.get_or_create(normalized_user_id)
+            user_id = normalized_user_id
 
         items: list[ImportItemResult] = []
         success_count = 0
@@ -173,9 +183,9 @@ class ImportSubscriptionsCommand:
                 feed = Feed(link=feed_url.normalized(), title=record.feed_title or "")
                 feed = await self._feed_repo.save(feed)
 
-            # 检查是否已订阅
-            existing = await self._subscription_repo.get_by_user_and_feed(
-                user_id, feed.id
+            # 检查是否已订阅（按 用户 + Feed + 目标会话 查重）
+            existing = await self._subscription_repo.get_by_user_feed_session(
+                user_id, feed.id, target_session
             )
             if existing:
                 if skip_existing:

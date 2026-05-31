@@ -40,15 +40,19 @@ class SubscriptionRepository(Protocol):
         """
         ...
 
-    async def get_by_user_and_feed(
-        self, user_id: str, feed_id: int
+    async def get_by_user_feed_session(
+        self, user_id: str, feed_id: int, target_session: str | None
     ) -> Subscription | None:
         """
-        根据用户和Feed获取订阅
+        根据用户、Feed 与目标会话获取订阅
+
+        订阅按 (user_id, feed_id, target_session) 唯一：同一用户在不同会话
+        （如不同群聊）可对同一 Feed 各自订阅一份，因此查重必须带上会话。
 
         Args:
             user_id: 用户唯一标识
             feed_id: Feed唯一标识
+            target_session: 目标会话标识（可为 None）
 
         Returns:
             Subscription对象，不存在时返回None
@@ -69,6 +73,7 @@ class SubscriptionRepository(Protocol):
         *,
         user_ids: list[str] | None = None,
         feed_ids: list[int] | None = None,
+        feed_links: list[str] | None = None,
         sub_ids: list[int] | None = None,
         keywords: list[str] | None = None,
     ) -> list[Subscription]:
@@ -78,6 +83,7 @@ class SubscriptionRepository(Protocol):
         Args:
             user_ids: 精确匹配用户 ID，任一命中即可
             feed_ids: 精确匹配 Feed ID，任一命中即可
+            feed_links: 精确匹配 Feed 链接，任一命中即可
             sub_ids: 精确匹配订阅 ID，任一命中即可
             keywords: 标题/Feed/标签/用户 ID 模糊匹配关键词，任一命中即可
 
@@ -125,6 +131,18 @@ class SubscriptionRepository(Protocol):
 
         Args:
             user_id: 用户唯一标识
+
+        Returns:
+            删除的订阅数量
+        """
+        ...
+
+    async def delete_all_by_feed_ids(self, feed_ids: list[int]) -> int:
+        """
+        删除指定 Feed 的所有订阅。
+
+        Args:
+            feed_ids: Feed ID 列表
 
         Returns:
             删除的订阅数量

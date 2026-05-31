@@ -14,6 +14,22 @@ from ....domain.entities.content_types import LayoutFragment
 
 
 @dataclass
+class MediaVariant:
+    """同一媒体的可发送变体。
+
+    variant 表示生成来源，例如 original、gif、compressed_gif、transcoded。
+    media_type 表示交给平台组件时的目标类型：image / video / audio / file。
+    """
+
+    variant: str
+    media_type: str
+    path: Path
+    mime: str = ""
+    suffix: str = ""
+    size_bytes: int = 0
+
+
+@dataclass
 class PreparedMedia:
     """预处理后的媒体文件信息"""
 
@@ -21,6 +37,43 @@ class PreparedMedia:
     original_url: str
     local_path: Path | None = None
     download_failed: bool = False
+    detected_mime: str = ""
+    detected_suffix: str = ""
+    detection_source: str = ""
+    generated: bool = False
+    variants: list[MediaVariant] = field(default_factory=list)
+
+    def add_variant(self, variant: MediaVariant) -> None:
+        """追加未重复的本地媒体变体。"""
+        if any(
+            existing.variant == variant.variant and existing.path == variant.path
+            for existing in self.variants
+        ):
+            return
+        self.variants.append(variant)
+
+    def ensure_primary_variant(self) -> None:
+        """把旧字段 local_path 归一到 variants，兼容旧调用方。"""
+        if self.local_path is None:
+            return
+        if any(existing.path == self.local_path for existing in self.variants):
+            return
+        suffix = self.detected_suffix or self.local_path.suffix.lower()
+        size = 0
+        try:
+            size = self.local_path.stat().st_size
+        except OSError:
+            pass
+        self.add_variant(
+            MediaVariant(
+                variant="primary",
+                media_type=self.media_type,
+                path=self.local_path,
+                mime=self.detected_mime,
+                suffix=suffix,
+                size_bytes=size,
+            )
+        )
 
 
 @dataclass
@@ -61,6 +114,7 @@ class MessageContext:
     send_mode: int | None = None
     style: int = 0
     sender_strategy: Any = None
+    event: Any = None  # AstrBot event object for platform-specific features (e.g., NapCat stream)
 
 
 @dataclass
@@ -137,3 +191,32 @@ def get_bot_self_id(platform_id: str) -> str:
     if _bot_self_id_provider:
         return _bot_self_id_provider(platform_id)
     return "10000"
+
+
+# 全局的 bot client 获取函数（用于主动推送场景下访问平台 bot 客户端）
+_bot_client_provider: Callable[[str], Any] | None = None
+
+
+def set_bot_client_provider(provider: Callable[[str], Any] | None) -> None:
+    """设置全局的 bot client 获取函数
+
+    Args:
+        provider: 接收 platform_name，返回对应平台 bot 客户端的函数。
+            主要用于 OneBot/NapCat 主动推送场景下获取支持 call_action 的客户端。
+    """
+    global _bot_client_provider
+    _bot_client_provider = provider
+
+
+def get_bot_client(platform_name: str) -> Any | None:
+    """获取指定平台的 bot 客户端
+
+    Args:
+        platform_name: 平台名称（如 aiocqhttp）
+
+    Returns:
+        bot 客户端实例，若无法解析则返回 None
+    """
+    if _bot_client_provider:
+        return _bot_client_provider(platform_name)
+    return None

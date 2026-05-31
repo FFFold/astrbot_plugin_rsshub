@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
-from urllib.parse import unquote, urlparse
+
+from ...domain.entities.content_types import is_generated_media_url
 
 if TYPE_CHECKING:
     from ..messaging.senders.types import PreparedMedia
@@ -23,6 +24,7 @@ class MessageComponent:
     file: str = ""
     original_url: str = ""
     name: str = ""
+    fallback_text: str = ""
 
 
 class MessageComponentSorter:
@@ -34,14 +36,9 @@ class MessageComponentSorter:
         text: str,
         failed_urls: list[str] | None,
         platform: str = "",
-        *,
-        prefer_local_video: bool = True,
     ) -> list[MessageComponent]:
         failed = self._collect_failed_urls(prepared_media, failed_urls)
-        components = self._build_media_components(
-            prepared_media,
-            prefer_local_video=prefer_local_video,
-        )
+        components = self._build_media_components(prepared_media)
         final_text = self.append_failed_links(text, failed)
         if final_text:
             components.append(MessageComponent(kind="text", text=final_text))
@@ -96,45 +93,27 @@ class MessageComponentSorter:
     def _build_media_components(
         self,
         prepared_media: list[PreparedMedia] | None,
-        *,
-        prefer_local_video: bool,
     ) -> list[MessageComponent]:
         components: list[MessageComponent] = []
         if not prepared_media:
             return components
+        from ..utils.media_dispatch import MediaDispatchResolver
+
         for item in prepared_media:
             if item.download_failed:
                 continue
             if not item.local_path and not item.original_url:
                 continue
-            path = self._resolve_media_path(item, prefer_local_video=prefer_local_video)
-            if item.media_type == "audio":
-                components.append(
-                    MessageComponent(
-                        kind="tail",
-                        media_type="audio",
-                        file=path,
-                        original_url=item.original_url,
-                    )
-                )
-                continue
-            if item.media_type == "file":
-                components.append(
-                    MessageComponent(
-                        kind="tail",
-                        media_type="file",
-                        file=path,
-                        original_url=item.original_url,
-                        name=self._filename_from_url(item.original_url),
-                    )
-                )
+            dispatch = MediaDispatchResolver.resolve_prepared(item)
+            if not dispatch.media_type:
                 continue
             components.append(
                 MessageComponent(
-                    kind="media",
-                    media_type=item.media_type,
-                    file=path,
-                    original_url=item.original_url,
+                    kind=dispatch.component_kind,
+                    media_type=dispatch.media_type,
+                    file=dispatch.file,
+                    original_url=dispatch.original_url,
+                    name=dispatch.name,
                 )
             )
         return components
@@ -147,20 +126,11 @@ class MessageComponentSorter:
         failed = list(failed_urls or [])
         if prepared_media:
             for item in prepared_media:
-                if item.download_failed and item.original_url not in failed:
+                if (
+                    item.download_failed
+                    and item.original_url not in failed
+                    and not item.generated
+                    and not is_generated_media_url(item.original_url)
+                ):
                     failed.append(item.original_url)
         return failed
-
-    @staticmethod
-    def _resolve_media_path(
-        item: PreparedMedia,
-        *,
-        prefer_local_video: bool,
-    ) -> str:
-        if item.media_type == "video" and not prefer_local_video:
-            return item.original_url
-        return str(item.local_path) if item.local_path else item.original_url
-
-    @staticmethod
-    def _filename_from_url(url: str) -> str:
-        return unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "attachment"

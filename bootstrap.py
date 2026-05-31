@@ -57,9 +57,11 @@ from .src.infrastructure.knowledge import (
     AstrBotRouteKnowledgeRepository,
     build_route_knowledge_source,
 )
+from .src.infrastructure.media import MediaDownloader
 from .src.infrastructure.messaging import (
     DefaultMessageSender,
     InfrastructureMessageSenderProvider,
+    set_bot_client_provider,
 )
 from .src.infrastructure.persistence import (
     get_database,
@@ -68,12 +70,18 @@ from .src.infrastructure.persistence import (
     get_subscription_repository,
     get_user_repository,
 )
+from .src.infrastructure.pipeline import EntryTextFormatter
+from .src.infrastructure.rendering.font_manager import (
+    configure_table_font_download,
+    prefetch_table_font,
+)
 from .src.infrastructure.schedule import RSSScheduler
 from .src.infrastructure.utils import (
     get_logger,
     get_plugin_cache_dir,
     get_plugin_data_dir,
 )
+from .src.infrastructure.utils.media_integrity import configure_media_integrity
 from .src.interfaces import WebApiHandler
 
 logger = get_logger()
@@ -143,7 +151,9 @@ async def create_plugin_runtime(
     queue: SessionPushQueue | None = None
     try:
         plugin_config, app_settings = _init_config(config)
+        _schedule_table_font(app_settings)
         _configure_message_senders(app_settings)
+        _register_bot_client_provider(context)
         await _init_database(plugin_config)
 
         queue = push_job_queue or SessionPushQueue()
@@ -189,6 +199,20 @@ async def create_plugin_runtime(
         raise
 
 
+def _schedule_table_font(app_settings: ApplicationSettings) -> None:
+    """配置字体下载参数；启用表格转图时后台预取，不阻塞插件启动。
+
+    始终配置代理/超时，使首次表格渲染的按需门控也能复用同一代理；仅当开启
+    table_to_image 时才触发后台预取，避免无谓下载。
+    """
+    configure_table_font_download(
+        http_proxy=app_settings.http.proxy,
+        timeout=app_settings.http.media_timeout,
+    )
+    if app_settings.media.table_to_image:
+        prefetch_table_font()
+
+
 def _init_config(
     config: AstrBotConfig | None,
 ) -> tuple[RsshubPluginConfig, ApplicationSettings]:
@@ -212,18 +236,65 @@ def _init_config(
     return plugin_config, app_settings
 
 
+def _register_bot_client_provider(context: Context) -> None:
+    """注册 bot client provider，供主动推送场景下的 NapCat stream 使用。
+
+    主动推送没有消息事件，sender 无法从 event 取 bot 客户端。
+    这里通过 AstrBot platform_manager 按平台名解析出底层 bot 客户端
+    （如 aiocqhttp 的 CQHttp 实例），用于调用 NapCat stream action。
+    """
+
+    def _resolve_bot_client(platform_name: str) -> object | None:
+        if not platform_name:
+            return None
+        try:
+            platform_manager = getattr(context, "platform_manager", None)
+            if platform_manager is None:
+                return None
+            for inst in platform_manager.get_insts():
+                meta = inst.meta() if hasattr(inst, "meta") else None
+                inst_name = getattr(meta, "name", None) or getattr(
+                    inst, "platform_name", None
+                )
+                if inst_name == platform_name and hasattr(inst, "get_client"):
+                    return inst.get_client()
+        except Exception as exc:
+            logger.debug(
+                "解析 bot client 失败: platform=%s, err=%s", platform_name, exc
+            )
+        return None
+
+    set_bot_client_provider(_resolve_bot_client)
+
+
 def _configure_message_senders(app_settings: ApplicationSettings) -> None:
     """Apply runtime config consumed by concrete message senders."""
     DefaultMessageSender.configure_runtime(
-        timeout_seconds=app_settings.basic.download_media_timeout,
-        proxy=app_settings.basic.proxy,
+        timeout_seconds=app_settings.http.media_timeout,
+        proxy=app_settings.http.proxy,
+        image_relay_base_url=app_settings.media.image_relay_base_url,
+        media_relay_base_url=app_settings.media.media_relay_base_url,
+        media_download_concurrency=app_settings.media.media_download_concurrency,
     )
     DefaultMessageSender.configure_behavior(
-        video_transcode=app_settings.ffmpeg.video_transcode,
-        video_transcode_timeout=app_settings.ffmpeg.video_transcode_timeout,
-        gif_transcode=app_settings.ffmpeg.gif_transcode,
-        gif_transcode_timeout=app_settings.ffmpeg.gif_transcode_timeout,
+        video_transcode=app_settings.media.video_transcode,
+        video_transcode_timeout=app_settings.media.video_transcode_timeout,
+        gif_transcode=app_settings.media.gif_transcode,
+        gif_transcode_timeout=app_settings.media.gif_transcode_timeout,
+        telegram_photo_max_bytes=app_settings.media_config.telegram_photo_max_bytes,
+        onebot_napcat_stream_mode=(app_settings.media_config.onebot_napcat_stream_mode),
+        qq_official_media_threshold=app_settings.media_config.qq_official_media_threshold,
+        qq_official_degrade_strategy=(
+            app_settings.media_config.qq_official_degrade_strategy
+        ),
     )
+    MediaDownloader.configure_cache(
+        ttl_seconds=app_settings.media_config.cache_ttl_seconds,
+        gc_interval_seconds=app_settings.media_config.cache_gc_interval_seconds,
+        gc_grace_seconds=app_settings.media_config.cache_gc_grace_seconds,
+    )
+    configure_media_integrity(min_valid_bytes=app_settings.media_config.min_valid_bytes)
+    EntryTextFormatter.configure_table_to_image(app_settings.media.table_to_image)
 
 
 async def _init_database(config: RsshubPluginConfig) -> None:
@@ -273,7 +344,7 @@ def _build_dependencies(
     )
     route_source = build_route_knowledge_source(
         app_settings.route_knowledge,
-        proxy=app_settings.basic.proxy,
+        proxy=app_settings.http.proxy,
     )
     route_repository = AstrBotRouteKnowledgeRepository(
         context=context,
@@ -292,6 +363,7 @@ def _build_dependencies(
             feed_repo=feed_repo,
             fetch_settings=app_settings.fetch,
             fetcher_factory=RSSFeedFetcher,
+            user_repo=user_repo,
         ),
         unsubscribe_cmd=UnsubscribeFeedCommand(
             subscription_repo=sub_repo,
@@ -310,6 +382,7 @@ def _build_dependencies(
         import_cmd=ImportSubscriptionsCommand(
             subscription_repo=sub_repo,
             feed_repo=feed_repo,
+            user_repo=user_repo,
         ),
         get_user_settings_cmd=GetUserSettingsCommand(user_repo=user_repo),
         set_user_settings_cmd=SetUserSettingsCommand(user_repo=user_repo),
@@ -385,6 +458,7 @@ def _register_web_api(
         sub_repo=deps["subscription_repo"],
         user_repo=get_user_repository(),
         push_history_repo=get_push_history_repository(),
+        notification_dispatcher=deps["notification_dispatcher"],
         route_knowledge_service=deps["route_knowledge_service"],
         config=config,
         raw_config=raw_config,
