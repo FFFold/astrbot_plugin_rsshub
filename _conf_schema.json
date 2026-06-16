@@ -223,6 +223,26 @@
           "max": 1800,
           "step": 10
         }
+      },
+      "ffmpeg_source": {
+        "type": "string",
+        "description": "FFmpeg 来源",
+        "hint": "auto=优先系统 PATH，系统缺失时自动下载捆绑 ffmpeg；system=仅使用系统 PATH，不下载",
+        "default": "auto",
+        "options": ["auto", "system"]
+      },
+      "ffmpeg_mirror": {
+        "type": "string",
+        "description": "FFmpeg 下载镜像",
+        "hint": "auto=自动测速选最快镜像；国内可选手动 ghfast/ghproxy 等，国外保持 default",
+        "default": "auto",
+        "options": ["auto", "default", "ghfast", "ghproxy", "mirror_ghproxy", "gh_proxy", "custom"]
+      },
+      "ffmpeg_mirror_custom_url": {
+        "type": "string",
+        "description": "自定义镜像前缀",
+        "hint": "ffmpeg_mirror=custom 时使用；填完整前缀，例如 https://ghfast.top/ 或 https://your-mirror.example/",
+        "default": ""
       }
     }
   },
@@ -339,9 +359,10 @@
       "source_mode": {
         "type": "string",
         "description": "同步来源模式",
-        "hint": "mirror 使用 source_base_url；auto 失败后尝试 fallback_base_url；github 使用内置 GitHub Raw；local 从本地目录读取",
-        "default": "mirror",
+        "hint": "mirror 使用 source_base_url；auto 失败后尝试 fallback_base_url；speed_test 自动测速选最快镜像；github 使用内置 GitHub Raw；local 从本地目录读取",
+        "default": "speed_test",
         "options": [
+          "speed_test",
           "mirror",
           "auto",
           "github",

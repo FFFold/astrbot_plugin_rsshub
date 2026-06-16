@@ -51,6 +51,45 @@
 
 软阈值集中由 `src/shared/constants.py` 归口，发送候选链路由 `MediaSendPlanner` 统一消费，不要散落在具体 sender 或文档表格里复制多份。当前固定口径包括：Telegram photo 默认 10 MiB 后改按文件发送、OneBot 支持 NapCat 流式上传（默认 fallback 模式）、QQ Official 默认不按媒体数量预先降级。QQ Official 表格里的 20 MiB / 10 MiB / 100 MiB 是 2026-05-27 的调查与实测参考，不是平台硬门槛。
 
+### OneBot / aiocqhttp WebSocket 帧传输上限
+
+> [!IMPORTANT]
+> 本小节是 2026-06-12 在 dev runtime 本地 NapCat（反向 WS client 连 AstrBot `6199`）上的实测记录，环境组件：`aiocqhttp 1.4.4`、`hypercorn 0.18.0`、`quart 0.20.0`。这是 AstrBot ↔ NapCat 链路的**传输层事实**，与 NapCat/QQ 协议本身的媒体上限无关；NapCat 版本、ASGI 默认值后续都可能变动，引用前请按当前 runtime 复测。
+
+AstrBot 用 Hypercorn 跑 aiocqhttp 的反向 WebSocket server，启动时 `bot.run_task(host, port, shutdown_trigger=...)` **未覆盖** Hypercorn 默认的 `websocket_max_message_size = 16 MiB`。但实测确认这条 16 MiB 限制**只作用在 server 的接收方向**：
+
+| WS 链路方向 | 实测边界 | 含义 |
+| --- | --- | --- |
+| NapCat → AstrBot（事件上报、收消息） | 15 MiB 通过 / 17 MiB 被 `1009 message too big` 拒 | 受 Hypercorn server `websocket_max_message_size=16 MiB` 限制 |
+| AstrBot → NapCat（发消息 / 调 action） | 实测 30 MiB 仍能发出（发送方向不设上限） | **不受** 16 MiB 限制；真实瓶颈在 NapCat client 入站 |
+| NapCat WS client 入站（接收 action 帧） | 48 MiB 通过 / 52 MiB 被 `1009` 断连（约 50 MiB） | 这才是发图方向的硬墙 |
+| 合并转发 `send_group_forward_msg` 大帧 | 48 MiB 到达应用层 / 52 MiB 被 `1009` 断连 | 与普通 action 同一条 ~50 MiB 单帧上限——**传输层按字节判，不看 action 名** |
+
+要点：
+
+- **发图（图片 base64 内联进单条 `send_group_msg`）走的是 AstrBot → NapCat 方向**，可承载的单帧 base64 体积上限约 50 MiB（取决于 NapCat 版本），不是 16 MiB。
+- 16 MiB 这条限制挡的是 **NapCat 上报给 AstrBot 的事件帧**（收消息、回包），不是机器人发出去的媒体。早期"16 MiB 挡多图发送"的判断方向相反，已被这次双向实测推翻。
+- **合并转发不能突破 WS 单帧上限**：当前 aiocqhttp `Node.to_dict()` 把每个 node 的图 `convert_to_base64` 内联进**同一个** `send_group_forward_msg` action，整体仍是单个 WS 帧。forward 在应用层是"每 node 独立处理"（见下方应用层小节），但这只放大应用层容量，不改变传输层 ~50 MiB 的单帧硬墙。
+- 这些数字按软阈值管理，仅用于发送前分流和日志解释；NapCat 支持流式上传大文件，超大媒体优先走 stream / 文件链路，而不是按帧大小提前判失败。
+
+### OneBot / NapCat 应用层多图行为
+
+> [!IMPORTANT]
+> 2026-06-12 经 HTTP 旁路（绕过 WS 单帧限制）直击 NapCat 应用层的实测；目标真实群聊。区分于上方传输层小节。
+
+绕过 WS 帧限制后，direct 与 forward 在 NapCat/NTQQ 应用层呈现**完全不同的多图容量**：
+
+| 发送方式 | 实测边界 | 失败表现 |
+| --- | --- | --- |
+| direct（单条 `send_group_msg` 多张 image） | **≤ 8 张通过 / ≥ 9 张失败**（与体积无关，9 张仅 ~10 MiB 也失败，20s 间隔排除限流后稳定复现） | `Timeout: NodeIKernelMsgService/sendMsg` retcode 200 |
+| forward（`send_group_forward_msg` 多 node） | 17 node / ~63 MiB 经 HTTP 旁路仍成功 | 每 node 独立处理，无 8 张聚合限制 |
+
+要点：
+
+- **direct 多图真正的硬限制是张数（约 8 张），不是体积**。NTQQ 单条消息聚合图片有数量上限，超过即 `sendMsg` 超时失败。
+- **合并转发每 node 独立**，应用层容量远大于 direct，是多图（尤其 >8 张）的正确承载方式——但前提是整个 forward action base64 总量仍在 ~50 MiB WS 单帧上限内。
+- 两个瓶颈叠加给出发送分流原则：多图优先 forward 绕开 8 张限制；同时控制单条 action 的 base64 总量（压图/限尺寸/分批）避免撞 WS 单帧上限；超大媒体走 stream/文件链路。
+
 ## 媒体下载与缓存
 
 | 规则 | 当前行为 | 原因 |
@@ -79,7 +118,7 @@
 
 本地生成媒体的入口不同：`HTMLParser` 生成 `GeneratedImageContent` 后，sender 会通过 `infrastructure.rendering` 的表格图片解析器把 `rsshub-generated://table/<hash>` 映射回 `cache/table_images/table_<hash>.png`，直接构造 `PreparedMedia`。如果 cache 文件缺失，会按媒体失败处理但不会把内部标识追加给用户，也不会在 original layout 中把内部标识当作图片文件发送；layout 会携带不可见的表格纯文本 fallback，供 cache 缺失或平台图片发送失败时补回正文。`media.table_to_image=false` 时表格解析阶段直接使用纯文本表格；渲染失败时也会回退为纯文本表格。
 
-无声视频转 GIF 时会保留原始视频 variant。若 GIF 超出当前内置的跨平台压缩目标，插件会按固定 FFmpeg 档位尝试压缩 GIF；发送时再按目标平台软阈值选择原 GIF、压缩 GIF、原视频、文件或原始链接。
+无声视频转 GIF 时会保留原始视频 variant。GIF 转换候选由 sender 侧综合声明类型、URL hint（含 RSSHub / 反代包装 URL 内层地址）和下载后的真实文件探测决定；声明被误标为 `image` / `file` 但下载后探测为视频的媒体，仍会进入无声视频转 GIF 分支。转换决策日志会记录 sender、声明类型、有效类型、`gif_transcode`、`try_convert_gif`、FFmpeg 来源和 URL，便于排查“配置已开但未进入转换”的问题。转换成功后的 `.gif` 通过 `MediaDispatchResolver` 按 `image` 媒体组件发送，不在各平台 sender 里重复特殊判断。若 GIF 超出当前内置的跨平台压缩目标，插件会按固定 FFmpeg 档位尝试压缩 GIF；发送时再按目标平台软阈值选择原 GIF、压缩 GIF、原视频、文件或原始链接。
 
 ## 代理与超时
 
@@ -90,6 +129,16 @@
 | 裸 `host:port` 代理 | 标准化为 `http://host:port` | 避免不同 HTTP 客户端对无 scheme 值表现不一致。 |
 | SOCKS 代理 | `socks4://` / `socks5://` / `socks5h://` | Telegraph API 通过 `aiohttp-socks` 连接；SOCKS 代理必须带明确 scheme。 |
 | `http_config.media_timeout` | 媒体预下载和 FFmpeg 下载超时 | 上限和默认值属于配置模型 / schema 约束。 |
+
+## FFmpeg 来源
+
+| 配置 | 行为 | 备注 |
+| --- | --- | --- |
+| `media.ffmpeg_source=auto` | 优先使用系统 PATH 下的 `ffmpeg` / `ffprobe`，并复用已经存在的插件缓存 | 默认值；不会在首次启动时主动联网下载新的可执行文件。 |
+| `media.ffmpeg_source=system` | 只使用系统 PATH | 切换到该模式会丢弃运行时缓存的 bundled 路径。 |
+| `media.ffmpeg_source=bundled` | 系统 PATH 缺失时允许下载捆绑 FFmpeg 到插件 cache | 下载镜像由 `media.ffmpeg_mirror` / `media.ffmpeg_mirror_custom_url` 控制；下载归档必须通过固定 SHA256 校验后才会安装。 |
+
+`media.ffmpeg_mirror` 只影响 bundled 下载，不改变 RSS 拉取、普通媒体预下载或 Telegraph API 的代理语义。自定义镜像只作为 GitHub URL 前缀使用，配置错误会回退到直连尝试，但不会绕过归档校验。
 
 ## 常量放置
 

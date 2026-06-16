@@ -281,8 +281,12 @@ async def test_rsshelp_returns_image_chain(monkeypatch, tmp_path):
     class FakePermissionType:
         ADMIN = "admin"
 
+    class FakeEventMessageType:
+        ALL = "all"
+
     class FakeFilter:
         PermissionType = FakePermissionType
+        EventMessageType = FakeEventMessageType
 
         @staticmethod
         def command(*_args, **_kwargs):
@@ -299,6 +303,10 @@ async def test_rsshelp_returns_image_chain(monkeypatch, tmp_path):
 
         @staticmethod
         def permission_type(*_args, **_kwargs):
+            return lambda fn: fn
+
+        @staticmethod
+        def event_message_type(*_args, **_kwargs):
             return lambda fn: fn
 
     api_mod = sys.modules["astrbot.api"]
@@ -321,6 +329,12 @@ async def test_rsshelp_returns_image_chain(monkeypatch, tmp_path):
 
     monkeypatch.setattr(main, "HelpImageCommand", FakeHelpImageCommand)
 
+    # ApplicationSettings 在当前版本有 MediaSettings 等必需字段，
+    # 测试只关心 rsshelp 的返回格式，mock 掉配置初始化。
+    monkeypatch.setattr(
+        main, "ApplicationSettings", MagicMock(return_value=MagicMock())
+    )
+
     plugin = main.RSSHubPlugin(MagicMock(), {})
     result = []
     async for item in plugin.rsshelp(event):
@@ -333,7 +347,7 @@ async def test_rsshelp_returns_image_chain(monkeypatch, tmp_path):
 
 def test_rsshelp_selects_help_image_by_astrbot_timezone(monkeypatch, tmp_path):
     monkeypatch.delitem(sys.modules, "astrbot_plugin_rsshub.main", raising=False)
-    main = importlib.import_module("astrbot_plugin_rsshub.main")
+    importlib.import_module("astrbot_plugin_rsshub.main")
     light_path = tmp_path / "rsshelp_light.png"
     dark_path = tmp_path / "rsshelp_dark.png"
     light_path.write_bytes(b"light")

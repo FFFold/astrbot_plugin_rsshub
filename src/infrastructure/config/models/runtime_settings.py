@@ -123,7 +123,7 @@ class SenderStrategySettings:
 
 
 @dataclass(frozen=True)
-class MediaRuntimeSettings:
+class MediaPlatformLimits:
     """Media download, cache and platform threshold settings."""
 
     download_media_timeout: int = _DEFAULT_MEDIA_TIMEOUT_SECONDS
@@ -149,6 +149,9 @@ class MediaSettings:
     video_transcode_timeout: int = 120
     gif_transcode: bool = False
     gif_transcode_timeout: int = 60
+    ffmpeg_source: str = "auto"
+    ffmpeg_mirror: str = "auto"
+    ffmpeg_mirror_custom_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -158,7 +161,7 @@ class RouteKnowledgeSettings:
     kb_name: str = "RSSHub Routes"
     embedding_provider_id: str = ""
     rerank_provider_id: str = ""
-    source_mode: str = "mirror"
+    source_mode: str = "speed_test"
     source_base_url: str = (
         "https://raw.githubusercontent.com/FlanChanXwO/rsshub-routes-knowledgebase/main"
     )
@@ -176,6 +179,9 @@ class RouteKnowledgeSettings:
 class ApplicationSettings:
     """Settings consumed by the application layer."""
 
+    # Required fields first (no defaults)
+    media: MediaSettings  # No default to prevent silent omissions in builder
+    # Optional fields with defaults
     basic: BasicSettings = field(default_factory=BasicSettings)
     fetch: FeedFetchSettings = field(default_factory=FeedFetchSettings)
     rss: RSSSettings = field(default_factory=RSSSettings)
@@ -190,8 +196,9 @@ class ApplicationSettings:
         default_factory=SenderStrategySettings
     )
     http: HttpSettings = field(default_factory=HttpSettings)
-    media_config: MediaRuntimeSettings = field(default_factory=MediaRuntimeSettings)
-    media: MediaSettings = field(default_factory=MediaSettings)
+    media_platform_limits: MediaPlatformLimits = field(
+        default_factory=MediaPlatformLimits
+    )
     route_knowledge: RouteKnowledgeSettings = field(
         default_factory=RouteKnowledgeSettings
     )

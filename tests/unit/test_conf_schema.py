@@ -37,8 +37,9 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         route_knowledge_items["rerank_provider_id"]["_special"]
         == "select_provider:rerank"
     )
-    assert route_knowledge_items["source_mode"]["default"] == "mirror"
+    assert route_knowledge_items["source_mode"]["default"] == "speed_test"
     assert route_knowledge_items["source_mode"]["options"] == [
+        "speed_test",
         "mirror",
         "auto",
         "github",
@@ -136,6 +137,19 @@ def test_conf_schema_is_scoped_to_startup_credentials_and_sender_strategies():
         "max": 1800,
         "step": 10,
     }
+    assert media_items["ffmpeg_source"]["default"] == "auto"
+    assert media_items["ffmpeg_source"]["options"] == ["auto", "system"]
+    assert media_items["ffmpeg_mirror"]["default"] == "auto"
+    assert media_items["ffmpeg_mirror"]["options"] == [
+        "auto",
+        "default",
+        "ghfast",
+        "ghproxy",
+        "mirror_ghproxy",
+        "gh_proxy",
+        "custom",
+    ]
+    assert media_items["ffmpeg_mirror_custom_url"]["default"] == ""
 
     sender_strategies = schema["sender_strategies"]
     sender_strategy_options = [
