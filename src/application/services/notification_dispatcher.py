@@ -336,7 +336,11 @@ class NotificationDispatcher:
 
         value = getattr(defaults, "message_format", "合并转发")
         if isinstance(value, int):
-            if value in (MESSAGE_FORMAT_MERGED_FORWARD, MESSAGE_FORMAT_DIRECT, MESSAGE_FORMAT_IMAGE):
+            if value in (
+                MESSAGE_FORMAT_MERGED_FORWARD,
+                MESSAGE_FORMAT_DIRECT,
+                MESSAGE_FORMAT_IMAGE,
+            ):
                 return value
             return MESSAGE_FORMAT_MERGED_FORWARD
         return MESSAGE_FORMAT_STRING_MAP.get(
@@ -1257,7 +1261,9 @@ class NotificationDispatcher:
                         entry_link=entry_link,
                         platform_name=target.platform_name or "",
                         send_mode=self._normalize_send_mode_value(send_mode),
-                        message_format=MESSAGE_FORMAT_DEFAULT if message_format is None else message_format,
+                        message_format=MESSAGE_FORMAT_DEFAULT
+                        if message_format is None
+                        else message_format,
                         style=style,
                         sender_strategy=sender_strategy,
                     ),

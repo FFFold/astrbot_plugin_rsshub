@@ -1452,8 +1452,7 @@ class DefaultMessageSender:
         """以 direct 模式发送（供 image 模式回退）"""
         platform = context.platform_name if context else ""
         failed_urls_direct = (
-            self._collect_failed_urls(prepared_media)
-            if prepared_media else []
+            self._collect_failed_urls(prepared_media) if prepared_media else []
         )
         components = self._build_components(
             request,
@@ -1551,8 +1550,7 @@ class DefaultMessageSender:
 
         platform = context.platform_name if context else ""
         failed_urls_image = (
-            self._collect_failed_urls(prepared_media)
-            if prepared_media else []
+            self._collect_failed_urls(prepared_media) if prepared_media else []
         )
         components = self._build_components(
             request,

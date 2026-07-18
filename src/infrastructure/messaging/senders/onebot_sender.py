@@ -123,7 +123,8 @@ class OneBotMessageSender(DefaultMessageSender):
             if message_format == MESSAGE_FORMAT_DIRECT:
                 failed_urls_direct = (
                     self._collect_failed_urls(effective_prepared)
-                    if effective_prepared else []
+                    if effective_prepared
+                    else []
                 )
                 components = self._build_components(
                     request,
