@@ -1033,6 +1033,7 @@ class NotificationDispatcher:
         entry_guid: str,
         layout: list[LayoutFragment] | None = None,
         send_mode: int | None = SEND_MODE_AUTO,
+        message_format: int | None = None,
         style: int = 0,
     ) -> dict[str, Any]:
         """Dispatch one agent-originated push while preserving history and retries."""
@@ -1103,6 +1104,7 @@ class NotificationDispatcher:
                 feed_id=None,
                 sub_id=None,
                 send_mode=send_mode,
+                message_format=message_format,
                 style=style,
             )
 
@@ -1430,6 +1432,7 @@ class NotificationDispatcher:
                     send_mode=(
                         SEND_MODE_AUTO if history.source_type == "agent" else None
                     ),
+                    message_format=MESSAGE_FORMAT_DEFAULT,
                 )
 
                 error_msg = result.get("error", "")
@@ -1534,6 +1537,7 @@ class NotificationDispatcher:
                 feed_id=history.feed_id,
                 sub_id=history.sub_id,
                 send_mode=(SEND_MODE_AUTO if history.source_type == "agent" else None),
+                message_format=MESSAGE_FORMAT_DEFAULT,
             )
 
             error_msg = result.get("error", "")
