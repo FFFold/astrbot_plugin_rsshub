@@ -390,15 +390,15 @@ class NotificationDispatcher:
     def _resolve_message_format(
         self, subscription: Any = None, user: Any = None
     ) -> int:
-        from ...shared.constants import INHERIT_VALUE
+        from ...shared.constants import INHERIT_VALUE, MESSAGE_FORMATS
 
         if subscription is not None:
             sub_value = getattr(subscription, "message_format", INHERIT_VALUE)
-            if sub_value != INHERIT_VALUE and sub_value in (0, 1, 2):
+            if sub_value != INHERIT_VALUE and sub_value in MESSAGE_FORMATS:
                 return sub_value
         if user is not None:
             user_value = getattr(user, "message_format", INHERIT_VALUE)
-            if user_value != INHERIT_VALUE and user_value in (0, 1, 2):
+            if user_value != INHERIT_VALUE and user_value in MESSAGE_FORMATS:
                 return user_value
         return self._default_message_format
 
