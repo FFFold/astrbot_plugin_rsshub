@@ -12,7 +12,7 @@
 | 配置继承标记 | `-100` | 订阅继承用户配置，用户继承全局默认 | 不恢复 `use_sub_config` / `use_user_config`。 |
 | 用户状态 | `1` / `-1` | `USER_STATE_USER` / `USER_STATE_BANNED` | 旧非负状态统一视为普通用户。 |
 | `send_mode` | `-1` / `0` / `1` | 仅链接 / 自动 / 直接发送 | 旧 `1=Telegraph` 归一化为 `0`，旧 `2=直接消息` 归一化为 `1`。 |
-| `message_format` | `0` / `1` / `2` | 合并转发 / 直发 / 图片 | OneBot 支持全部三种格式；其他平台 `0` 自动回落为 `1`。 |
+| `message_format` | `0` / `1` / `2` | 合并转发 / 直发 / 图片 | OneBot 支持全部三种格式；其他平台 `0` 自动回退为 `1`。 |
 | `style` | `0` / `1` / `2` | 自动或平台经典 / RSSRT / original | 旧 `flowerss=1` 迁移为 `0`，不恢复 flowerss UI 文案。 |
 | 显示类字段 | 整数状态 | `display_author`、`display_via`、`display_title`、`display_entry_tags`、`display_media` | 需要支持继承，不能简化为 `true/false`。 |
 | `source_type` | `feed` / `agent` | 普通订阅轮询或测试推送 / AI tool 或 XML 即时推送 | `source_key` 必须稳定表达去重范围。 |

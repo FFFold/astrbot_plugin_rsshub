@@ -1451,11 +1451,15 @@ class DefaultMessageSender:
     ) -> SendResult:
         """以 direct 模式发送（供 image 模式回退）"""
         platform = context.platform_name if context else ""
+        failed_urls_direct = (
+            self._collect_failed_urls(prepared_media)
+            if prepared_media else []
+        )
         components = self._build_components(
             request,
             prepared_media,
             context,
-            failed_urls=[],
+            failed_urls=failed_urls_direct,
             platform=platform,
         )
         chain = self._components_to_single_chain(components, request.message)
@@ -1546,11 +1550,15 @@ class DefaultMessageSender:
             chain.append(Plain(f"\n{feed_title or '查看原文'}: {feed_link}"))
 
         platform = context.platform_name if context else ""
+        failed_urls_image = (
+            self._collect_failed_urls(prepared_media)
+            if prepared_media else []
+        )
         components = self._build_components(
             request,
             prepared_media,
             context,
-            failed_urls=[],
+            failed_urls=failed_urls_image,
             platform=platform,
         )
         from astrbot.api.message_components import File, Record, Video
