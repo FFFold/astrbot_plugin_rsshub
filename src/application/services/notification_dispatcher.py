@@ -36,6 +36,7 @@ from ...infrastructure.rendering import cleanup_ephemeral_generated_media_paths
 from ...infrastructure.utils import get_logger
 from ...shared.constants import (
     INHERIT_VALUE,
+    MESSAGE_FORMAT_DEFAULT,
     SEND_MODE_AUTO,
     SEND_MODE_DIRECT,
     SEND_MODE_LINK_ONLY,
@@ -1243,8 +1244,6 @@ class NotificationDispatcher:
                         entry_link=entry_link,
                         platform_name=target.platform_name or "",
                         send_mode=self._normalize_send_mode_value(send_mode),
-                        from ...shared.constants import MESSAGE_FORMAT_DEFAULT
-
                         message_format=message_format or MESSAGE_FORMAT_DEFAULT,
                         style=style,
                         sender_strategy=sender_strategy,
