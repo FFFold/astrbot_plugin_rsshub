@@ -59,6 +59,7 @@ flowchart TD
 
 - `EffectivePushOptions`
 - `send_mode`
+- `message_format`
 
 这样做的原因是把“继承语义”收敛成一处实现，避免 formatter、sender、Web API 各自判断。
 

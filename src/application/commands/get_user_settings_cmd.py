@@ -64,6 +64,7 @@ class GetUserSettingsCommand:
             "interval": user.interval,
             "notify": user.notify,
             "send_mode": user.send_mode,
+            "message_format": user.message_format,
             "handlers": user.get_handlers(),
             "length_limit": user.length_limit,
             "display_author": user.display_author,

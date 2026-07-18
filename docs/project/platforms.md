@@ -22,7 +22,7 @@
 | 推送尾部 | 保持 `via <link> | <feed> (author: ...)` 兼容格式 | 具体文本构造见 [`formatting.md`](./formatting.md)。 |
 | 成功媒体链接 | 成功推送不追加原始媒体链接 | 避免正常内容被大量 URL 污染。 |
 | 失败媒体链接 | 发送失败降级文本或失败历史中追加失败媒体原始链接 | 用于人工排障和后续重试。 |
-| `style` / `send_mode` | 排版语义见 [`formatting.md`](./formatting.md)；分发语义见 [`dispatch.md`](./dispatch.md) | 本章不重复维护枚举表。 |
+| `style` / `send_mode` / `message_format` | 排版语义见 [`formatting.md`](./formatting.md)；分发语义见 [`dispatch.md`](./dispatch.md) | 本章不重复维护枚举表。 |
 
 ## 平台行为矩阵
 

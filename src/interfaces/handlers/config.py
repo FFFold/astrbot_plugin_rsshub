@@ -151,7 +151,7 @@ async def handle_sub_set_session(
     """设置会话默认配置"""
     if not key or not value:
         return {
-            "plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, length_limit, display_title, display_media 等"
+            "plain": "用法: /sub_set_session <选项> <值>\n可用选项: interval, notify, send_mode, message_format, length_limit, display_title, display_media 等"
         }
 
     session_id = event.unified_msg_origin

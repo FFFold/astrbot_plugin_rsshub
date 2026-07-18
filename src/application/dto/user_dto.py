@@ -18,6 +18,7 @@ class UserDTO:
     interval: int
     notify: int
     send_mode: int
+    message_format: int
     length_limit: int
     display_author: int
     display_via: int

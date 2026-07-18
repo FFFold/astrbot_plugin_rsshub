@@ -141,7 +141,7 @@ AI tool `rss_push_xml_entry` 不依赖 `sub_id`。它直接：
 3. 构建推送 history
 4. 调用 sender
 
-它只开放安全排版参数：`style`、`send_mode`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`；不开放 `handlers`，避免即时推送注入处理链。
+它只开放安全排版参数：`style`、`send_mode`、`message_format`、`display_media`、`display_title`、`display_author`、`display_via`、`display_entry_tags`、`length_limit`；不开放 `handlers`，避免即时推送注入处理链。
 
 适合“没有订阅但要即时推送”的 agent 场景。
 
