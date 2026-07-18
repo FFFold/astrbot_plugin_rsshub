@@ -9,7 +9,7 @@ from ....application.ports import (
     SendResult,
 )
 from ....infrastructure.config import SenderStrategySettings
-from ...shared.constants import MESSAGE_FORMAT_DEFAULT
+from ....shared.constants import MESSAGE_FORMAT_DEFAULT
 from ...utils import get_logger
 from .factory import get_sender_for_platform
 from .types import ChannelInfo
