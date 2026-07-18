@@ -1428,11 +1428,13 @@ class DefaultMessageSender:
                     chain.append(Record(file=comp.file, text="audio"))
                     has_content = True
                 elif comp.media_type == "file":
-                    chain.append(File(
-                        name=comp.name or "attachment",
-                        file=comp.file,
-                        url=comp.original_url,
-                    ))
+                    chain.append(
+                        File(
+                            name=comp.name or "attachment",
+                            file=comp.file,
+                            url=comp.original_url,
+                        )
+                    )
                     has_content = True
 
         if not has_content and default_text:
@@ -1450,8 +1452,11 @@ class DefaultMessageSender:
         """以 direct 模式发送（供 image 模式回退）"""
         platform = context.platform_name if context else ""
         components = self._build_components(
-            request, prepared_media, context,
-            failed_urls=[], platform=platform,
+            request,
+            prepared_media,
+            context,
+            failed_urls=[],
+            platform=platform,
         )
         chain = self._components_to_single_chain(components, request.message)
         if not chain:
@@ -1480,10 +1485,12 @@ class DefaultMessageSender:
         if prepared_media:
             for pm in prepared_media:
                 if pm.media_type == "image" and pm.original_url:
-                    media_previews.append({
-                        "type": "image",
-                        "url": pm.original_url,
-                    })
+                    media_previews.append(
+                        {
+                            "type": "image",
+                            "url": pm.original_url,
+                        }
+                    )
 
         tmpl_data = {
             "feed_title": feed_title or "",
@@ -1540,8 +1547,11 @@ class DefaultMessageSender:
 
         platform = context.platform_name if context else ""
         components = self._build_components(
-            request, prepared_media, context,
-            failed_urls=[], platform=platform,
+            request,
+            prepared_media,
+            context,
+            failed_urls=[],
+            platform=platform,
         )
         from astrbot.api.message_components import File, Record, Video
 
@@ -1555,11 +1565,13 @@ class DefaultMessageSender:
                 if comp.media_type == "audio":
                     chain.append(Record(file=comp.file, text="audio"))
                 elif comp.media_type == "file":
-                    chain.append(File(
-                        name=comp.name or "attachment",
-                        file=comp.file,
-                        url=comp.original_url,
-                    ))
+                    chain.append(
+                        File(
+                            name=comp.name or "attachment",
+                            file=comp.file,
+                            url=comp.original_url,
+                        )
+                    )
 
         if not chain:
             return SendResult(ok=False, detail="empty_message")
@@ -1585,7 +1597,9 @@ class DefaultMessageSender:
 
             from ....shared.constants import MESSAGE_FORMAT_IMAGE
 
-            message_format = getattr(context, "message_format", None) if context else None
+            message_format = (
+                getattr(context, "message_format", None) if context else None
+            )
             if message_format == MESSAGE_FORMAT_IMAGE:
                 return await self._send_as_image(request, effective_prepared, context)
 

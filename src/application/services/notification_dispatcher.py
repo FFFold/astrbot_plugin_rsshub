@@ -327,10 +327,15 @@ class NotificationDispatcher:
     def _message_format_from_subscription_defaults(
         defaults: SubscriptionDefaults,
     ) -> int:
-        from ...shared.constants import MESSAGE_FORMAT_STRING_MAP, MESSAGE_FORMAT_MERGED_FORWARD
+        from ...shared.constants import (
+            MESSAGE_FORMAT_STRING_MAP,
+            MESSAGE_FORMAT_MERGED_FORWARD,
+        )
 
         value = getattr(defaults, "message_format", "合并转发")
-        return MESSAGE_FORMAT_STRING_MAP.get(str(value).strip(), MESSAGE_FORMAT_MERGED_FORWARD)
+        return MESSAGE_FORMAT_STRING_MAP.get(
+            str(value).strip(), MESSAGE_FORMAT_MERGED_FORWARD
+        )
 
     @staticmethod
     def _options_from_subscription_defaults(

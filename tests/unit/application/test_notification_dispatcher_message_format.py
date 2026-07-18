@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from astrbot_plugin_rsshub.src.shared.constants import (
     MESSAGE_FORMAT_MERGED_FORWARD,
     MESSAGE_FORMAT_DIRECT,

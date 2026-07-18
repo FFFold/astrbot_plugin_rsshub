@@ -83,7 +83,11 @@ class GlobalConfig(BaseModel):
     display_media: bool = Field(default=True, description="显示媒体")
 
     _SEND_MODE_MAP: ClassVar[dict[str, int]] = {"仅链接": -1, "自动": 0, "直接发送": 1}
-    _MESSAGE_FORMAT_MAP: ClassVar[dict[str, int]] = {"合并转发": 0, "直发": 1, "图片": 2}
+    _MESSAGE_FORMAT_MAP: ClassVar[dict[str, int]] = {
+        "合并转发": 0,
+        "直发": 1,
+        "图片": 2,
+    }
     _DISPLAY_AUTHOR_MAP: ClassVar[dict[str, int]] = {"禁用": -1, "自动": 0, "强制": 1}
     _DISPLAY_VIA_MAP: ClassVar[dict[str, int]] = {
         "完全禁用": -2,
@@ -107,7 +111,11 @@ class GlobalConfig(BaseModel):
     }
 
     _SEND_MODE_RMAP: ClassVar[dict[int, str]] = {-1: "仅链接", 0: "自动", 1: "直接发送"}
-    _MESSAGE_FORMAT_RMAP: ClassVar[dict[int, str]] = {0: "合并转发", 1: "直发", 2: "图片"}
+    _MESSAGE_FORMAT_RMAP: ClassVar[dict[int, str]] = {
+        0: "合并转发",
+        1: "直发",
+        2: "图片",
+    }
     _DISPLAY_AUTHOR_RMAP: ClassVar[dict[int, str]] = {
         -1: "禁用",
         0: "自动",

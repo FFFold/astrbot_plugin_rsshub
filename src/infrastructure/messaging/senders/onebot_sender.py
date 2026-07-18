@@ -116,15 +116,22 @@ class OneBotMessageSender(DefaultMessageSender):
 
             from ....shared.constants import MESSAGE_FORMAT_DIRECT, MESSAGE_FORMAT_IMAGE
 
-            message_format = getattr(context, "message_format", None) if context else None
+            message_format = (
+                getattr(context, "message_format", None) if context else None
+            )
 
             if message_format == MESSAGE_FORMAT_DIRECT:
                 components = self._build_components(
-                    request, effective_prepared, context,
-                    failed_urls=[], platform="onebot",
+                    request,
+                    effective_prepared,
+                    context,
+                    failed_urls=[],
+                    platform="onebot",
                 )
                 components = self._apply_first_send_candidates(
-                    components, prepared_media_by_url, platform="onebot",
+                    components,
+                    prepared_media_by_url,
+                    platform="onebot",
                 )
                 chain = self._components_to_single_chain(components, request.message)
                 if not chain:
