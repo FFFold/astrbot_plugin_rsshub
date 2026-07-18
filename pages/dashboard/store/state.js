@@ -72,6 +72,7 @@ export function createDashboardInitialState() {
       interval: 10,
       notify: true,
       send_mode: '自动',
+      message_format: '合并转发',
       length_limit: 0,
       display_author: '自动',
       display_via: '自动',

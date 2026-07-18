@@ -27,6 +27,7 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
         dry_run: bool = False,
         style: Any = None,
         send_mode: Any = None,
+        message_format: Any = None,
         display_media: Any = None,
         display_title: Any = None,
         display_author: Any = None,
@@ -55,6 +56,7 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
                 dry_run=bool(dry_run),
                 style=style,
                 send_mode=send_mode,
+                message_format=message_format,
                 display_media=display_media,
                 display_title=display_title,
                 display_author=display_author,
@@ -102,6 +104,11 @@ def build_xml_push_tools(*, deps: LLMToolDeps, plugin_context) -> list[FunctionT
                         "type": "string",
                         "enum": ["auto", "link_only", "direct"],
                         "description": "可选发送模式：auto 自动、link_only 仅链接、direct 直接发送。",
+                    },
+                    "message_format": {
+                        "type": "string",
+                        "enum": ["merged_forward", "direct", "image"],
+                        "description": "可选消息格式：merged_forward 合并转发、direct 直发、image 图片（t2i 渲染）。默认 merged_forward。",
                     },
                     "display_media": {
                         "type": "boolean",

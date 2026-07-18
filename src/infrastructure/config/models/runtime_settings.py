@@ -88,6 +88,7 @@ class SubscriptionDefaults:
     interval: int = 10
     notify: bool = True
     send_mode: str = "自动"
+    message_format: str = "合并转发"
     length_limit: int = 0
     display_author: str = "自动"
     display_via: str = "自动"

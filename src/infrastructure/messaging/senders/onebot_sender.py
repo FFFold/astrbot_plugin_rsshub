@@ -114,6 +114,38 @@ class OneBotMessageSender(DefaultMessageSender):
                 if pm.original_url
             }
 
+            from ....shared.constants import MESSAGE_FORMAT_DIRECT, MESSAGE_FORMAT_IMAGE
+
+            message_format = (
+                getattr(context, "message_format", None) if context else None
+            )
+
+            if message_format == MESSAGE_FORMAT_DIRECT:
+                failed_urls_direct = (
+                    self._collect_failed_urls(effective_prepared)
+                    if effective_prepared
+                    else []
+                )
+                components = self._build_components(
+                    request,
+                    effective_prepared,
+                    context,
+                    failed_urls=failed_urls_direct,
+                    platform="onebot",
+                )
+                components = self._apply_first_send_candidates(
+                    components,
+                    prepared_media_by_url,
+                    platform="onebot",
+                )
+                chain = self._components_to_single_chain(components, request.message)
+                if not chain:
+                    return SendResult(ok=False, detail="empty_message")
+                return await self._send_chain(session_id, chain)
+
+            if message_format == MESSAGE_FORMAT_IMAGE:
+                return await self._send_as_image(request, effective_prepared, context)
+
             napcat_mode = self._napcat_stream_mode(context)
 
             if self._is_original_style(context) and request.layout:

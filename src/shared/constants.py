@@ -144,6 +144,28 @@ SEND_MODE_AUTO = int(SendMode.AUTO)
 SEND_MODE_DIRECT = int(SendMode.DIRECT)
 SEND_MODES = {int(item) for item in SendMode}
 
+
+class MessageFormat(IntEnum):
+    MERGED_FORWARD = 0
+    DIRECT = 1
+    IMAGE = 2
+
+
+MESSAGE_FORMAT_MERGED_FORWARD = int(MessageFormat.MERGED_FORWARD)
+MESSAGE_FORMAT_DIRECT = int(MessageFormat.DIRECT)
+MESSAGE_FORMAT_IMAGE = int(MessageFormat.IMAGE)
+MESSAGE_FORMATS = {int(item) for item in MessageFormat}
+MESSAGE_FORMAT_DEFAULT = MESSAGE_FORMAT_MERGED_FORWARD
+
+MESSAGE_FORMAT_STRING_MAP: dict[str, int] = {
+    "合并转发": MESSAGE_FORMAT_MERGED_FORWARD,
+    "直发": MESSAGE_FORMAT_DIRECT,
+    "图片": MESSAGE_FORMAT_IMAGE,
+}
+MESSAGE_FORMAT_INT_MAP: dict[int, str] = {
+    v: k for k, v in MESSAGE_FORMAT_STRING_MAP.items()
+}
+
 DISPLAY_DISABLED = int(DisplayToggle.DISABLED)
 DISPLAY_AUTO = int(DisplayToggle.AUTO)
 DISPLAY_FORCED = int(DisplayToggle.FORCED)

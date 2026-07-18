@@ -54,6 +54,7 @@ async def test_update_options_serializes_handlers(monkeypatch):
         next_check_time=None,
         notify=-100,
         send_mode=-100,
+        message_format=-100,
         handlers_mode="inherit",
         handlers="[]",
         length_limit=-100,

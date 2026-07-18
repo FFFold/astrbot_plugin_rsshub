@@ -41,6 +41,7 @@ async def test_save_updates_existing_without_insert(monkeypatch):
         interval=-100,
         notify=-100,
         send_mode=-100,
+        message_format=-100,
         handlers="[]",
         length_limit=-100,
         display_author=-100,

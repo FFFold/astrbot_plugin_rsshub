@@ -23,6 +23,9 @@ from ...shared.constants import (
     DISPLAY_VIA_FORCED,
     DISPLAY_VIA_FULLY_DISABLED,
     DISPLAY_VIA_LINK_ONLY,
+    MESSAGE_FORMAT_DIRECT,
+    MESSAGE_FORMAT_IMAGE,
+    MESSAGE_FORMAT_MERGED_FORWARD,
     SEND_MODE_AUTO,
     SEND_MODE_DIRECT,
     SEND_MODE_LINK_ONLY,
@@ -71,6 +74,7 @@ class AgentXmlPushOptions:
     """Per-call formatting overrides for agent XML pushes."""
 
     send_mode: int = SEND_MODE_AUTO
+    message_format: int = 0  # MESSAGE_FORMAT_MERGED_FORWARD
     style: int = STYLE_AUTO
     format_options: EffectivePushOptions = EffectivePushOptions()
 
@@ -178,6 +182,7 @@ def _build_link_only_content(*, title: str, link: str) -> str:
 def _resolve_push_options(
     *,
     send_mode: Any = None,
+    message_format: Any = None,
     style: Any = None,
     display_media: Any = None,
     display_title: Any = None,
@@ -200,6 +205,26 @@ def _resolve_push_options(
         },
         allowed={SEND_MODE_LINK_ONLY, SEND_MODE_AUTO, SEND_MODE_DIRECT},
         fallback=SEND_MODE_AUTO,
+    )
+    message_format_value = _parse_mapped_int(
+        message_format,
+        mapping={
+            "merged_forward": MESSAGE_FORMAT_MERGED_FORWARD,
+            "merged-forward": MESSAGE_FORMAT_MERGED_FORWARD,
+            "merged": MESSAGE_FORMAT_MERGED_FORWARD,
+            "合并转发": MESSAGE_FORMAT_MERGED_FORWARD,
+            "direct": MESSAGE_FORMAT_DIRECT,
+            "直发": MESSAGE_FORMAT_DIRECT,
+            "image": MESSAGE_FORMAT_IMAGE,
+            "图片": MESSAGE_FORMAT_IMAGE,
+            "t2i": MESSAGE_FORMAT_IMAGE,
+        },
+        allowed={
+            MESSAGE_FORMAT_MERGED_FORWARD,
+            MESSAGE_FORMAT_DIRECT,
+            MESSAGE_FORMAT_IMAGE,
+        },
+        fallback=MESSAGE_FORMAT_MERGED_FORWARD,
     )
     style_value = _parse_mapped_int(
         style,
@@ -260,6 +285,7 @@ def _resolve_push_options(
     length_limit_value = max(0, _coerce_int(length_limit, fallback=0))
     return AgentXmlPushOptions(
         send_mode=send_mode_value,
+        message_format=message_format_value,
         style=style_value,
         format_options=EffectivePushOptions(
             length_limit=length_limit_value,
@@ -322,6 +348,7 @@ class AgentXmlPushService:
         dry_run: bool = False,
         style: Any = None,
         send_mode: Any = None,
+        message_format: Any = None,
         display_media: Any = None,
         display_title: Any = None,
         display_author: Any = None,
@@ -346,6 +373,7 @@ class AgentXmlPushService:
         options = _resolve_push_options(
             style=style,
             send_mode=send_mode,
+            message_format=message_format,
             display_media=display_media,
             display_title=display_title,
             display_author=display_author,
@@ -458,6 +486,7 @@ class AgentXmlPushService:
                 layout=dispatch_layout,
                 entry_guid=preview.entry_guid,
                 send_mode=options.send_mode,
+                message_format=options.message_format,
                 style=options.style,
             )
             result["dry_run"] = False

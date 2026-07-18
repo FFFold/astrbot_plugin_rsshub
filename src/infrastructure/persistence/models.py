@@ -21,6 +21,7 @@ from .database import RSSHubBaseModel
 
 EFFECTIVE_OPTION_KEYS = (
     "send_mode",
+    "message_format",
     "length_limit",
     "display_author",
     "display_via",
@@ -49,6 +50,10 @@ class UserORM(RSSHubBaseModel, table=True):
     send_mode: int = Field(
         default=INHERIT_VALUE,
         description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
+    )
+    message_format: int = Field(
+        default=INHERIT_VALUE,
+        description="消息格式: 0=合并转发, 1=直发, 2=图片",
     )
     handlers: str = Field(default="[]", description="内容处理 handlers JSON")
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
@@ -144,6 +149,10 @@ class SubORM(RSSHubBaseModel, table=True):
     send_mode: int = Field(
         default=INHERIT_VALUE,
         description="发送模式: -100=继承, -1=仅链接, 0=自动, 1=直接发送",
+    )
+    message_format: int = Field(
+        default=INHERIT_VALUE,
+        description="消息格式: -100=继承, 0=合并转发, 1=直发, 2=图片",
     )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
     display_author: int = Field(default=INHERIT_VALUE, description="显示作者")

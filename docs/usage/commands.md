@@ -39,6 +39,7 @@
 | `state` | `0/1` | 推送状态。 |
 | `notify` | `0/1` | 是否通知。 |
 | `send_mode` | `-1/0/1` | `-1` 仅链接，`0` 自动，`1` 直接发送。 |
+| `message_format` | `0/1/2` | `0` 合并转发（默认），`1` 直发，`2` 图片（t2i 渲染）。OneBot 支持全部三种；其他平台选 `0` 自动回退为 `1`。 |
 | `handlers` | JSON 数组 | 内容处理链，支持 `ai_filter` / `ai_transform`。 |
 | `length_limit` | 正整数 | 内容长度限制，`0` 表示不限制。 |
 | `display_author` | `-1~1` | 是否显示作者。 |
@@ -56,6 +57,8 @@
 ```bash
 /sub_profile set sub 1 send_mode -100
 /sub_profile set user send_mode -100
+/sub_profile set sub 1 message_format 1
+/sub_profile set user message_format 1
 /sub_profile get user
 /sub_session get
 ```

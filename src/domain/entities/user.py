@@ -36,6 +36,10 @@ class User(BaseModel):
         default=INHERIT_VALUE,
         description="发送模式: -1=仅链接, 0=自动, 1=直接发送",
     )
+    message_format: int = Field(
+        default=INHERIT_VALUE,
+        description="消息格式: 0=合并转发, 1=直发, 2=图片",
+    )
     handler_specs: Any = Field(
         default_factory=list,
         alias="handlers",

@@ -22,6 +22,7 @@ SUBSCRIPTION_EXPORT_STRING_FIELDS = {
 SUBSCRIPTION_EXPORT_INT_FIELDS = {
     "notify",
     "send_mode",
+    "message_format",
     "length_limit",
     "display_author",
     "display_via",

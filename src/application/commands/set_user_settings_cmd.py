@@ -19,6 +19,7 @@ VALID_SETTINGS = {
     "interval": (1, MAX_INTERVAL_MINUTES),  # 分钟
     "notify": (0, 1),
     "send_mode": (-1, 1),  # -1=仅链接, 0=自动, 1=直接发送
+    "message_format": (0, 2),  # 0=合并转发, 1=直发, 2=图片
     "length_limit": (0, 10000),
     "display_author": (-1, 1),
     "display_via": (-2, 1),

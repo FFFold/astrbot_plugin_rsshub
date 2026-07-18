@@ -464,6 +464,7 @@ async def test_llm_tool_rss_push_xml_entry_schema_exposes_safe_formatting_params
     for key in (
         "style",
         "send_mode",
+        "message_format",
         "display_media",
         "display_title",
         "display_author",
@@ -525,6 +526,7 @@ async def test_llm_tool_rss_push_xml_entry_passes_safe_formatting_params():
         dry_run=False,
         style="original",
         send_mode="link_only",
+        message_format=None,
         display_media=False,
         display_title="disabled",
         display_author="forced",

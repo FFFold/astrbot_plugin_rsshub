@@ -62,6 +62,8 @@ AstrBot 配置页只保留启动级基础设施配置、媒体配置、平台发
 
 Telegraph 不是显式 `send_mode`。它只在 Telegram 自动发送策略中触发：自动发送、Telegram 策略启用 Telegraph、token 有效，且去重后的媒体条目数大于 1。
 
+`message_format` 为 `图片` 时，条目内容通过 AstrBot t2i 服务渲染为 HTML 卡片图片发送；图片媒体以原始 URL 嵌入卡片，视频仅标注 `[视频]` 占位，实际的媒体文件仍作为附件单独发送。t2i 服务的端点在 AstrBot 配置中通过 `t2i_endpoint` 设置。
+
 ## RSSHub Routes 知识库 (`route_knowledge`)
 
 用于将 RSSHub Routes Markdown 文档同步到 AstrBot 知识库。`/rsshub_kb_init` 可按 `kb_name` 自动创建空知识库，也可复用已有知识库。
