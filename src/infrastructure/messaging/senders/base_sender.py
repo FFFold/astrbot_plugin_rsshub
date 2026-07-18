@@ -1479,10 +1479,10 @@ class DefaultMessageSender:
         media_previews = []
         if prepared_media:
             for pm in prepared_media:
-                if pm.media_type in ("image", "video") and pm.local_path:
+                if pm.media_type == "image" and pm.original_url:
                     media_previews.append({
-                        "type": pm.media_type,
-                        "url": Path(pm.local_path).as_uri(),
+                        "type": "image",
+                        "url": pm.original_url,
                     })
 
         tmpl_data = {
