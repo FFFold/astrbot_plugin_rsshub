@@ -1243,7 +1243,9 @@ class NotificationDispatcher:
                         entry_link=entry_link,
                         platform_name=target.platform_name or "",
                         send_mode=self._normalize_send_mode_value(send_mode),
-                        message_format=message_format or 0,
+                        from ...shared.constants import MESSAGE_FORMAT_DEFAULT
+
+                        message_format=message_format or MESSAGE_FORMAT_DEFAULT,
                         style=style,
                         sender_strategy=sender_strategy,
                     ),

@@ -39,7 +39,9 @@ class InfrastructureMessageSenderAdapter:
             entry_link=context.entry_link if context else "",
             platform_name=context.platform_name if context else "",
             send_mode=context.send_mode if context else None,
-            message_format=context.message_format if context else 0,
+            from ...shared.constants import MESSAGE_FORMAT_DEFAULT
+
+            message_format=context.message_format if context else MESSAGE_FORMAT_DEFAULT,
             style=context.style if context else 0,
             sender_strategy=(
                 getattr(context, "sender_strategy", None)

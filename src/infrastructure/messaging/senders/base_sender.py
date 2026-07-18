@@ -1482,7 +1482,7 @@ class DefaultMessageSender:
                 if pm.media_type in ("image", "video") and pm.local_path:
                     media_previews.append({
                         "type": pm.media_type,
-                        "url": str(pm.local_path),
+                        "url": Path(pm.local_path).as_uri(),
                     })
 
         tmpl_data = {

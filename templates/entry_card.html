@@ -85,9 +85,10 @@ body {
     <div class="media-grid">
         {% for item in media %}
         <div class="media-item">
-            <img src="{{ item.url | e }}" alt="">
             {% if item.type == 'video' %}
             <div class="video-label">[视频]</div>
+            {% else %}
+            <img src="{{ item.url | e }}" alt="">
             {% endif %}
         </div>
         {% endfor %}
