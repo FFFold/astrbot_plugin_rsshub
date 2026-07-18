@@ -1399,6 +1399,172 @@ class DefaultMessageSender:
                 detail=self._stage_error_detail("platform_send", str(ex)),
             )
 
+    @staticmethod
+    def _components_to_single_chain(
+        components: list,
+        default_text: str = "",
+    ) -> list:
+        """将组件列表转换为单一消息链（直接发送用）"""
+        from astrbot.api.message_components import File, Image, Plain, Record, Video
+
+        chain: list = []
+        has_content = False
+
+        for comp in components:
+            if comp.kind == "text":
+                text = (comp.text or "").strip()
+                if text:
+                    chain.append(Plain(text))
+                    has_content = True
+            elif comp.kind == "media":
+                if comp.media_type == "image":
+                    chain.append(Image(file=comp.file))
+                    has_content = True
+                elif comp.media_type == "video":
+                    chain.append(Video(file=comp.file))
+                    has_content = True
+            elif comp.kind == "tail":
+                if comp.media_type == "audio":
+                    chain.append(Record(file=comp.file, text="audio"))
+                    has_content = True
+                elif comp.media_type == "file":
+                    chain.append(File(
+                        name=comp.name or "attachment",
+                        file=comp.file,
+                        url=comp.original_url,
+                    ))
+                    has_content = True
+
+        if not has_content and default_text:
+            chain.append(Plain(default_text))
+            has_content = True
+
+        return chain
+
+    async def _send_direct(
+        self,
+        request: SendRequest,
+        prepared_media: list | None = None,
+        context: MessageContext | None = None,
+    ) -> SendResult:
+        """以 direct 模式发送（供 image 模式回退）"""
+        platform = context.platform_name if context else ""
+        components = self._build_components(
+            request, prepared_media, context,
+            failed_urls=[], platform=platform,
+        )
+        chain = self._components_to_single_chain(components, request.message)
+        if not chain:
+            return SendResult(ok=False, detail="empty_message")
+        return await self._send_chain(request.session_id, chain)
+
+    async def _send_as_image(
+        self,
+        request: SendRequest,
+        prepared_media: list | None = None,
+        context: MessageContext | None = None,
+    ) -> SendResult:
+        """将消息渲染为图片并发送，附带链接和媒体"""
+        from astrbot.api.message_components import Image, Plain
+
+        session_id = request.session_id
+
+        # 1. Build template context
+        channel = getattr(context, "channel", None)
+        feed_title = channel.title if channel else ""
+        feed_link = channel.link if channel else ""
+        entry_title = getattr(context, "entry_title", "")
+        entry_link = getattr(context, "entry_link", "")
+
+        media_previews = []
+        if prepared_media:
+            for pm in prepared_media:
+                if pm.media_type in ("image", "video") and pm.local_path:
+                    media_previews.append({
+                        "type": pm.media_type,
+                        "url": str(pm.local_path),
+                    })
+
+        tmpl_data = {
+            "feed_title": feed_title or "",
+            "feed_link": feed_link or "",
+            "entry_title": entry_title or "",
+            "entry_link": entry_link or "",
+            "body": request.message or "",
+            "media": media_previews,
+        }
+
+        # 2. Load and render template
+        tmpl_path = (
+            Path(__file__).resolve().parent.parent.parent.parent.parent
+            / "templates"
+            / "entry_card.html"
+        )
+        if not tmpl_path.exists():
+            logger.warning(
+                "t2i template not found at %s, falling back to direct", tmpl_path
+            )
+            return await self._send_direct(request, prepared_media, context)
+
+        tmpl_str = tmpl_path.read_text(encoding="utf-8")
+
+        from astrbot.core import html_renderer
+
+        try:
+            rendered = await html_renderer.render_custom_template(
+                tmpl_str,
+                tmpl_data,
+                return_url=True,
+            )
+        except BaseException as e:
+            logger.warning("t2i render failed: %s, falling back to direct", e)
+            return await self._send_direct(request, prepared_media, context)
+
+        if not rendered:
+            logger.warning("t2i render returned empty, falling back to direct")
+            return await self._send_direct(request, prepared_media, context)
+
+        # 3. Build chain: rendered image + link + media
+        chain: list = []
+
+        if str(rendered).startswith(("http://", "https://")):
+            chain.append(Image.fromURL(rendered))
+        else:
+            chain.append(Image(file=rendered))
+
+        if entry_link:
+            chain.append(Plain(f"\n{entry_title or '查看原文'}: {entry_link}"))
+        elif feed_link:
+            chain.append(Plain(f"\n{feed_title or '查看原文'}: {feed_link}"))
+
+        platform = context.platform_name if context else ""
+        components = self._build_components(
+            request, prepared_media, context,
+            failed_urls=[], platform=platform,
+        )
+        from astrbot.api.message_components import File, Record, Video
+
+        for comp in components:
+            if comp.kind == "media":
+                if comp.media_type == "image":
+                    chain.append(Image(file=comp.file))
+                elif comp.media_type == "video":
+                    chain.append(Video(file=comp.file))
+            elif comp.kind == "tail":
+                if comp.media_type == "audio":
+                    chain.append(Record(file=comp.file, text="audio"))
+                elif comp.media_type == "file":
+                    chain.append(File(
+                        name=comp.name or "attachment",
+                        file=comp.file,
+                        url=comp.original_url,
+                    ))
+
+        if not chain:
+            return SendResult(ok=False, detail="empty_message")
+
+        return await self._send_chain(session_id, chain)
+
     async def send_to_user(
         self,
         request: SendRequest,
@@ -1415,6 +1581,12 @@ class DefaultMessageSender:
             platform = context.platform_name if context else ""
 
             effective_prepared = await self._prepare_effective_media(request, context)
+
+            from ....shared.constants import MESSAGE_FORMAT_IMAGE
+
+            message_format = getattr(context, "message_format", None) if context else None
+            if message_format == MESSAGE_FORMAT_IMAGE:
+                return await self._send_as_image(request, effective_prepared, context)
 
             failed_urls: list[str] = []
             if effective_prepared:

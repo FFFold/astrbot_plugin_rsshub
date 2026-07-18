@@ -388,6 +388,9 @@ def build_application_settings(config: Any) -> ApplicationSettings:
             interval=int(_get_value(global_cfg, "interval", 10) or 10),
             notify=bool(_get_value(global_cfg, "notify", True)),
             send_mode=str(_get_value(global_cfg, "send_mode", "自动") or "自动"),
+            message_format=str(
+                _get_value(global_cfg, "message_format", "合并转发") or "合并转发"
+            ),
             length_limit=int(_get_value(global_cfg, "length_limit", 0) or 0),
             display_author=str(
                 _get_value(global_cfg, "display_author", "自动") or "自动"

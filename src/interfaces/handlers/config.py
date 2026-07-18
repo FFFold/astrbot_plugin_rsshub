@@ -12,6 +12,7 @@ SESSION_DEFAULT_KEYS = {
     "interval",
     "notify",
     "send_mode",
+    "message_format",
     "length_limit",
     "display_author",
     "display_via",

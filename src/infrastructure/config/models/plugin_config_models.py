@@ -73,6 +73,7 @@ class GlobalConfig(BaseModel):
     interval: int = Field(default=10, description="监控间隔（分钟）")
     notify: bool = Field(default=True, description="是否通知")
     send_mode: str = Field(default="自动", description="发送模式")
+    message_format: str = Field(default="合并转发", description="消息格式")
     length_limit: int = Field(default=0, description="长度限制")
     display_author: str = Field(default="自动", description="显示作者")
     display_via: str = Field(default="自动", description="显示来源")
@@ -82,6 +83,7 @@ class GlobalConfig(BaseModel):
     display_media: bool = Field(default=True, description="显示媒体")
 
     _SEND_MODE_MAP: ClassVar[dict[str, int]] = {"仅链接": -1, "自动": 0, "直接发送": 1}
+    _MESSAGE_FORMAT_MAP: ClassVar[dict[str, int]] = {"合并转发": 0, "直发": 1, "图片": 2}
     _DISPLAY_AUTHOR_MAP: ClassVar[dict[str, int]] = {"禁用": -1, "自动": 0, "强制": 1}
     _DISPLAY_VIA_MAP: ClassVar[dict[str, int]] = {
         "完全禁用": -2,
@@ -105,6 +107,7 @@ class GlobalConfig(BaseModel):
     }
 
     _SEND_MODE_RMAP: ClassVar[dict[int, str]] = {-1: "仅链接", 0: "自动", 1: "直接发送"}
+    _MESSAGE_FORMAT_RMAP: ClassVar[dict[int, str]] = {0: "合并转发", 1: "直发", 2: "图片"}
     _DISPLAY_AUTHOR_RMAP: ClassVar[dict[int, str]] = {
         -1: "禁用",
         0: "自动",
@@ -128,6 +131,7 @@ class GlobalConfig(BaseModel):
             "interval": self.interval,
             "notify": 1 if self.notify else 0,
             "send_mode": self._SEND_MODE_MAP.get(self.send_mode, 0),
+            "message_format": self._MESSAGE_FORMAT_MAP.get(self.message_format, 0),
             "length_limit": self.length_limit,
             "display_author": self._DISPLAY_AUTHOR_MAP.get(self.display_author, 0),
             "display_via": self._DISPLAY_VIA_MAP.get(self.display_via, 0),
@@ -158,6 +162,9 @@ class GlobalConfig(BaseModel):
             interval=values.get("interval", 10),
             notify=values.get("notify", 1) == 1,
             send_mode=cls._SEND_MODE_RMAP.get(send_mode_value, "自动"),
+            message_format=cls._MESSAGE_FORMAT_RMAP.get(
+                values.get("message_format", 0), "合并转发"
+            ),
             length_limit=values.get("length_limit", 0),
             display_author=cls._DISPLAY_AUTHOR_RMAP.get(
                 values.get("display_author", 0), "自动"

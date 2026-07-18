@@ -18,6 +18,7 @@ class MessageContext:
     entry_link: str = ""
     platform_name: str = ""
     send_mode: int | None = None
+    message_format: int = 0  # MESSAGE_FORMAT_MERGED_FORWARD
     style: int = 0
     sender_strategy: Any = None
 

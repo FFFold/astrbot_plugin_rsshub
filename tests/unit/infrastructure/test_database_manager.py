@@ -371,6 +371,7 @@ async def test_ensure_profile_schema_allows_current_sub_orm_reads():
                 next_check_time DATETIME,
                 notify INTEGER NOT NULL DEFAULT -100,
                 send_mode INTEGER NOT NULL DEFAULT -100,
+                message_format INTEGER NOT NULL DEFAULT -100,
                 length_limit INTEGER NOT NULL DEFAULT -100,
                 display_author INTEGER NOT NULL DEFAULT -100,
                 display_via INTEGER NOT NULL DEFAULT -100,
@@ -413,6 +414,7 @@ async def test_migration_runner_only_discovers_current_baseline_migration():
     assert [(item.version, item.name) for item in runner.scripts] == [
         (1, "V1_init"),
         (2, "V2_drop_link_preview"),
+        (3, "V3_add_message_format"),
     ]
 
 
@@ -422,7 +424,7 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
     async with engine.begin() as conn:
         executed = await MigrationRunner().run_all(conn)
 
-        assert executed == [1, 2]
+        assert executed == [1, 2, 3]
 
         sub_columns = {
             str(row[1])
@@ -452,6 +454,8 @@ async def test_v1_current_baseline_has_expected_core_columns_and_index():
         }
 
         assert "handlers_mode" in sub_columns
+        assert "message_format" in sub_columns
+        assert "message_format" in user_columns
         assert "handlers_mode" not in user_columns
         assert "link_preview" not in user_columns
         assert "link_preview" not in sub_columns

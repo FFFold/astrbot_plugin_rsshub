@@ -55,6 +55,7 @@ class UserRepositoryImpl:
                 orm.interval = updated_orm.interval
                 orm.notify = updated_orm.notify
                 orm.send_mode = updated_orm.send_mode
+                orm.message_format = updated_orm.message_format
                 orm.handlers = updated_orm.handlers
                 orm.length_limit = updated_orm.length_limit
                 orm.display_author = updated_orm.display_author
@@ -115,6 +116,7 @@ class UserRepositoryImpl:
             interval=orm.interval,
             notify=orm.notify,
             send_mode=orm.send_mode,
+            message_format=orm.message_format,
             handlers=dump_handlers(orm.handlers),
             length_limit=orm.length_limit,
             display_author=orm.display_author,
@@ -138,6 +140,7 @@ class UserRepositoryImpl:
             interval=user.interval,
             notify=user.notify,
             send_mode=user.send_mode,
+            message_format=user.message_format,
             handlers=handlers_json(user.get_handlers()),
             length_limit=user.length_limit,
             display_author=user.display_author,

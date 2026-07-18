@@ -91,6 +91,7 @@ class PreparedSubscriptionDispatch:
     effective_link: str
     effective_content: str
     effective_send_mode: int
+    effective_message_format: int
     effective_style: int
     effective_media_urls: list[str] | None
     effective_media_items: list[tuple[str, str]] | None
@@ -273,6 +274,9 @@ class NotificationDispatcher:
         self._default_send_mode = self._send_mode_from_subscription_defaults(
             subscription_defaults or SubscriptionDefaults()
         )
+        self._default_message_format = self._message_format_from_subscription_defaults(
+            subscription_defaults or SubscriptionDefaults()
+        )
         self._basic_settings = basic_settings or BasicSettings()
 
     @staticmethod
@@ -317,6 +321,15 @@ class NotificationDispatcher:
                 SEND_MODE_AUTO,
             )
         return NotificationDispatcher._normalize_send_mode_value(value)
+
+    @staticmethod
+    def _message_format_from_subscription_defaults(
+        defaults: SubscriptionDefaults,
+    ) -> int:
+        from ...shared.constants import MESSAGE_FORMAT_STRING_MAP, MESSAGE_FORMAT_MERGED_FORWARD
+
+        value = getattr(defaults, "message_format", "合并转发")
+        return MESSAGE_FORMAT_STRING_MAP.get(str(value).strip(), MESSAGE_FORMAT_MERGED_FORWARD)
 
     @staticmethod
     def _options_from_subscription_defaults(
@@ -373,6 +386,21 @@ class NotificationDispatcher:
             if user_value != INHERIT_VALUE:
                 return self._normalize_send_mode_value(user_value)
         return self._default_send_mode
+
+    def _resolve_message_format(
+        self, subscription: Any = None, user: Any = None
+    ) -> int:
+        from ...shared.constants import INHERIT_VALUE
+
+        if subscription is not None:
+            sub_value = getattr(subscription, "message_format", INHERIT_VALUE)
+            if sub_value != INHERIT_VALUE and sub_value in (0, 1, 2):
+                return sub_value
+        if user is not None:
+            user_value = getattr(user, "message_format", INHERIT_VALUE)
+            if user_value != INHERIT_VALUE and user_value in (0, 1, 2):
+                return user_value
+        return self._default_message_format
 
     def _resolve_effective_push_options(
         self,
@@ -731,6 +759,7 @@ class NotificationDispatcher:
                         stats["skipped"] += 1
                         continue
                     effective_send_mode = self._resolve_send_mode(sub, user)
+                    effective_message_format = self._resolve_message_format(sub, user)
                     effective_media_urls = media_urls
                     effective_media_items = media_items
                     effective_layout = (
@@ -803,6 +832,7 @@ class NotificationDispatcher:
                             effective_link=effective_link,
                             effective_content=effective_content,
                             effective_send_mode=effective_send_mode,
+                            effective_message_format=effective_message_format,
                             effective_style=effective_options.style,
                             effective_media_urls=effective_media_urls,
                             effective_media_items=effective_media_items,
@@ -924,6 +954,7 @@ class NotificationDispatcher:
                         feed_id=feed_id,
                         sub_id=sub.id,
                         send_mode=prepared.effective_send_mode,
+                        message_format=prepared.effective_message_format,
                         style=prepared.effective_style,
                     )
 
@@ -1119,6 +1150,7 @@ class NotificationDispatcher:
         feed_id: int | None = None,
         sub_id: int | None = None,
         send_mode: int | None = None,
+        message_format: int | None = None,
         style: int = 0,
         sender_strategy: Any = None,
     ) -> dict[str, Any]:
@@ -1136,6 +1168,7 @@ class NotificationDispatcher:
             feed_id=feed_id,
             sub_id=sub_id,
             send_mode=send_mode,
+            message_format=message_format,
             style=style,
             sender_strategy=sender_strategy,
         )
@@ -1156,6 +1189,7 @@ class NotificationDispatcher:
         feed_id: int | None = None,
         sub_id: int | None = None,
         send_mode: int | None = None,
+        message_format: int | None = None,
         style: int = 0,
         sender_strategy: Any = None,
     ) -> dict[str, Any]:
@@ -1209,6 +1243,7 @@ class NotificationDispatcher:
                         entry_link=entry_link,
                         platform_name=target.platform_name or "",
                         send_mode=self._normalize_send_mode_value(send_mode),
+                        message_format=message_format or 0,
                         style=style,
                         sender_strategy=sender_strategy,
                     ),

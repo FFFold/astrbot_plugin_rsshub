@@ -55,6 +55,10 @@ class Subscription(BaseModel):
         default=INHERIT_VALUE,
         description="发送模式: -100=继承, -1=仅链接, 0=自动, 1=直接发送",
     )
+    message_format: int = Field(
+        default=INHERIT_VALUE,
+        description="消息格式: -100=继承, 0=合并转发, 1=直发, 2=图片",
+    )
     length_limit: int = Field(default=INHERIT_VALUE, description="长度限制")
     display_author: int = Field(default=INHERIT_VALUE, description="显示作者")
     display_via: int = Field(default=INHERIT_VALUE, description="显示来源")
