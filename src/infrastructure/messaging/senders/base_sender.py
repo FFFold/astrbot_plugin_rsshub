@@ -1515,6 +1515,7 @@ class DefaultMessageSender:
                 tmpl_str,
                 tmpl_data,
                 return_url=True,
+                options={"type": "jpeg", "quality": 85},
             )
         except Exception as e:
             logger.warning("t2i render failed: %s, falling back to direct", e)

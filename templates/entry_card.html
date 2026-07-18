@@ -2,70 +2,98 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
-    background: #1a1a2e;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", "PingFang SC", sans-serif;
+    background: #0f0f1a;
     color: #e0e0e0;
-    padding: 24px;
-    max-width: 680px;
+    font-size: 15px;
+    line-height: 1.6;
+}
+.card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 16px;
+    padding: 28px 32px;
+    margin: 16px;
+    border: 1px solid rgba(255,255,255,0.06);
 }
 .feed-title {
-    font-size: 13px;
-    color: #888;
+    font-size: 12px;
+    color: #6b7280;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
     margin-bottom: 4px;
 }
 .feed-link {
-    font-size: 13px;
-    color: #4a9eff;
-    margin-bottom: 16px;
+    font-size: 12px;
+    color: #60a5fa;
+    margin-bottom: 20px;
     word-break: break-all;
+    opacity: 0.8;
 }
 .entry-title {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
-    color: #fff;
-    margin-bottom: 12px;
-    line-height: 1.4;
+    color: #f1f5f9;
+    margin-bottom: 10px;
+    line-height: 1.35;
 }
 .entry-link {
     font-size: 13px;
-    color: #4a9eff;
-    margin-bottom: 20px;
+    color: #60a5fa;
+    margin-bottom: 24px;
     word-break: break-all;
+    display: inline-block;
+    padding: 4px 12px;
+    background: rgba(96, 165, 250, 0.1);
+    border-radius: 6px;
 }
 .body {
     font-size: 15px;
-    line-height: 1.7;
-    color: #d0d0d0;
+    line-height: 1.75;
+    color: #cbd5e1;
     white-space: pre-wrap;
     word-break: break-word;
 }
 .media-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 16px;
+    gap: 10px;
+    margin-top: 20px;
 }
 .media-item {
-    border-radius: 8px;
+    border-radius: 10px;
     overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
     max-width: 100%;
+    background: rgba(255,255,255,0.04);
 }
 .media-item img {
     display: block;
-    max-width: 100%;
-    border-radius: 8px;
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
 }
 .video-label {
-    font-size: 12px;
-    color: #aaa;
-    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #94a3b8;
+}
+.video-label::before {
+    content: "▶";
+    font-size: 14px;
+    color: #60a5fa;
 }
 </style>
 </head>
 <body>
+<div class="card">
     {% if feed_title %}
     <div class="feed-title">{{ feed_title | e }}</div>
     {% endif %}
@@ -86,7 +114,7 @@ body {
         {% for item in media %}
         <div class="media-item">
             {% if item.type == 'video' %}
-            <div class="video-label">[视频]</div>
+            <div class="video-label">视频</div>
             {% else %}
             <img src="{{ item.url | e }}" alt="">
             {% endif %}
@@ -94,5 +122,6 @@ body {
         {% endfor %}
     </div>
     {% endif %}
+</div>
 </body>
 </html>
