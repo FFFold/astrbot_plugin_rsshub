@@ -1516,7 +1516,7 @@ class DefaultMessageSender:
                 tmpl_data,
                 return_url=True,
             )
-        except BaseException as e:
+        except Exception as e:
             logger.warning("t2i render failed: %s, falling back to direct", e)
             return await self._send_direct(request, prepared_media, context)
 
