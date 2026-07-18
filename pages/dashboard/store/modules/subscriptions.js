@@ -240,6 +240,7 @@ export const subscriptionsModule = {
       options.state = this.editForm.state_ ? 1 : 0;
       options.notify = this.editForm.notify;
       options.send_mode = this.editForm.send_mode;
+      options.message_format = this.editForm.message_format;
       options.display_author = this.editForm.display_author;
       options.display_via = this.editForm.display_via;
       options.display_title = this.editForm.display_title;
